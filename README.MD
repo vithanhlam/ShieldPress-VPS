@@ -528,6 +528,10 @@ shieldpress help               # Help displays correctly
 
 See full changelog: [CHANGELOG.MD](https://github.com/vithanhlam/ShieldPress-VPS/blob/main/CHANGELOG.MD)
 
+## Privacy Policy & Terms of Use
+
+See full policy: [PRIVACY-POLICY.MD](https://github.com/vithanhlam/ShieldPress-VPS/blob/main/PRIVACY-POLICY.MD)
+
 ## Links
 
 - Website: [https://shieldpress.net](https://shieldpress.net)
