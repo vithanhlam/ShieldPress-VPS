@@ -1,6 +1,6 @@
 # ShieldPress VPS
 
-**Current version:** `1.0.6`
+**Current version:** `1.2.7`
 
 ShieldPress VPS is a terminal-based server management toolkit for Linux VPS, focused on deploying websites, managing domains, SSL, WordPress, Laravel, Node.js, databases, cache, backup, security, performance optimization, email and system monitoring.
 
@@ -222,7 +222,7 @@ PostgreSQL features:
 - Change database password.
 - Import SQL.
 - Backup database.
-- Configure auto backup.
+- Configure auto backup (hour, daily/weekly/monthly, retention count).
 - List backups.
 
 ### 7. Backup & Restore
@@ -269,8 +269,12 @@ Source: `modules/security/`
 - View IP block history.
 - Enable Fail2ban SSH.
 - Manage Fail2ban SSH.
+- Fail2ban Nginx protection (403/404 and 5xx jails).
+- Fail2ban Nginx manager (view/unban/disable).
 - WordPress brute force protection.
 - Block/unblock bot countries.
+- SSH hardening (change port, disable/enable password auth).
+- Auto-block attackers from access logs.
 - Security audit.
 
 ### 10. Monitoring & Logs
@@ -283,6 +287,9 @@ Source: `modules/monitor/`
 - Log analysis.
 - View top access IPs.
 - Live log tail.
+- Log viewer (access, error, PHP-FPM, PHP slow, MariaDB, PostgreSQL — 50/100 lines or realtime).
+- Service status dashboard (all services with memory usage and domain count).
+- Domain health check (HTTP/HTTPS curl check for all domains).
 - Enable log rotation.
 - Clean old logs.
 
@@ -350,6 +357,8 @@ Features:
 - Full diagnostics: services, ports, config, SSL, DNS, firewall, Fail2Ban.
 - DNS records guide (MX, A, SPF, DKIM, DMARC, PTR).
 - Export DNS records to `/home/dns-records-{domain}.txt` for Cloudflare.
+- Install Roundcube webmail (1-click) — access email via browser at `https://mail.domain.com`.
+- Uninstall webmail.
 
 Architecture:
 
@@ -357,7 +366,8 @@ Architecture:
 Inbound:  Internet → MX → Postfix → Rspamd → Dovecot (LMTP) → Maildir
 Outbound: Client → Postfix → OpenDKIM → SMTP Relay (Brevo/SES) → Internet
 Read:     IMAP port 993 (SSL) via Thunderbird, Outlook or mobile app
-Send:     SMTP port 587 (STARTTLS) via mail client
+          or Roundcube webmail at https://mail.domain.com
+Send:     SMTP port 587 (STARTTLS) via mail client or webmail
 Spam:     Rspamd with auto-learn, spam moved to Junk via Sieve
 Security: Fail2Ban jails for Postfix, Dovecot and Postfix-SASL
 ```
@@ -375,7 +385,8 @@ Email Server
 ├── [ 7] Test Send & Receive
 ├── [ 8] Email Server Status
 ├── [ 9] DNS Records Guide
-├── [10] Uninstall Email Server
+├── [10] Install Webmail (Roundcube)
+├── [11] Uninstall Email Server
 └── [ 0] Back
 ```
 
@@ -406,6 +417,11 @@ Source: `modules/upgrade/`
 - Update ShieldPress VPS via `updater.sh`.
 - Log updates to `/opt/shieldpress/logs/update.log`.
 - Update OS/core packages and restart related services.
+- Graceful service stop before upgrades (waits for connections to drain).
+- Auto-rollback on upgrade failure (restores config snapshot and database dump).
+- Version policy enforcement with whitelist/blacklist.
+- Pre-upgrade checks (disk space, service health, config validity).
+- Post-upgrade validation with Telegram notifications.
 
 ### 18. Disk Manager
 
@@ -512,6 +528,7 @@ shieldpress help               # Help displays correctly
 - Email account management: add, delete, list, change password.
 - Test suite: outbound send, inbound receive, SMTP/IMAP auth, full diagnostics.
 - DNS records guide with export to file for Cloudflare.
+- Roundcube webmail installer (1-click, SQLite, ~30MB RAM).
 - Menu option [24] Email Server added to admin menu.
 - About Us moved to [25].
 
@@ -522,5 +539,5 @@ shieldpress help               # Help displays correctly
 
 ## Documentation
 
-- Version: `1.0.6`
+- Version: `1.2.7`
 - This README serves as feature documentation and reference for future upgrades.
