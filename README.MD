@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://shieldpress.net/logo.png" alt="ShieldPress VPS" width="500">
+</p>
+
 # ShieldPress VPS
 
 **Current version:** `1.2.7`
@@ -19,6 +23,8 @@ Source code is in the `shieldpress/` directory. On the server it installs to `/o
 > **Note:** ShieldPress VPS only supports AlmaLinux 9 and 10. Other distributions (Ubuntu, CentOS, Debian, etc.) are not supported.
 
 ## Installation
+
+![ShieldPress VPS Dashboard](https://github.com/vithanhlam/ShieldPress-VPS/blob/main/shieldpress-vps.png?raw=true)
 
 Connect to your VPS via SSH as root and run:
 
@@ -520,17 +526,7 @@ shieldpress help               # Help displays correctly
 
 ## Changelog
 
-### v1.0.6
-
-- Added Email Server module (`modules/email/`) with 1-click installer.
-- Components: Postfix, Dovecot, Rspamd, OpenDKIM, Fail2Ban mail jails, Let's Encrypt SSL.
-- SMTP relay support: Brevo (free 300/day) and Amazon SES.
-- Email account management: add, delete, list, change password.
-- Test suite: outbound send, inbound receive, SMTP/IMAP auth, full diagnostics.
-- DNS records guide with export to file for Cloudflare.
-- Roundcube webmail installer (1-click, SQLite, ~30MB RAM).
-- Menu option [24] Email Server added to admin menu.
-- About Us moved to [25].
+See full changelog: [CHANGELOG.MD](https://github.com/vithanhlam/ShieldPress-VPS/blob/main/CHANGELOG.MD)
 
 ## Links
 
