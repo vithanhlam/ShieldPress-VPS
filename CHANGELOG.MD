@@ -1,5 +1,36 @@
 # ShieldPress VPS - Changelog
 
+## v1.2.8 — 2026-07-23 - PHP-FPM Boot Crash Fix
+
+### Bug Fix: PHP-FPM fails to start when slowlog directory is missing
+
+**Problem:** After server reboot or directory cleanup, PHP-FPM (all versions) crashes with:
+```
+ERROR: Unable to create or open slowlog(/var/shieldpress/logs/php-slow/...-slow.log): No such file or directory
+ERROR: FPM initialization failed
+```
+This causes **502 Bad Gateway** for all sites. The slowlog directory `/var/shieldpress/logs/php-slow/` was only created when running ShieldPress menu (`ensure_shieldpress_dirs()`) or adding a domain — not guaranteed to exist at boot time.
+
+**Fix (3 changes):**
+
+1. **`modules/domain/helpers.sh`** — `create_php_pool()` now runs `mkdir -p "$SLOW_LOG_DIR"` before writing pool config, ensuring the directory exists every time a pool is created or rebuilt.
+
+2. **`modules/install/install-stack.sh`** — `install_php()` now calls `ensure_shieldpress_dirs()` before validating and starting PHP-FPM, preventing crash during initial install.
+
+3. **`modules/install/install-stack.sh`** — NEW: Creates `/etc/tmpfiles.d/shieldpress.conf` so systemd automatically creates all ShieldPress directories (`/var/shieldpress/logs/`, `/var/shieldpress/logs/php-slow/`, `/var/shieldpress/logs/malware/`, `/var/shieldpress/data/`) at every boot, before any service starts. This is the root fix — PHP-FPM will never crash due to missing directories again.
+
+**Affected files:**
+- `modules/domain/helpers.sh` — Added `mkdir -p` in `create_php_pool()`
+- `modules/install/install-stack.sh` — Added `ensure_shieldpress_dirs()` in `install_php()`, added tmpfiles.d setup
+
+**Hotfix for existing servers:**
+```bash
+mkdir -p /var/shieldpress/logs/php-slow
+systemctl start php84-php-fpm
+```
+
+---
+
 ## v1.2.7 — 2026-07-18 - Security Hardening, Monitoring & Upgrade Safety
 
 ### PostgreSQL Manager Improvements (`modules/database/pg-menu.sh`)
