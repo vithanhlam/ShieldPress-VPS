@@ -4,7 +4,7 @@
 
 # ShieldPress VPS
 
-**Current version:** `1.2.7`
+**Current version:** `1.2.8`
 
 ShieldPress VPS is a terminal-based server management toolkit for Linux VPS, focused on deploying websites, managing domains, SSL, WordPress, Laravel, Node.js, databases, cache, backup, security, performance optimization, email and system monitoring.
 
@@ -539,5 +539,5 @@ See full policy: [PRIVACY-POLICY.MD](https://github.com/vithanhlam/ShieldPress-V
 
 ## Documentation
 
-- Version: `1.2.7`
+- Version: `1.2.8`
 - This README serves as feature documentation and reference for future upgrades.
