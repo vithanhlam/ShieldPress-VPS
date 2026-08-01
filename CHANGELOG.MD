@@ -1,5 +1,199 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.1 — 2026-08-01 - Email Server: Webmail Session Fix, WordPress SMTP Guide & Cloudflare Warning
+
+### Webmail Session Logout Fix (`modules/email/install-webmail.sh`, `modules/email/webmail-info.sh`)
+
+**Problem:** Roundcube webmail logs users out unexpectedly, especially behind NAT, VPN, or mobile networks.
+
+**Root cause:** `$config['ip_check'] = true` causes Roundcube to invalidate the session whenever the client IP changes mid-session. On shared NAT or networks where IP can rotate, this triggers a logout on nearly every page load.
+
+**Fix — new installs:** `install-webmail.sh` now generates config with `ip_check = false` and `session_lifetime = 60` (was 30 minutes).
+
+**Fix — existing installs:** `webmail-info.sh` now shows a session health indicator and a new option **[3] Fix session logout** that patches the running Roundcube config in-place (`/var/www/webmail/config/config.inc.php`) without reinstalling.
+
+---
+
+### WordPress SMTP Guide (`modules/email/client-guide.sh`)
+
+Added **section 7 — WordPress SMTP** to the Client Setup Guide:
+- Correct settings: Host = `mail.domain`, Port = `587`, Encryption = **TLS** (not SSL), Username = **full email address**
+- Step-by-step instructions for WP Mail SMTP plugin
+- Common mistakes table: SSL vs TLS, partial username vs full email
+- Note on disabling SSL verification when using self-signed certificate
+
+---
+
+### WordPress SMTP Test (`modules/email/test-email.sh`)
+
+Added **option [5] — Test WordPress SMTP** that simulates exactly how a WordPress SMTP plugin connects:
+1. Checks port 587 is listening
+2. Tests STARTTLS handshake
+3. Runs SMTP AUTH PLAIN with the selected account credentials
+
+On success: shows correct plugin settings side-by-side.
+On failure: shows the specific cause (wrong password, account missing, SASL not connected to Postfix) with debug commands.
+
+---
+
+### Cloudflare Proxy Warning — Email Ports (`modules/email/dns-guide.sh`, `client-guide.sh`, `test-email.sh`)
+
+**Problem confirmed:** When Cloudflare proxy (orange cloud) is enabled on the `mail` A record, ports 25, 587, and 993 are blocked. SMTP and IMAP connections from all clients (WordPress, Outlook, Thunderbird, mobile) fail even though the server itself is working correctly.
+
+**Changes:**
+- `dns-guide.sh` — A record entry now shows `Proxy: DNS only (grey cloud) — NEVER orange cloud` with a highlighted warning block explaining why
+- `client-guide.sh` — Troubleshooting section now includes a dedicated **"Using Cloudflare?"** block with step-by-step instructions to set the `mail` record to grey cloud
+- `test-email.sh` — WordPress SMTP test success message now includes Cloudflare as item #4 to check if WordPress still fails after server auth passes
+
+---
+
+## v1.3.0 — 2026-07-31 - SSL Overhaul, ZeroSSL, Cache & DB Import Improvements
+
+### ZeroSSL Support (`modules/ssl/install-ssl-zerossl.sh`, `modules/ssl/ssl-menu.sh`)
+
+Added ZeroSSL as a free SSL alternative to Let's Encrypt with less strict rate limits.
+
+- Fully automatic — EAB credentials generated via ZeroSSL API, no manual registration needed
+- Falls back to manual EAB input if API is unavailable
+- Credentials saved to `config/zerossl-eab.env` for reuse
+- Auto-renew via `certbot.timer` (certbot auto-detects ACME server per cert)
+- Added progress message during ACME challenge ("This may take 1-2 minutes...")
+- SSL menu updated: option 2 = ZeroSSL
+
+### SSL Install Bug Fixes (`modules/ssl/install-ssl-cloudflare.sh`, `install-ssl.sh`, `install-ssl-custom.sh`)
+
+**BUG — Duplicate SSL directives break Nginx (CRITICAL)**
+- `sed` patterns like `/listen 80/a\...` matched both `listen 80;` and `listen [::]:80;`, inserting SSL directives twice → Nginx syntax error → rollback
+- Fix: All `sed` append commands now use `0,/pattern/{/pattern/a\...}` to match only the first occurrence
+- Also adds `listen [::]:443 ssl;` alongside `listen 443 ssl;` for proper IPv6 support
+
+**BUG — Nginx errors hidden**
+- `nginx -t 2>/dev/null` suppressed all error output → user sees "rolling back" with no explanation
+- Fix: Captures error with `nginx -t 2>&1` and displays it before rollback
+
+### SSL Type Switching (`modules/ssl/ssl-utils.sh`, `modules/ssl/remove-ssl.sh`)
+
+Added `cleanup_old_ssl()` helper to safely switch between SSL types without conflicts.
+
+- Called automatically by all 4 install scripts before installing new cert
+- Removes old certbot certs (Let's Encrypt / ZeroSSL) via `certbot delete`
+- Removes old cert files (Cloudflare / Custom) from `/etc/nginx/ssl/`
+- Cleans all SSL directives from Nginx config (listen 443, ssl_certificate, HSTS, http2, etc.)
+- `remove-ssl.sh` rewritten to use `cleanup_old_ssl()` — now handles all SSL types, not just certbot
+
+### Cloudflare SSL UX Improvements (`modules/ssl/install-ssl-cloudflare.sh`)
+
+- **No more Ctrl+D**: Paste auto-detects `-----END CERTIFICATE-----` / `-----END PRIVATE KEY-----` markers
+- **File path input**: Option to provide cert/key file paths instead of pasting
+- **Step-by-step guide**: Detailed 8-step instructions for creating Origin Certificate on Cloudflare dashboard
+- **Better validation**: Shows SAN domains from cert, cleans up files on validation failure
+- **Sudoers fix** (`install-wp.sh`): Changed `%www-data` to `ALL ALL` — PHP-FPM runs as domain user, not www-data
+
+### Database Import — Table Prefix Check (`modules/database/import-domain.sh`)
+
+After importing a database into a WordPress domain, the script now detects table prefix mismatches:
+
+- Reads `$table_prefix` from `wp-config.php`
+- Detects actual prefix from imported tables (finds `*_options` table)
+- If mismatched, offers 3 options:
+  1. Update `wp-config.php` to match DB (recommended, with backup)
+  2. Rename all DB tables to match wp-config + update `wp_options` and `wp_usermeta` meta keys
+  3. Skip
+
+### Auto Cache Purge on Import & Permission Fix (`core/helpers.sh`, `modules/database/import-domain.sh`, `modules/domain/fix-permission.sh`, `modules/optimize/permission-fix.sh`)
+
+- Added `purge_wp_cache()` helper in `core/helpers.sh` — clears FastCGI cache, Valkey/Redis, WP object cache, and reloads PHP-FPM OPcache
+- Called automatically after DB import (WordPress domains only)
+- Called automatically after fixing permissions (single domain and all-domains)
+
+### WordPress Cache Purge Button — Complete Rewrite (`templates/wp-mu-plugins/shieldpress-cache-purge.php`, `bin/process-purge-signals`)
+
+**BUG — White screen when clicking Purge Cache**
+- Old URL `admin.php?shieldpress_purge=1` has no page handler → blank page
+- Fix: Changed to `admin-post.php?action=shieldpress_purge` with `wp_safe_redirect()` back to referrer
+
+**BUG — Purge never works due to 3 layered restrictions**
+- `exec()` disabled via `php_admin_value[disable_functions]` in PHP-FPM pool → Method 1 (sudo script) always fails
+- `open_basedir` restricts PHP to domain directory → `is_dir('/var/cache/nginx/...')` returns false → Method 2 (direct delete) fails
+- `PrivateTmp=true` in systemd PHP-FPM service → PHP's `/tmp` is isolated from system `/tmp` → file signal to `/tmp` invisible to cron
+
+**Fix — Domain tmp file signal approach:**
+- PHP writes signal file to `$DOMAIN_PATH/tmp/.purge-cache` (always accessible: within `open_basedir`, not affected by `PrivateTmp`, no `exec` needed)
+- Cron job (`/etc/cron.d/shieldpress-cache-purge`) runs every minute as root, scans `/home/domains/*/tmp/.purge-cache`, executes actual cache purge
+- New script: `bin/process-purge-signals` — processes signal files and runs `purge-fastcgi-cache`
+- `auto-purge.sh` and `install-wp.sh` updated to setup cron job automatically
+
+**BUG — Always shows "success" even when purge fails**
+- Fix: `purge()` returns `'ok'` or `'fail'`; notice shows green success or red error with fix instructions
+
+**UI — Icon**: Changed from emoji to WordPress dashicon `dashicons-update`
+
+---
+
+## v1.2.9 — 2026-07-31 - Monitor Metrics Sync & Bug Fixes
+
+### WordPress Install Fix (`modules/wordpress/helpers.sh`, `modules/wordpress/install-wp.sh`)
+
+**Problem:** Installing WordPress fails with `ERROR: PHP socket not found: /var/opt/remi/php84/run/php-fpm/.sock` — domain name missing from socket path.
+
+**Root cause:** `select_domain()` in `helpers.sh` correctly computes `CLEAN_DOMAIN` at line 48 via `domain_to_clean()`, but then line 69 overwrites it with `grep "^CLEAN_DOMAIN=" domain.env` which returns empty because `domain.env` was never created with a `CLEAN_DOMAIN=` line.
+
+**Fix (3 files):**
+- `modules/wordpress/helpers.sh` — Only overwrite `CLEAN_DOMAIN` if grep returns a non-empty value
+- `modules/wordpress/reset-password.sh` — Same fix
+- `modules/domain/helpers.sh` — Added `CLEAN_DOMAIN=` to `create_domain_env()` template so future domains include it
+
+### ShieldPress Monitor — Full Metrics Parity with VPS Agent (`modules/shieldpress/shieldpress-monitor.sh`)
+
+`shieldpress-monitor.sh` now collects all metrics that `vps-agent.sh` (standalone agent) already had, achieving full parity. Added 10 new collection functions:
+
+| Function | Data collected |
+|----------|---------------|
+| **OS Info** (in `collect_system_metrics`) | `os.name`, `os.version`, `os.kernel`, `os.arch` |
+| **CPU Model** (in `collect_system_metrics`) | `cpu.model` from `/proc/cpuinfo` |
+| **Disk I/O** (in `collect_system_metrics`) | `disk.read_kbps`, `disk.write_kbps` — sampled from `/proc/diskstats` (combined 1s sample with network bandwidth, no extra sleep) |
+| `collect_versions_json()` | 15 software versions (nginx, mysql, mariadb, postgresql, redis, nodejs, python, docker, composer, npm, git, openssl, curl, apache, litespeed) + `php_versions` array with per-version status |
+| `collect_security_config_json()` | `firewall_type`, `firewall_status`, `selinux`, `apparmor`, `open_files_limit`, `max_processes`, `ntp_synced`, `timezone` |
+| `collect_top_processes_json()` | Top 15 processes by CPU usage (pid, user, cpu%, mem%, cmd) |
+| `collect_listening_ports_json()` | Up to 30 listening ports with process names from `ss -tlnp` |
+| `collect_docker_containers_json()` | Running containers (name, image, status, ports) from `docker ps` |
+| `collect_current_users_json()` | Currently logged-in users from `who` |
+| `collect_recent_logins_json()` | Last 10 logins from `last` |
+| `collect_logs_json()` | 10 log types (nginx error/access, apache error/access, mysql, mysql slow, redis, php-fpm, fail2ban, syslog) — last 50 lines each, JSON-encoded via python3 using env vars for safe escaping |
+
+Also added Valkey/valkey-server detection for `services.redis` status.
+
+### Remote Commands Bug Fixes
+
+**BUG 1 — Route conflict (CRITICAL)** (`api-shieldpress/src/routes/vps/index.ts`)
+- `GET /commands/pending` was registered AFTER `GET /:id` — Express matched `/:id` first with `id="commands"` → 404. **All remote commands were broken.**
+- Fix: Moved `/commands/pending` and `/commands/:commandId/result` routes before `/:id`
+
+**BUG 2 — OPcache reset ineffective** (`shieldpress-monitor.sh`)
+- `_cmd_clear_opcache()` ran `php -r 'opcache_reset()'` from CLI, which only resets the CLI process's OPcache, not PHP-FPM's web OPcache
+- Fix: Now reloads PHP-FPM service(s) via `systemctl reload` to actually clear web OPcache
+
+**BUG 3 — Redis CLI mismatch** (`shieldpress-monitor.sh`)
+- `clear_redis` used `redis-cli` but ShieldPress VPS installs Valkey (Redis fork) which provides `valkey-cli`
+- Fix: Checks `valkey-cli` first, falls back to `redis-cli`
+
+**BUG 4 — Valkey service not detected** (`shieldpress-monitor.sh`)
+- `restart_redis` only checked `valkey`, `redis`, `redis-server` — missed `valkey-server` (AlmaLinux service name)
+- Fix: Checks all 4 service names: `valkey`, `valkey-server`, `redis`, `redis-server`. Falls back to `list-unit-files` if none are active.
+
+**BUG 7 — Nginx cache clears all domains** (`shieldpress-monitor.sh`)
+- `clear_nginx_cache` ran `find /var/cache/nginx -type f -delete` (all domains) even when API sends a specific `domain` parameter
+- Fix: When `domain` is specified, only clears `/var/cache/nginx/${clean_domain}/`
+
+**Affected files:**
+- `modules/wordpress/helpers.sh` — Safe `CLEAN_DOMAIN` override
+- `modules/wordpress/reset-password.sh` — Same fix
+- `modules/domain/helpers.sh` — Added `CLEAN_DOMAIN` to `domain.env` template
+- `modules/shieldpress/shieldpress-monitor.sh` — 10 new metric collectors, 4 remote command bug fixes
+- `api-shieldpress/src/routes/vps/index.ts` — Route order fix
+
+---
+
 ## v1.2.8 — 2026-07-23 - PHP-FPM Boot Crash Fix
 
 ### Bug Fix: PHP-FPM fails to start when slowlog directory is missing
