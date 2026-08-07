@@ -1,5 +1,182 @@
 # ShieldPress VPS - Changelog
 
+## v1.4.0 — 2026-08-06 — Email: SSL Fix on Reinstall, Webmail Reinstall Option, Optional HTTP Auth
+
+### Email Server — Fix SSL on Reinstall (`modules/email/install-email.sh`)
+
+**Problem:** Uninstalling and reinstalling the email server caused SSL to break for `mail.domain.com`. During reinstall, the installer always ran `certbot certonly --standalone` from scratch, which could fail if the certificate was not yet due for renewal or if there was a timing conflict with the existing Let's Encrypt cert.
+
+**Fix:** The installer now checks whether a valid Let's Encrypt certificate already exists at `/etc/letsencrypt/live/mail.${MAIL_DOMAIN}/fullchain.pem` before calling certbot.
+
+- If the certificate **exists and is valid** (not expired within 24h): reused directly — `smtpd_tls_cert_file` / `smtpd_tls_key_file` in Postfix and `ssl_cert` / `ssl_key` in Dovecot are updated without running certbot. Expiry date is shown.
+- If the certificate **does not exist or is expired**: certbot runs as before (stops Nginx, standalone challenge, restarts Nginx).
+- Error message updated to point to the new **[12] Install SSL** menu item instead of suggesting a full reinstall.
+
+---
+
+### Email Menu — New [12] Install SSL (mail) (`modules/email/email-menu.sh`, `modules/email/install-ssl-mail.sh`)
+
+Added a dedicated **Install SSL (mail)** option as a standalone action, accessible any time without reinstalling the email server.
+
+**New script `install-ssl-mail.sh`:**
+- Shows current certificate status and expiry date (if cert exists)
+- Option to force-renew even if cert is still valid
+- Checks DNS: verifies `mail.domain.com` A record points to this server before running certbot
+- Stops Nginx temporarily, runs `certbot certonly --standalone`, restarts Nginx
+- On success: applies cert to Postfix + Dovecot and restarts both services
+- On failure: shows diagnostic command
+
+**Menu change:**
+- `[12] Install SSL (mail)` — new
+- `[13] Uninstall Email Server` — shifted from 12
+
+---
+
+### Webmail — Add Reinstall Option, Remove Redundant SMTP Fix (`modules/email/webmail-info.sh`)
+
+**[4] option changed:**
+- **Removed:** `[4] Fix SMTP config error (cannot send email)` — this fix is now handled automatically by the migration patch `SP_138_FIX_WEBMAIL_SMTP` (added in v1.3.8) which runs on update. The manual option is no longer needed.
+- **Added:** `[4] Reinstall Webmail` — uninstalls Roundcube and immediately reinstalls it (calls `uninstall-webmail.sh` then `install-webmail.sh`). Asks for confirmation before proceeding.
+
+---
+
+### Webmail — HTTP Basic Auth Now Optional (`modules/email/install-webmail.sh`)
+
+**Before:** Installation always required entering an HTTP Basic Auth username and password.
+
+**After:** HTTP Auth setup is optional and context-aware:
+
+- **If `.webmail_htpasswd` already exists** (set via Webmail settings → [1] Change HTTP Auth password, or from a previous install): prompts `Keep existing HTTP Auth? (Y/n)` — default Y. Existing credentials are preserved without re-entry.
+- **Fresh install / no existing auth:** prompts `Set up HTTP Basic Auth? (y/N)` — default N. Skipping is the default; auth can be configured later from Webmail settings [1].
+- The Nginx vhost now conditionally includes `auth_basic` / `auth_basic_user_file` only when a `.webmail_htpasswd` file is present — no Nginx errors when auth is skipped.
+- Success screen adapts: shows auth username if configured, or a note to set it up later via settings [1].
+
+---
+
+## v1.3.9 — 2026-08-05 — Backup: Fix Unexpected Files on Google Drive After Upload
+
+### Remote Backup Upload Fix (`modules/backup/_backup_helper.sh`, `modules/backup/remote-backup.sh`)
+
+**Problem:** After backing up and uploading to Google Drive, an unexpected file with an unrecognized name appears in the remote storage.
+
+**Root causes (two bugs):**
+
+- **[Bug 1] `--create-empty-src-dirs` on single-file copy:** `rclone copy "$FILE" "$DEST" --create-empty-src-dirs` — this flag instructs rclone to replicate empty subdirectories from the source into the destination. When the source is a single file (not a directory), rclone may traverse the parent directory path and create placeholder entries on Google Drive, resulting in unexpected files/folders appearing alongside the actual backup. **Fix:** replaced with `--no-traverse` (tells rclone to skip the directory listing and upload the single file directly — faster and creates no side-effect entries).
+
+- **[Bug 2] Test upload leaves `_test/` folder on Google Drive:** `test_remote()` used `rclone deletefile` to remove the test file after a successful test, but did **not** remove the `_test/` directory itself. The empty `_test/` folder (and the test file if `deletefile` failed silently) remained permanently in the remote. **Fix:** after deleting the test file, now also calls `rclone rmdir` to remove the empty `_test/` directory.
+
+**Additional fix:** `prune_remote_backups()` now uses a named `mktemp` template (`/tmp/sp_prune_XXXXXX`) instead of anonymous `mktemp`, making temp files identifiable in `/tmp` if cleanup fails.
+
+**Added:** file existence check in `remote_upload_backup()` — warns and skips upload if the backup file is not found instead of letting rclone error silently.
+
+---
+
+## v1.3.8 — 2026-08-05 — Webmail: Fix SMTP Config Error (Cannot Send Email)
+
+### Roundcube SMTP Config Fix (`modules/email/install-webmail.sh`, `modules/email/webmail-info.sh`)
+
+**Problem:** Roundcube shows "SMTP config error" when attempting to send email.
+
+**Root causes (two separate bugs):**
+
+- **[Bug 1] Duplicate port in `smtp_host`:** The config set `smtp_host = 'tls://localhost:587'` (port embedded in the host string) AND `smtp_port = 587` as a separate key. Roundcube/Net_SMTP parses the host string and tries to connect using the embedded port; having `smtp_port` set simultaneously causes a conflict that results in the SMTP config error.
+- **[Bug 2] Missing `allow_self_signed`:** `smtp_conn_options` had `verify_peer => false` and `verify_peer_name => false` but was missing `allow_self_signed => true`. On some PHP/OpenSSL builds, the STARTTLS handshake with Postfix's self-signed certificate is still rejected even with `verify_peer = false` unless `allow_self_signed` is explicitly set.
+
+**Fix — new installs (`install-webmail.sh`):**
+- `smtp_host` changed to `tls://localhost` (no embedded port).
+- `smtp_port = 587` kept as a dedicated key.
+- Added `allow_self_signed => true` to both `smtp_conn_options` and `imap_conn_options`.
+- Removed redundant `default_host` and `default_port` keys (superseded by `imap_host`).
+
+**Fix — existing installs (`webmail-info.sh` → option [4] Fix SMTP config error):**
+- New menu option that patches a running Roundcube config in-place without reinstalling.
+- Rewrites `smtp_host` to `tls://localhost`, ensures `smtp_port = 587`, and injects `allow_self_signed => true` into both SMTP and IMAP conn_options.
+- Removes leftover `default_host` / `default_port` entries if present.
+
+---
+
+## v1.3.7 — 2026-08-05 — Email: Amazon SES SMTP Credentials, Optional Password Confirm
+
+### Amazon SES SMTP Credentials (`modules/email/install-email.sh`, `modules/email/setup-relay.sh`)
+
+**Problem:** The SES relay setup prompted for "Access Key ID" and "Secret Access Key" (IAM terminology), which are **not** the correct credentials for SES SMTP. SES SMTP requires a separate set of credentials generated from *SES Console → SMTP Settings → Create SMTP Credentials*.
+
+**Fix:**
+- Renamed input labels from `SES Access Key ID / SES Secret Access Key` → `SES SMTP Username / SES SMTP Password` in both `install-email.sh` and `setup-relay.sh`.
+- `SES SMTP Password` input is now hidden (`-sp` flag) to prevent the password from appearing on screen.
+- Added a hint line pointing users to the correct location: *"Go to: SES Console → SMTP Settings → Create SMTP Credentials — SMTP Username and Password are separate from IAM credentials."*
+
+---
+
+### Optional Password Confirmation (`modules/email/install-email.sh`)
+
+**Change:** During email server installation, the "Confirm password" step is now optional.
+
+- After entering the password, a prompt `Confirm password? (y/N):` appears. Default is **N** (press Enter to skip).
+- Choosing **N** accepts the password immediately without re-entry — faster for experienced users.
+- Choosing **Y** requires typing the password a second time to confirm, identical to the previous behavior.
+
+---
+
+## v1.3.6 — 2026-08-03 — Security Hardening, MySQL/PHP Slow Log, SSL Fix, Auto-Guard
+
+### Security Hardening (9 fixes)
+
+**Files:** `core/helpers.sh`, `modules/security/security-menu.sh`, `modules/domain/helpers.sh`, `modules/isolation/isolation-menu.sh`, `modules/database/export-db.sh`, `modules/sftp/sftp-manager.sh`, `modules/wordpress/secure-wp.sh`, `modules/database/create-db.sh`
+
+- **[C1]** `validate_ip()` — Validates each octet in the range 0–255 and CIDR prefix 0–32, instead of only checking the format pattern.
+- **[C2]** `domain.env` + `config/` — Changed permissions to `root:root 700/600` so that the domain Linux user cannot read DB or SFTP passwords stored in `domain.env`. Applied automatically for new domains; existing domains are updated by running `Isolation → Repair All`.
+- **[C3]** `export-db.sh` — `mysqldump` now uses `--defaults-extra-file` (temp file with mode 600) instead of passing `-p"$PASS"` on the command line, preventing password exposure via `ps aux`.
+- **[H1]** `helpers.sh` — `mysql_defaults_file()` now applies `chmod 600` before writing credentials and uses `printf` instead of a heredoc, narrowing the race window between file creation and content write.
+- **[H2]** PHP `open_basedir` — Removed the shared `/tmp` from `open_basedir` (which allowed cross-domain reads); replaced with the per-domain `$DOMAIN_PATH/tmp`. Applied to new domain creation and to `apply_open_basedir_all` in the isolation repair tool.
+- **[H5]** `isolation-menu.sh` — `SYSTEM_USER` is now validated against `[a-zA-Z0-9_-]` before being passed to `chown`, preventing path traversal if `domain.env` is tampered with.
+- **[H6]** Security menu — IP is now validated with `validate_ip()` before calling `fail2ban-client set sshd unbanip`.
+- **[M1]** `log_ip_event()` — Strips `\n`, `\r`, and `|` from all user-controlled fields before writing to the IP history log, preventing log injection.
+- **[M5/M6]** Increased entropy: WP salt fallback now uses `openssl rand -base64 48`; DB password length increased from 16 to 24 characters.
+
+---
+
+### MySQL Slow Query Log Viewer (`modules/monitor/monitor-menu.sh` — option 10)
+
+Added **MySQL Slow Query Log Viewer** (Monitor menu → option 10):
+- Checks whether `slow_query_log` is enabled in MariaDB/MySQL and offers to enable it if not (configurable `long_query_time`, persisted to `/etc/my.cnf.d/shieldpress-slow.cnf`).
+- Analysis views: top 10 slowest queries (`mysqldumpslow -s t`), top 10 most frequent slow queries, summary stats (total count, average time, max time, top databases by slow query count).
+- Option to disable slow query logging from the menu.
+
+### PHP Slow Log Analyzer (`modules/monitor/monitor-menu.sh` — option 11)
+
+Added **PHP Slow Log Analyzer** (Monitor menu → option 11):
+- Select a domain to read its `$LOG_DIR_PHP_SLOW/{domain}-slow.log`.
+- Views: top 10 slow scripts by frequency, summary stats (total entries, average and max execution time), last 30 raw log entries.
+
+---
+
+### SSL Fix — Multi-Provider Detection (`modules/ssl/check-ssl-status.sh`)
+
+**Problem:** `check-ssl-status.sh` hardcoded the path `/etc/letsencrypt/live/$DOMAIN/fullchain.pem` for all SSL providers, causing ZeroSSL, Cloudflare Origin, and Custom certificates to show as `disabled` even when correctly installed.
+
+**Fix:**
+- Reads `SSL_TYPE` from `domain.env` and resolves the correct certificate path per provider:
+  - `letsencrypt` / `zerossl` → `/etc/letsencrypt/live/$DOMAIN/fullchain.pem`
+  - `cloudflare` → `/etc/nginx/ssl/{clean}/cloudflare-origin.pem`
+  - `custom` → `/etc/nginx/ssl/{clean}/fullchain.pem`
+- Auto-detects the certificate type for older domains that do not yet have `SSL_TYPE` set.
+- Added a **Provider** column to the status table (Let's Encrypt / ZeroSSL / Cloudflare / Custom).
+- Checks both `certbot.timer` and `acme.sh` cron for ZeroSSL auto-renew status.
+
+---
+
+### Auto-Guard — Automated Attacker Blocking (`modules/security/security-menu.sh` — option 18)
+
+Added **Auto-Guard** (Security menu → option 18):
+- Configurable thresholds for total requests, 4xx errors, and wp-login/xmlrpc hits over the last 10 minutes.
+- Runs automatically on a **systemd timer** (default every 5 minutes, configurable).
+- When any threshold is exceeded: triggers `auto_block_attackers`, writes to the auto-guard log, and sends a Telegram notification.
+- Security dashboard compact now shows Auto-Guard status (ENABLED / off).
+- Management menu: enable / reconfigure, disable, view log, run an immediate check.
+
+---
+
 ## v1.3.1 — 2026-08-01 - Email Server: Webmail Session Fix, WordPress SMTP Guide & Cloudflare Warning
 
 ### Webmail Session Logout Fix (`modules/email/install-webmail.sh`, `modules/email/webmail-info.sh`)
