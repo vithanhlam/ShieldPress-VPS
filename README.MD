@@ -4,7 +4,7 @@
 
 # ShieldPress VPS
 
-**Current version:** `1.2.8`
+**Current version:** `1.3.6`
 
 ShieldPress VPS is a terminal-based server management toolkit for Linux VPS, focused on deploying websites, managing domains, SSL, WordPress, Laravel, Node.js, databases, cache, backup, security, performance optimization, email and system monitoring.
 
@@ -143,11 +143,12 @@ Domain features:
 SSL features:
 
 - Install free SSL (Let's Encrypt).
+- Install free SSL (ZeroSSL — alternative ACME provider).
 - Install custom SSL (paid certificates).
 - Install Cloudflare Origin SSL.
 - Renew SSL.
 - Remove SSL.
-- Check SSL status.
+- Check SSL status — multi-provider aware (Let's Encrypt, ZeroSSL, Cloudflare, Custom).
 - Auto SSL (wildcard).
 
 ### 3. WordPress Manager
@@ -265,22 +266,23 @@ Source: `modules/cache/`
 
 Source: `modules/security/`
 
-- Security dashboard: Firewall, Fail2ban, blocked IPs, whitelist, open ports, recent requests and attack indicators.
+- Security dashboard: Firewall, Fail2ban, blocked IPs, whitelist, open ports, recent 10-minute traffic stats and Auto-Guard status.
 - View firewall status.
 - Open/close ports.
-- Block IP.
+- Block IP (with octet + CIDR validation).
 - Whitelist IP.
 - Remove IP rules.
 - List blocked IPs.
 - View IP block history.
 - Enable Fail2ban SSH.
-- Manage Fail2ban SSH.
+- Manage Fail2ban SSH (with IP validation on unban).
 - Fail2ban Nginx protection (403/404 and 5xx jails).
 - Fail2ban Nginx manager (view/unban/disable).
 - WordPress brute force protection.
 - Block/unblock bot countries.
 - SSH hardening (change port, disable/enable password auth).
 - Auto-block attackers from access logs.
+- **Auto-Guard** — Automated scheduled blocking via systemd timer. Configurable thresholds for total requests, 4xx errors and wp-login/xmlrpc hits per 10 minutes. Triggers `auto_block_attackers` and sends Telegram notification when thresholds are exceeded.
 - Security audit.
 
 ### 10. Monitoring & Logs
@@ -296,6 +298,8 @@ Source: `modules/monitor/`
 - Log viewer (access, error, PHP-FPM, PHP slow, MariaDB, PostgreSQL — 50/100 lines or realtime).
 - Service status dashboard (all services with memory usage and domain count).
 - Domain health check (HTTP/HTTPS curl check for all domains).
+- **MySQL Slow Query Log** — Enable/disable slow query logging, analyze top slowest queries, most frequent slow queries, and summary stats (total, avg time, max time, top databases). Uses `mysqldumpslow` when available.
+- **PHP Slow Log Analyzer** — Per-domain slow log analysis: top scripts by frequency, summary stats (total, avg/max execution time), raw entries.
 - Enable log rotation.
 - Clean old logs.
 
@@ -539,5 +543,4 @@ See full policy: [PRIVACY-POLICY.MD](https://github.com/vithanhlam/ShieldPress-V
 
 ## Documentation
 
-- Version: `1.2.8`
 - This README serves as feature documentation and reference for future upgrades.
