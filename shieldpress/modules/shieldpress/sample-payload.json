@@ -1,0 +1,168 @@
+{
+    "metrics": {
+        "action": "metrics",
+        "hostname": "vps-shieldpress-01",
+        "timestamp": "2026-06-30T14:25:00Z",
+        "uptime_seconds": 864231,
+        "cpu": {
+            "cores": 4,
+            "load_1m": 0.45,
+            "load_5m": 0.38,
+            "load_15m": 0.32
+        },
+        "memory": {
+            "total_mb": 8192,
+            "used_mb": 5120,
+            "available_mb": 3072,
+            "swap_total_mb": 2048,
+            "swap_used_mb": 128
+        },
+        "disk": {
+            "total_kb": 104857600,
+            "used_kb": 52428800,
+            "percent": 50
+        },
+        "services": {
+            "nginx": "active",
+            "mariadb": "active",
+            "postgresql": "active",
+            "valkey": "active",
+            "firewalld": "active",
+            "fail2ban": "active",
+            "php_fpm": [
+                { "version": "8.1", "status": "active" },
+                { "version": "8.2", "status": "inactive" },
+                { "version": "8.3", "status": "active" },
+                { "version": "8.4", "status": "active" }
+            ]
+        },
+        "domains": {
+            "total": 5,
+            "wordpress": 3,
+            "laravel": 1,
+            "nodejs": 1
+        },
+        "network": {
+            "tcp_connections": 142
+        }
+    },
+
+    "file_changes": [
+        {
+            "type": "new",
+            "path": "example.com/public_html/shell.php",
+            "size": 4821,
+            "ext": "php"
+        },
+        {
+            "type": "new",
+            "path": "example.com/public_html/wp-content/uploads/2026/06/backdoor.phar",
+            "size": 12045,
+            "ext": "phar"
+        },
+        {
+            "type": "modified",
+            "path": "example.com/public_html/wp-config.php",
+            "size": 3842,
+            "ext": "php"
+        },
+        {
+            "type": "modified",
+            "path": "example.com/public_html/.htaccess",
+            "size": 1205,
+            "ext": "htaccess"
+        },
+        {
+            "type": "modified",
+            "path": "mylaravel.com/public_html/.env",
+            "size": 892,
+            "ext": "env"
+        },
+        {
+            "type": "deleted",
+            "path": "example.com/public_html/wp-content/plugins/old-plugin/index.php",
+            "ext": "php"
+        }
+    ],
+
+    "logins": {
+        "recent_logins": [
+            {
+                "user": "root",
+                "ip": "103.56.120.45",
+                "date": "Mon Jun 30 14:20",
+                "active": 1
+            },
+            {
+                "user": "root",
+                "ip": "42.118.200.88",
+                "date": "Mon Jun 30 09:15",
+                "active": 0
+            },
+            {
+                "user": "deploy",
+                "ip": "113.161.55.22",
+                "date": "Sun Jun 29 22:30",
+                "active": 0
+            },
+            {
+                "user": "root",
+                "ip": "103.56.120.45",
+                "date": "Sun Jun 29 18:00",
+                "active": 0
+            }
+        ],
+        "failed_logins": [
+            {
+                "user": "root",
+                "ip": "185.224.128.50",
+                "date": "Jun 30 14:18"
+            },
+            {
+                "user": "admin",
+                "ip": "185.224.128.50",
+                "date": "Jun 30 14:18"
+            },
+            {
+                "user": "root",
+                "ip": "45.148.10.92",
+                "date": "Jun 30 13:55"
+            },
+            {
+                "user": "test",
+                "ip": "45.148.10.92",
+                "date": "Jun 30 13:55"
+            },
+            {
+                "user": "ubuntu",
+                "ip": "92.255.85.135",
+                "date": "Jun 30 12:30"
+            },
+            {
+                "user": "root",
+                "ip": "218.92.0.112",
+                "date": "Jun 30 11:22"
+            },
+            {
+                "user": "root",
+                "ip": "218.92.0.112",
+                "date": "Jun 30 11:21"
+            },
+            {
+                "user": "root",
+                "ip": "218.92.0.112",
+                "date": "Jun 30 11:20"
+            }
+        ],
+        "current_users": [
+            {
+                "user": "root",
+                "tty": "pts/0",
+                "from": "103.56.120.45",
+                "login_time": "Jun 30 14:20"
+            }
+        ]
+    },
+
+    "shieldpress_version": "1.2.0"
+}

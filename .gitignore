@@ -1,0 +1,49 @@
+# Local environment and runtime secrets
+.env
+.env.*
+!.env.example
+*.secret
+*.secrets
+credentials*
+secrets*
+
+# Private keys, certificates, and authentication data
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+known_hosts
+authorized_keys
+rclone.conf
+
+# Databases, exports, and backups
+*.sql
+*.sql.gz
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.bak
+*.backup
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+/update-backups/
+
+# Logs, caches, and temporary files
+*.log
+*.pid
+*.tmp
+*.swp
+*~
+.cache/
+tmp/
+temp/
+
+# Local editor metadata
+.agents/
+.vscode/
+.idea/

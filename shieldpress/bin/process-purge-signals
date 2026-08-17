@@ -1,0 +1,32 @@
+#!/bin/bash
+# ============================================================
+# Process cache purge signal files created by PHP mu-plugin.
+# Run via cron every minute.
+#
+# PHP writes signal files to /home/domains/*/tmp/.purge-cache
+# containing the clean domain name. This script reads them
+# and runs the actual cache purge as root.
+# ============================================================
+
+CACHE_BASE="/var/cache/nginx"
+PURGE_SCRIPT="/opt/shieldpress/bin/purge-fastcgi-cache"
+DOMAINS_ROOT="/home/domains"
+
+for signal in "$DOMAINS_ROOT"/*/tmp/.purge-cache; do
+    [ -f "$signal" ] || continue
+
+    DOMAIN_DIR=$(cat "$signal" 2>/dev/null)
+
+    # Remove signal immediately
+    rm -f "$signal"
+
+    # Validate: only allow alphanumeric and underscore
+    [[ "$DOMAIN_DIR" =~ ^[a-zA-Z0-9_]+$ ]] || continue
+
+    # Run purge
+    if [ -x "$PURGE_SCRIPT" ]; then
+        "$PURGE_SCRIPT" "$DOMAIN_DIR"
+    elif [ -d "$CACHE_BASE/$DOMAIN_DIR" ]; then
+        find "$CACHE_BASE/$DOMAIN_DIR" -type f -delete 2>/dev/null
+    fi
+done

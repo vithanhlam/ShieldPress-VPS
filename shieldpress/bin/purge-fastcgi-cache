@@ -1,0 +1,23 @@
+#!/bin/bash
+# ShieldPress FastCGI Cache Purge Helper
+# Called via sudo from PHP mu-plugin.
+# Only accepts a sanitized domain directory name.
+
+CACHE_BASE="/var/cache/nginx"
+
+DOMAIN_DIR="$1"
+
+# Validate: only allow alphanumeric and underscore (matches CLEAN_DOMAIN format)
+if [[ ! "$DOMAIN_DIR" =~ ^[a-zA-Z0-9_]+$ ]]; then
+    echo "Invalid domain directory name" >&2
+    exit 1
+fi
+
+CACHE_DIR="$CACHE_BASE/$DOMAIN_DIR"
+
+if [ ! -d "$CACHE_DIR" ]; then
+    exit 0
+fi
+
+find "$CACHE_DIR" -type f -delete 2>/dev/null
+exit 0
