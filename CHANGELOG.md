@@ -1,11 +1,25 @@
 # ShieldPress VPS - Changelog
 
-## v1.3.9 — 2026-08-17 — Public GPLv3 repository layout
+## v1.3.9 — 2026-08-17 — Public GPLv3 repository layout, GitHub update source
 
 - Published repository under GPLv3 with `LICENSE`, `CONTRIBUTING.md`, and `SECURITY.md`.
 - Reorganized source under `shieldpress/` for clearer install-from-git workflow.
 - Added root `install.sh` and `tests/smoke.sh` for clone install and PR checks.
 - About screen license label updated from Proprietary to GPLv3.
+
+### Update source moved to GitHub (`core/update-source.sh`)
+
+Version checks and update packages now come from the GitHub repository instead of a
+private update server, so a domain only has to serve the bootstrap installer.
+
+- New `core/update-source.sh` resolves the version URL, package candidates, checksum URL,
+  and locates the source root inside an extracted archive.
+- `modules/update/updater.sh` tries the release asset, then the tag tarball, then the
+  branch tarball, verifying the published SHA-256 when a release checksum exists.
+- `modules/update/update-menu.sh`, `shieldpress.sh`, and the login profile check the
+  GitHub version file, with the newest release tag as fallback.
+- Root `install.sh` works from a clone or piped through `curl`, and writes
+  `/etc/shieldpress/update.conf` so the repo and branch can be overridden per server.
 
 ---
 

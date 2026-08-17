@@ -3,6 +3,7 @@
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
 source "$BASE_DIR/core/ui.sh"
+source "$BASE_DIR/core/update-source.sh"
 
 while true; do
     clear
@@ -17,12 +18,12 @@ while true; do
     case $CHOICE in
         1)
             echo ""
-            echo "Checking latest version..."
+            echo "Checking latest version on github.com/$SHIELDPRESS_GITHUB_REPO ..."
 
-            REMOTE=$(curl -fsS --connect-timeout 5 --max-time 10 https://install.shieldpress.net/version.txt 2>/dev/null | tr -d '[:space:]')
+            REMOTE=$(sp_remote_version || true)
 
             if [ -z "$REMOTE" ]; then
-                echo "[ERROR] Cannot connect to update server."
+                echo "[ERROR] Cannot reach GitHub to check for updates."
                 echo ""
                 read -p "Press Enter..."
                 continue

@@ -8,6 +8,7 @@ fi
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh" 2>/dev/null || true
+source "$BASE_DIR/core/update-source.sh" 2>/dev/null || true
 MODULE_DIR="$BASE_DIR/modules"
 SHIELDPRESS_ACTION=""
 
@@ -45,7 +46,7 @@ RESET="\e[0m"
 BAR_WIDTH=30
 
 VERSION_FILE="$BASE_DIR/version.txt"
-UPDATE_VERSION_URL="https://install.shieldpress.net/version.txt"
+UPDATE_VERSION_URL="${SHIELDPRESS_VERSION_URL:-https://raw.githubusercontent.com/vithanhlam/ShieldPress-VPS/main/shieldpress/version.txt}"
 
 if [ -f "$VERSION_FILE" ]; then
     SHIELDPRESS_VERSION=$(tr -d '[:space:]' < "$VERSION_FILE")

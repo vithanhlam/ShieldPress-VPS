@@ -64,7 +64,10 @@ if [ -z "$SHIELDPRESS_HELP_SHOWN" ] && [ -t 1 ] && [ "$(id -u)" -eq 0 ] && comma
 
     # Check for update (quick, 3s timeout)
     if command -v curl >/dev/null 2>&1; then
-        _SP_REMOTE=$(curl -fsS --connect-timeout 3 --max-time 5 "https://install.shieldpress.net/version.txt" 2>/dev/null | tr -d '[:space:]')
+        _SP_VERSION_URL="https://raw.githubusercontent.com/vithanhlam/ShieldPress-VPS/main/shieldpress/version.txt"
+        [ -f /etc/shieldpress/update.conf ] && . /etc/shieldpress/update.conf 2>/dev/null
+        [ -n "$SHIELDPRESS_VERSION_URL" ] && _SP_VERSION_URL="$SHIELDPRESS_VERSION_URL"
+        _SP_REMOTE=$(curl -fsSL --connect-timeout 3 --max-time 5 "$_SP_VERSION_URL" 2>/dev/null | tr -d '[:space:]')
         if [ -n "$_SP_REMOTE" ] && [ "$_SP_REMOTE" != "$_SP_VER" ]; then
             echo -e "  \e[1m\e[33m⚡ Update available: v${_SP_REMOTE} (installed: v${_SP_VER})\e[0m"
             echo -e "  \e[2mRun: shieldpress update\e[0m"
@@ -76,7 +79,7 @@ if [ -z "$SHIELDPRESS_HELP_SHOWN" ] && [ -t 1 ] && [ "$(id -u)" -eq 0 ] && comma
     echo -e "  \e[2mType 'shieldpress' for full dashboard\e[0m"
     echo ""
 
-    unset _SP_VER _SP_REMOTE
+    unset _SP_VER _SP_REMOTE _SP_VERSION_URL
 fi
 PROFILE_EOF
 chmod 644 /etc/profile.d/shieldpress.sh

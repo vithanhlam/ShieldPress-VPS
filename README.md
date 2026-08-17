@@ -55,6 +55,34 @@ sudo bash install.sh
 
 This copies `shieldpress/` into `/opt/shieldpress` and finishes command setup.
 
+## Update Source
+
+Installation and updates can be triggered from your own domain, but the source
+code and version check always come from GitHub.
+
+- Version check: `https://raw.githubusercontent.com/vithanhlam/ShieldPress-VPS/main/shieldpress/version.txt`
+- Package, in order of preference:
+  1. Release asset `shieldpress.tar.gz` for tag `v<version>`
+  2. Tag tarball `v<version>`
+  3. Branch tarball `main`
+
+To publish the install command on your own domain, serve this repository's
+root `install.sh` at that URL. The script downloads everything else from GitHub:
+
+```bash
+curl -fsSL https://install.shieldpress.net | bash
+```
+
+Override the source on a server with `/etc/shieldpress/update.conf`:
+
+```bash
+SHIELDPRESS_GITHUB_REPO="vithanhlam/ShieldPress-VPS"
+SHIELDPRESS_GITHUB_BRANCH="main"
+```
+
+Cutting a release: update `shieldpress/version.txt`, commit, then tag `v<version>`
+so `shieldpress update` sees the new version.
+
 ## Quick Commands
 
 ```bash

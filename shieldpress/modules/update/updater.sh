@@ -16,12 +16,8 @@ LOCK_FILE="/tmp/shieldpress_update.lock"
 
 VERSION_FILE="$BASE_DIR/version.txt"
 source "$BASE_DIR/core/paths.sh"
+source "$BASE_DIR/core/update-source.sh"
 LOG_FILE="$LOG_DIR/update.log"
-
-UPDATE_SERVER="https://install.shieldpress.net"
-VERSION_URL="$UPDATE_SERVER/version.txt"
-PACKAGE_URL="$UPDATE_SERVER/shieldpress.tar.gz"
-CHECKSUM_URL="$UPDATE_SERVER/shieldpress.sha256"
 
 mkdir -p "$BACKUP_DIR" "$TMP_DIR" "$LOG_DIR"
 
@@ -123,13 +119,14 @@ CURRENT=$(tr -d '[:space:]' < "$VERSION_FILE" 2>/dev/null || fail "version.txt n
 TARGET_VERSION="${SHIELDPRESS_TARGET_VERSION:-}"
 
 if [ -z "$TARGET_VERSION" ]; then
-    TARGET_VERSION=$(curl -fsS --connect-timeout 5 --max-time 10 "$VERSION_URL" 2>/dev/null | tr -d '[:space:]' || true)
+    TARGET_VERSION=$(sp_remote_version || true)
 fi
 
 if [ -z "$TARGET_VERSION" ]; then
-    fail "Cannot detect latest version"
+    fail "Cannot detect latest version from $SHIELDPRESS_GITHUB_REPO"
 fi
 
+log "Update source: github.com/$SHIELDPRESS_GITHUB_REPO"
 log "Current version: $CURRENT"
 log "Target version: $TARGET_VERSION"
 
@@ -162,34 +159,68 @@ ok "Backup created: $BACKUP_FILE"
 # =========================================
 # DOWNLOAD + VERIFY
 # =========================================
-log "Downloading update..."
+log "Downloading update from GitHub..."
 
+EXTRACT_DIR="$TMP_DIR/extract"
 rm -rf "$TMP_DIR" "$NEW_DIR"
-mkdir -p "$TMP_DIR" "$NEW_DIR"
+mkdir -p "$TMP_DIR" "$NEW_DIR" "$EXTRACT_DIR"
 cd "$TMP_DIR"
 
-curl -L "$PACKAGE_URL" -o shieldpress.tar.gz || fail "Download failed"
-curl -s "$CHECKSUM_URL" -o shieldpress.sha256 || fail "Checksum failed"
-
-EXPECTED=$(awk '{print $1}' shieldpress.sha256)
-ACTUAL=$(sha256sum shieldpress.tar.gz | awk '{print $1}')
-
-[ "$EXPECTED" = "$ACTUAL" ] || fail "Checksum mismatch"
-ok "Integrity verified"
-
-# =========================================
-# EXTRACT
-# =========================================
-log "Extracting..."
-tar -xzf shieldpress.tar.gz -C "$NEW_DIR" || fail "tar extraction failed"
-
-# Detect tar structure: files may be under $NEW_DIR/ or $NEW_DIR/shieldpress/
-if [ ! -f "$NEW_DIR/shieldpress.sh" ] && [ -f "$NEW_DIR/shieldpress/shieldpress.sh" ]; then
-    log "Package has shieldpress/ prefix, adjusting..."
-    mv "$NEW_DIR/shieldpress"/* "$NEW_DIR/"
-    mv "$NEW_DIR/shieldpress"/.* "$NEW_DIR/" 2>/dev/null || true
-    rmdir "$NEW_DIR/shieldpress" 2>/dev/null || true
+CHECKSUM_URL=$(sp_checksum_url "$TARGET_VERSION")
+EXPECTED=""
+if [ -n "$CHECKSUM_URL" ]; then
+    curl -fsSL --connect-timeout 5 --max-time 20 "$CHECKSUM_URL" -o shieldpress.sha256 2>/dev/null \
+        && EXPECTED=$(awk '{print $1}' shieldpress.sha256 2>/dev/null) \
+        || EXPECTED=""
 fi
+
+SOURCE_ROOT=""
+PACKAGE_USED=""
+
+while IFS= read -r CANDIDATE_URL; do
+    [ -n "$CANDIDATE_URL" ] || continue
+    log "Trying package: $CANDIDATE_URL"
+
+    rm -f shieldpress.tar.gz
+    rm -rf "$EXTRACT_DIR"
+    mkdir -p "$EXTRACT_DIR"
+
+    if ! curl -fsSL --connect-timeout 10 --max-time 300 "$CANDIDATE_URL" -o shieldpress.tar.gz 2>/dev/null; then
+        log "Package not available, trying next source"
+        continue
+    fi
+
+    if [ -n "$EXPECTED" ]; then
+        ACTUAL=$(sha256sum shieldpress.tar.gz | awk '{print $1}')
+        if [ "$EXPECTED" != "$ACTUAL" ]; then
+            log "Checksum mismatch for this package, trying next source"
+            continue
+        fi
+        ok "Integrity verified"
+    fi
+
+    if ! tar -xzf shieldpress.tar.gz -C "$EXTRACT_DIR" 2>/dev/null; then
+        log "Extraction failed, trying next source"
+        continue
+    fi
+
+    SOURCE_ROOT=$(sp_find_source_root "$EXTRACT_DIR" || true)
+    if [ -n "$SOURCE_ROOT" ]; then
+        PACKAGE_USED="$CANDIDATE_URL"
+        break
+    fi
+
+    log "Package has no runtime source, trying next source"
+done < <(sp_package_urls "$TARGET_VERSION")
+
+[ -n "$SOURCE_ROOT" ] || fail "Cannot download a valid package from GitHub"
+ok "Package ready: $PACKAGE_USED"
+
+# =========================================
+# STAGE NEW SOURCE
+# =========================================
+log "Staging new version..."
+rsync -a "$SOURCE_ROOT/" "$NEW_DIR/" || fail "Cannot stage new source"
 
 [ -f "$NEW_DIR/shieldpress.sh" ] || fail "shieldpress.sh not found after extraction"
 

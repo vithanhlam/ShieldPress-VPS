@@ -37,6 +37,7 @@ require_file "$ROOT/install.sh"
 require_file "$ROOT/shieldpress/shieldpress.sh"
 require_file "$ROOT/shieldpress/install.sh"
 require_file "$ROOT/shieldpress/version.txt"
+require_file "$ROOT/shieldpress/core/update-source.sh"
 require_dir  "$ROOT/shieldpress/core"
 require_dir  "$ROOT/shieldpress/modules"
 require_dir  "$ROOT/tests"
@@ -51,6 +52,17 @@ if grep -qi 'Co-authored-by:' "$ROOT"/README.md "$ROOT"/CONTRIBUTING.md "$ROOT"/
     fail "docs contain co-author attribution"
 else
     pass "docs contain no co-author attribution"
+fi
+
+if (
+    # shellcheck disable=SC1091
+    source "$ROOT/shieldpress/core/update-source.sh" 2>/dev/null \
+        && [ -n "$SHIELDPRESS_VERSION_URL" ] \
+        && sp_package_urls "1.0.0" | grep -q '^https://github.com/'
+); then
+    pass "update source resolves to GitHub"
+else
+    fail "update source does not resolve to GitHub"
 fi
 
 echo
