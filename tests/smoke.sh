@@ -42,10 +42,12 @@ require_dir  "$ROOT/shieldpress/core"
 require_dir  "$ROOT/shieldpress/modules"
 require_dir  "$ROOT/tests"
 
-if [ -f "$ROOT/LICENSE" ] && grep -q "GNU GENERAL PUBLIC LICENSE" "$ROOT/LICENSE" && grep -q "Version 3" "$ROOT/LICENSE"; then
-    pass "LICENSE is GPLv3"
+if [ -f "$ROOT/LICENSE" ] \
+    && grep -q "All Rights Reserved" "$ROOT/LICENSE" \
+    && grep -q "ShieldPress VPS Proprietary License" "$ROOT/LICENSE"; then
+    pass "LICENSE is proprietary"
 else
-    fail "LICENSE is not GPLv3"
+    fail "proprietary LICENSE is missing or invalid"
 fi
 
 if grep -qi 'Co-authored-by:' "$ROOT"/README.md "$ROOT"/CONTRIBUTING.md "$ROOT"/SECURITY.md 2>/dev/null; then

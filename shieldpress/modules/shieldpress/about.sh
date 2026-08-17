@@ -44,7 +44,7 @@ sp_hr
 echo -e "${SP_CYAN}|${SP_RESET}                                                                            ${SP_CYAN}|${SP_RESET}"
 echo -e "${SP_CYAN}|${SP_RESET}  ${SP_BOLD}Version${SP_RESET}  : ${SP_WHITE}${VERSION:-unknown}${SP_RESET}                                                     ${SP_CYAN}|${SP_RESET}"
 echo -e "${SP_CYAN}|${SP_RESET}  ${SP_BOLD}Website${SP_RESET}  : ${SP_GREEN}https://shieldpress.net${SP_RESET}                                       ${SP_CYAN}|${SP_RESET}"
-echo -e "${SP_CYAN}|${SP_RESET}  ${SP_BOLD}License${SP_RESET}  : ${SP_WHITE}GPLv3${SP_RESET}                                                         ${SP_CYAN}|${SP_RESET}"
+echo -e "${SP_CYAN}|${SP_RESET}  ${SP_BOLD}License${SP_RESET}  : ${SP_WHITE}Proprietary - All Rights Reserved${SP_RESET}                            ${SP_CYAN}|${SP_RESET}"
 echo -e "${SP_CYAN}|${SP_RESET}                                                                            ${SP_CYAN}|${SP_RESET}"
 echo -e "${SP_CYAN}|${SP_RESET}  ${SP_DIM}Thank you for choosing ShieldPress. We build tools we trust${SP_RESET}              ${SP_CYAN}|${SP_RESET}"
 echo -e "${SP_CYAN}|${SP_RESET}  ${SP_DIM}with our own servers - and we hope you will too.${SP_RESET}                         ${SP_CYAN}|${SP_RESET}"

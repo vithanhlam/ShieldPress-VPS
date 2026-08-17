@@ -1,5 +1,19 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.14 — 2026-08-17 — Proprietary licensing and brand protection
+
+- Changed new releases from GPLv3 to the ShieldPress VPS Proprietary License.
+- Reserved all rights to the source code and prohibited unauthorized copying,
+  modification, forking, redistribution, rebranding, resale, and derivative
+  releases.
+- Added `TRADEMARK.md` to protect the ShieldPress brand and official identity.
+- Established vithanhlam as the sole author of the official project and
+  prohibited AI author or co-author attribution.
+- Clarified that previously distributed GPLv3 versions retain their existing
+  GPLv3 rights and are not relicensed retroactively.
+
+---
+
 ## v1.3.13 — 2026-08-17 — GitHub-powered installation and updates
 
 - Added a GitHub-backed update source for version checks and source packages.

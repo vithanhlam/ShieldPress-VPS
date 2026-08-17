@@ -4,9 +4,9 @@
 
 # ShieldPress VPS
 
-**Current version:** `1.3.13`
+**Current version:** `1.3.14`
 
-**License:** [GPLv3](LICENSE) · Pull requests welcome — see [CONTRIBUTING.md](CONTRIBUTING.md)
+**License:** [Proprietary — All Rights Reserved](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
 ShieldPress VPS is a terminal-based server management toolkit for Linux VPS, focused on deploying websites, managing domains, SSL, WordPress, Laravel, Node.js, databases, cache, backup, security, performance optimization, email and system monitoring.
 
@@ -103,7 +103,8 @@ shieldpress help     # Show help
 ShieldPress-VPS/
 ├── README.md
 ├── CHANGELOG.md
-├── LICENSE                 # GPLv3
+├── LICENSE                 # Proprietary — All Rights Reserved
+├── TRADEMARK.md            # Brand / sole-author policy
 ├── CONTRIBUTING.md
 ├── SECURITY.md
 ├── install.sh              # Install from a git clone
@@ -591,7 +592,8 @@ shieldpress help               # Help displays correctly
 
 ## Contributing
 
-Pull requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
+Bug reports and feature suggestions are welcome. Code contributions and pull
+requests require prior written approval. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Security
 
@@ -599,7 +601,25 @@ Report vulnerabilities privately using [SECURITY.md](SECURITY.md). Do not file p
 
 ## License
 
-ShieldPress VPS is released under the [GNU General Public License v3.0](LICENSE).
+ShieldPress VPS is proprietary software:
+**Copyright © 2026 vithanhlam. All Rights Reserved.**
+
+Official author of this repository: **[vithanhlam](https://github.com/vithanhlam)** only.
+
+You may install and run an unmodified copy under the limited terms in
+[LICENSE](LICENSE). Without prior written permission, you may not copy,
+modify, fork, redistribute, republish, rebrand, resell, or develop and
+release another product from this source code.
+
+Earlier versions that were already released under GPLv3 remain governed by
+GPLv3 for recipients of those specific versions; that prior grant cannot be
+revoked retroactively.
+
+## Trademark
+
+ShieldPress names, logos, and official channels are protected. You may not
+use ShieldPress branding to sell, rebrand, impersonate, or publish a
+competing clone. See [TRADEMARK.md](TRADEMARK.md).
 
 ## Changelog
 
