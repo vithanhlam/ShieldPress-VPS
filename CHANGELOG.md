@@ -1,5 +1,16 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.13 — 2026-08-17 — GitHub-powered installation and updates
+
+- Added a GitHub-backed update source for version checks and source packages.
+- Added support for installation through a custom-domain bootstrap script while downloading the source from GitHub.
+- Added release asset, release tag, and `main` branch package fallbacks.
+- Added optional SHA-256 verification for release packages.
+- Updated the public project screenshot and release metadata.
+- Kept all README and version information in English.
+
+---
+
 ## v1.3.9 — 2026-08-17 — Public GPLv3 repository layout, GitHub update source
 
 - Published repository under GPLv3 with `LICENSE`, `CONTRIBUTING.md`, and `SECURITY.md`.

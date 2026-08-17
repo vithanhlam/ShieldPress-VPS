@@ -35,7 +35,7 @@ sp_remote_version(){
 }
 
 # Candidate package URLs, most specific first.
-# Usage: sp_package_urls "1.3.9"
+# Usage: sp_package_urls "1.3.13"
 sp_package_urls(){
     local version="${1:-}"
 
