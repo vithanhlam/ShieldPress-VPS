@@ -1,109 +1,270 @@
-ShieldPress VPS Proprietary License
+ShieldPress Source-Available Software License
+Version 1.0
 
 Copyright (c) 2026 vithanhlam. All Rights Reserved.
 
-IMPORTANT: READ THIS LICENSE BEFORE USING THE SOFTWARE.
+IMPORTANT: READ THIS LICENSE CAREFULLY BEFORE USING THE SOFTWARE.
 
-This repository and all source code, scripts, documentation, artwork, and
-other materials in it (the "Software") are proprietary works owned by
-vithanhlam, except for third-party components that identify their own
-licenses.
+This is a source-available software license. It is not an Open Source
+license. Publication of the source code on GitHub or any other hosting
+platform does not transfer ownership of the Software and does not grant
+Open Source rights.
 
-1. LIMITED RIGHT TO USE
 
-Subject to this License, vithanhlam grants you a limited, revocable,
-non-exclusive, non-transferable right to install and run an unmodified copy
-of the Software on servers that you own or are authorized to manage. No
-ownership or other rights are transferred to you.
+1. DEFINITIONS
 
-2. RESTRICTIONS
+   "Copyright Holder" means vithanhlam, the owner of the copyright and
+   other intellectual property rights in ShieldPress.
 
-Unless you have prior written permission from vithanhlam, you may not:
+   "Software" means ShieldPress software published by the Copyright Holder
+   in official repositories, including without limitation ShieldPress VPS
+   and ShieldPress Local, together with their source code, binaries,
+   scripts, documentation, artwork, and other materials in those
+   repositories, except for Third-Party Components.
 
-a. copy, reproduce, publish, upload, distribute, sublicense, sell, rent,
-   lease, or otherwise make the Software or its source code available to
-   another person or through another repository, website, package, image,
-   archive, or service;
+   "Official Repository" means a public or private repository designated by
+   the Copyright Holder as an official ShieldPress project, including the
+   official ShieldPress VPS and ShieldPress Local repositories.
 
-b. modify, adapt, translate, reverse engineer, decompile, disassemble,
-   create derivative works from, or independently develop and release a
-   product based on the Software;
+   "You" (or "Licensee") means the individual or legal entity exercising
+   rights under this License.
 
-c. clone, mirror, fork, or republish the Software for public or private
-   distribution, including publication on GitHub or another source hosting
-   platform;
+   "Contribution" means any source code, documentation, patch, bug fix,
+   feature, suggestion in code form, or other material that You submit to
+   an Official Repository, including by Pull Request, issue attachment, or
+   other contribution channel.
 
-d. rebrand, white-label, resell, commercially exploit, or offer the
-   Software or a derivative as a product, hosted service, managed platform,
-   installer, control panel, or competing project;
+   "Internal Use" means use by You for Your own personal purposes, or use
+   solely within Your organization for that organization's own internal
+   operations, and not for distribution, resale, sublicensing, hosting for
+   third parties, or public release.
 
-e. remove, alter, or conceal copyright, authorship, license, trademark, or
-   proprietary notices;
+   "Third-Party Components" means libraries, packages, or other materials
+   included with or used by the Software that are owned by third parties
+   and distributed under their own licenses.
 
-f. use the ShieldPress name, logos, domains, screenshots, or other brand
-   assets except as expressly permitted by TRADEMARK.md; or
 
-g. claim authorship of the Software or identify an AI system, automated
-   tool, or any person other than vithanhlam as an author of the official
-   project.
+2. GRANT OF RIGHTS
 
-Downloading or viewing publicly accessible source code does not grant any
-right beyond the limited right to use stated in Section 1.
+   Subject to Your continuous compliance with this License, the Copyright
+   Holder grants You a limited, non-exclusive, non-transferable,
+   non-sublicensable, revocable, royalty-free license to:
 
-3. BACKUP COPY
+   a. view, read, study, and audit the source code of the Software,
+      including for security review, learning, and research;
 
-You may make one private backup copy solely for disaster recovery. The
-backup must retain all notices and may not be shared, published, or used to
-create another product.
+   b. clone an Official Repository;
 
-4. COMMERCIAL PERMISSION
+   c. build, install, and run the Software for personal use or Internal Use;
 
-Any redistribution, modification, white-labeling, resale, source-code use,
-or other commercial exploitation requires a separate written license from
-vithanhlam. Permission may be requested at support@shieldpress.net.
+   d. modify the source code of the Software for personal use or Internal
+      Use, provided that modified copies are not distributed except as
+      permitted in Section 2(e);
 
-5. THIRD-PARTY SOFTWARE
+   e. submit modifications, bug fixes, or features to an Official Repository
+      as a Contribution through a Pull Request or another official
+      contribution channel, and create a fork or copy solely to the extent
+      necessary to prepare and submit that Contribution;
 
-Third-party software, packages, and dependencies remain governed by their
-respective licenses. This License applies only to material for which
-vithanhlam owns the applicable rights.
+   f. report bugs, open issues, and otherwise participate in official
+      project discussion; and
 
-6. PRIOR GPL RELEASES
+   g. use official releases of the Software free of charge under the terms
+      of this License.
 
-Versions or copies that vithanhlam previously released under the GNU General
-Public License version 3 remain governed by GPLv3 for recipients who
-received those specific versions under that license. This proprietary
-License applies to the Software released with this License and does not
-retroactively revoke rights already granted for earlier GPLv3 releases.
+   No other rights are granted, whether by implication, estoppel, or
+   otherwise. Ownership of the Software is not transferred to You.
 
-7. TERMINATION
 
-Your permission under this License terminates automatically if you breach
-any term. Upon termination, you must stop using the Software and delete all
-copies in your possession or control, except where applicable law requires
-retention.
+3. RESTRICTIONS
 
-8. NO WARRANTY
+   Except as expressly permitted in Section 2, or unless You have obtained
+   prior written permission from the Copyright Holder, You may not:
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
-PURPOSE, TITLE, AND NON-INFRINGEMENT. YOU USE THE SOFTWARE AT YOUR OWN RISK.
+   a. redistribute the source code or binaries of the Software as a
+      standalone product, package, image, archive, installer, or similar
+      distribution;
 
-9. LIMITATION OF LIABILITY
+   b. publicly release, publish, host, mirror, or otherwise distribute a
+      fork, clone, or modified version of the Software, including on GitHub
+      or any other source-hosting or download platform;
 
-TO THE MAXIMUM EXTENT PERMITTED BY LAW, VITHANHLAM WILL NOT BE LIABLE FOR
-ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR EXEMPLARY
-DAMAGES, INCLUDING LOSS OF DATA, PROFITS, REVENUE, OR BUSINESS, ARISING
-FROM OR RELATED TO THE SOFTWARE OR THIS LICENSE.
+   c. rebrand the Software, or any substantial portion of it, as a
+      different product and distribute that product;
 
-10. NO WAIVER
+   d. sell, rent, lease, sublicense, or otherwise commercialize the
+      Software, its source code, or a derivative product that is primarily
+      based on ShieldPress;
 
-Failure to enforce a provision is not a waiver of that provision or any
-other right.
+   e. provide the Software, or a derivative or modified version of it, as a
+      competing product, hosted service, software-as-a-service (SaaS),
+      managed service, or other commercial service to third parties;
 
-11. CONTACT
+   f. remove, alter, or obscure copyright notices, license notices,
+      attribution, or other proprietary notices in the Software; or
 
-Licensing and permission requests: support@shieldpress.net
+   g. use the ShieldPress name, logo, icon, or other brand assets in a
+      manner that is likely to cause others to believe that an unofficial
+      product is released, sponsored, endorsed, or certified by ShieldPress
+      or the Copyright Holder.
 
-By installing, running, copying, or otherwise using the Software, you
-acknowledge that you have read and agree to this License.
+   A public GitHub fork is permitted only as a working copy from which You
+   submit Contributions to an Official Repository. You may not use a public
+   fork, mirror, or modified copy as an independent distribution, product,
+   or service.
+
+
+4. CONTRIBUTIONS
+
+   By submitting a Contribution to an Official Repository, You grant the
+   Copyright Holder a perpetual, worldwide, non-exclusive, royalty-free,
+   irrevocable license to use, reproduce, modify, prepare derivative works
+   of, incorporate, display, perform, distribute, sublicense, and relicense
+   that Contribution, in source or object form, as part of ShieldPress or
+   any related product of the Copyright Holder, including under this
+   License or under a separate commercial license.
+
+   You retain copyright in the original portions of Your Contribution,
+   unless You and the Copyright Holder agree otherwise in writing.
+
+   You represent and warrant that:
+
+   a. You have the legal right to submit the Contribution and to grant the
+      license in this Section 4; and
+
+   b. the Contribution does not, to Your knowledge, infringe the
+      intellectual property or other rights of any third party.
+
+   Submitting a Contribution does not make You an owner, co-owner, or
+   official publisher of ShieldPress.
+
+
+5. OWNERSHIP
+
+   The Software is licensed, not sold. The Copyright Holder retains all
+   right, title, and interest in and to ShieldPress, including all
+   copyrights, trade secrets, and other intellectual property rights,
+   except for Third-Party Components and except for copyright that a
+   contributor retains in that contributor's own original Contribution as
+   described in Section 4.
+
+   Making the source code publicly available on GitHub or elsewhere:
+
+   a. does not transfer ownership of the Software to You or to the public;
+      and
+
+   b. does not convert ShieldPress into Open Source software.
+
+   All rights not expressly granted in this License are reserved by the
+   Copyright Holder.
+
+
+6. TRADEMARKS
+
+   This License does not grant any rights in or to:
+
+   a. the ShieldPress name;
+   b. ShieldPress logos;
+   c. product icons;
+   d. domain names;
+   e. branding; or
+   f. other trademarks, service marks, trade names, or trade dress of the
+      Copyright Holder.
+
+   Trademark and brand use is governed by applicable trademark law and by
+   any separate trademark policy published by the Copyright Holder,
+   including TRADEMARK.md in Official Repositories where that file is
+   present.
+
+
+7. THIRD-PARTY COMPONENTS
+
+   Third-Party Components included with, bundled in, or used by the
+   Software remain subject to their own licenses. This License applies only
+   to material for which the Copyright Holder owns the applicable rights
+   and does not modify, replace, or supersede the licenses of Third-Party
+   Components. You are responsible for complying with those separate
+   licenses.
+
+
+8. PRIOR GPL RELEASES
+
+   Versions or copies that the Copyright Holder previously released under
+   the GNU General Public License version 3 remain governed by GPLv3 for
+   recipients who received those specific versions under that license.
+   This License applies to the Software released with this License and does
+   not retroactively revoke rights already granted for earlier GPLv3
+   releases.
+
+
+9. COMMERCIAL LICENSING
+
+   The Copyright Holder may grant additional rights under a separate
+   written agreement, including commercial licensing, redistribution
+   rights, OEM arrangements, white-label rights, hosted-service rights, or
+   other permissions.
+
+   Commercial licensing, redistribution rights, OEM arrangements, or other
+   permissions may be available separately from the Copyright Holder.
+
+   Inquiries: support@shieldpress.net
+
+
+10. TERM AND TERMINATION
+
+    This License continues until terminated. Your rights under this License
+    terminate automatically if You fail to comply with any of its terms.
+
+    Upon termination, You must cease all use of the Software and destroy
+    or delete all copies in Your possession or control, except to the
+    extent that applicable law requires retention.
+
+    Sections 4, 5, 6, 7, 11, 12, and 13 survive termination.
+
+
+11. WARRANTY DISCLAIMER
+
+    THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY
+    OF ANY KIND, EXPRESS, IMPLIED, OR STATUTORY, INCLUDING BUT NOT LIMITED
+    TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE,
+    TITLE, ACCURACY, AVAILABILITY, AND NON-INFRINGEMENT. YOU USE THE
+    SOFTWARE AT YOUR OWN RISK. THE COPYRIGHT HOLDER DOES NOT WARRANT THAT
+    THE SOFTWARE WILL BE ERROR-FREE, SECURE, OR UNINTERRUPTED.
+
+
+12. LIMITATION OF LIABILITY
+
+    TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE COPYRIGHT
+    HOLDER WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+    SPECIAL, CONSEQUENTIAL, PUNITIVE, OR EXEMPLARY DAMAGES, INCLUDING
+    WITHOUT LIMITATION LOSS OF DATA, PROFITS, REVENUE, GOODWILL, OR
+    BUSINESS, ARISING OUT OF OR RELATED TO THE SOFTWARE OR THIS LICENSE,
+    WHETHER IN CONTRACT, TORT (INCLUDING NEGLIGENCE), STRICT LIABILITY, OR
+    OTHERWISE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+    IF APPLICABLE LAW DOES NOT ALLOW THE EXCLUSION OF CERTAIN DAMAGES, THE
+    COPYRIGHT HOLDER'S TOTAL LIABILITY SHALL NOT EXCEED THE AMOUNT YOU
+    PAID TO THE COPYRIGHT HOLDER FOR THE SOFTWARE IN THE TWELVE (12)
+    MONTHS BEFORE THE CLAIM, OR USD $0 IF YOU PAID NOTHING.
+
+
+13. GENERAL
+
+    Failure by the Copyright Holder to enforce any provision of this
+    License is not a waiver of that provision or of any other right.
+
+    If any provision of this License is held unenforceable, the remaining
+    provisions will continue in full force and effect.
+
+    You may not assign this License without the prior written consent of
+    the Copyright Holder. The Copyright Holder may assign this License.
+
+    This License constitutes the entire agreement between You and the
+    Copyright Holder concerning the Software, except for any separate
+    written commercial license or permission.
+
+    Licensing and permission requests: support@shieldpress.net
+
+    By cloning, installing, running, copying, modifying, contributing to,
+    or otherwise using the Software, You acknowledge that You have read,
+    understood, and agree to be bound by this License.

@@ -1,5 +1,19 @@
 # ShieldPress VPS - Changelog
 
+## Unreleased — Source-Available Software License
+
+- Replaced the ShieldPress VPS Proprietary License with the ShieldPress
+  Source-Available Software License.
+- Allowed viewing, security audit, personal and internal use, private
+  modification, and contributions through Pull Requests.
+- Continued to prohibit public redistribution, competing forks, rebranding,
+  sale, sublicensing, and hosted or SaaS commercial use without a separate
+  written license.
+- Clarified that public source on GitHub does not transfer ownership and
+  does not make ShieldPress Open Source software.
+
+---
+
 ## v1.3.14 — 2026-08-17 — Proprietary licensing and brand protection
 
 - Changed new releases from GPLv3 to the ShieldPress VPS Proprietary License.

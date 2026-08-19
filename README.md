@@ -6,7 +6,7 @@
 
 **Current version:** `1.3.14`
 
-**License:** [Proprietary — All Rights Reserved](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
+**License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
 ShieldPress VPS is a terminal-based server management toolkit for Linux VPS, focused on deploying websites, managing domains, SSL, WordPress, Laravel, Node.js, databases, cache, backup, security, performance optimization, email and system monitoring.
 
@@ -103,7 +103,7 @@ shieldpress help     # Show help
 ShieldPress-VPS/
 ├── README.md
 ├── CHANGELOG.md
-├── LICENSE                 # Proprietary — All Rights Reserved
+├── LICENSE                 # ShieldPress Source-Available Software License
 ├── TRADEMARK.md            # Brand / sole-author policy
 ├── CONTRIBUTING.md
 ├── SECURITY.md
@@ -592,8 +592,9 @@ shieldpress help               # Help displays correctly
 
 ## Contributing
 
-Bug reports and feature suggestions are welcome. Code contributions and pull
-requests require prior written approval. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Bug reports, security review, research, and Pull Requests are welcome.
+See [CONTRIBUTING.md](CONTRIBUTING.md). By submitting a Pull Request, you
+grant the contribution license in [LICENSE](LICENSE).
 
 ## Security
 
@@ -601,19 +602,26 @@ Report vulnerabilities privately using [SECURITY.md](SECURITY.md). Do not file p
 
 ## License
 
-ShieldPress VPS is proprietary software:
+ShieldPress VPS is licensed under the **ShieldPress Source-Available
+Software License**.
 **Copyright © 2026 vithanhlam. All Rights Reserved.**
 
-Official author of this repository: **[vithanhlam](https://github.com/vithanhlam)** only.
+This is source-available software, not Open Source software. Publication of
+the source code does not transfer ownership.
 
-You may install and run an unmodified copy under the limited terms in
-[LICENSE](LICENSE). Without prior written permission, you may not copy,
-modify, fork, redistribute, republish, rebrand, resell, or develop and
-release another product from this source code.
+You may view, study, audit, clone, build, and run ShieldPress for personal
+or internal use, modify it for those purposes, and contribute changes back
+through Pull Requests. Without prior written permission, you may not
+redistribute ShieldPress as a standalone product, publish a public modified
+distribution, rebrand it, sell or sublicense it, or offer it as a competing
+product, hosted service, or SaaS. See [LICENSE](LICENSE).
 
 Earlier versions that were already released under GPLv3 remain governed by
 GPLv3 for recipients of those specific versions; that prior grant cannot be
 revoked retroactively.
+
+Commercial licensing, redistribution rights, OEM arrangements, or other
+permissions may be available separately from the copyright holder.
 
 ## Trademark
 

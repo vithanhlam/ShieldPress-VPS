@@ -44,10 +44,10 @@ require_dir  "$ROOT/tests"
 
 if [ -f "$ROOT/LICENSE" ] \
     && grep -q "All Rights Reserved" "$ROOT/LICENSE" \
-    && grep -q "ShieldPress VPS Proprietary License" "$ROOT/LICENSE"; then
-    pass "LICENSE is proprietary"
+    && grep -q "ShieldPress Source-Available Software License" "$ROOT/LICENSE"; then
+    pass "LICENSE is source-available"
 else
-    fail "proprietary LICENSE is missing or invalid"
+    fail "source-available LICENSE is missing or invalid"
 fi
 
 if grep -qi 'Co-authored-by:' "$ROOT"/README.md "$ROOT"/CONTRIBUTING.md "$ROOT"/SECURITY.md 2>/dev/null; then
