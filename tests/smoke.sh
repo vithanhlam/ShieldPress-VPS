@@ -31,7 +31,6 @@ echo
 require_file "$ROOT/README.md"
 require_file "$ROOT/CHANGELOG.md"
 require_file "$ROOT/LICENSE"
-require_file "$ROOT/CONTRIBUTING.md"
 require_file "$ROOT/SECURITY.md"
 require_file "$ROOT/install.sh"
 require_file "$ROOT/shieldpress/shieldpress.sh"
@@ -50,7 +49,7 @@ else
     fail "source-available LICENSE is missing or invalid"
 fi
 
-if grep -qi 'Co-authored-by:' "$ROOT"/README.md "$ROOT"/CONTRIBUTING.md "$ROOT"/SECURITY.md 2>/dev/null; then
+if grep -qi 'Co-authored-by:' "$ROOT"/README.md "$ROOT"/SECURITY.md 2>/dev/null; then
     fail "docs contain co-author attribution"
 else
     pass "docs contain no co-author attribution"

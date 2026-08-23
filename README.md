@@ -4,6 +4,14 @@
 
 # ShieldPress VPS
 
+> A practical control panel for running websites and services on an AlmaLinux VPS.
+
+<p>
+  <a href="https://github.com/vithanhlam/ShieldPress-VPS/releases"><img src="https://img.shields.io/github/v/release/vithanhlam/ShieldPress-VPS?style=flat-square" alt="Latest release"></a>
+  <a href="https://github.com/vithanhlam/ShieldPress-VPS/issues"><img src="https://img.shields.io/github/issues/vithanhlam/ShieldPress-VPS?style=flat-square" alt="GitHub issues"></a>
+  <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
+</p>
+
 **Current version:** `1.3.14`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
@@ -11,6 +19,30 @@
 ShieldPress VPS is a terminal-based server management toolkit for Linux VPS, focused on deploying websites, managing domains, SSL, WordPress, Laravel, Node.js, databases, cache, backup, security, performance optimization, email and system monitoring.
 
 Source code is in the `shieldpress/` directory. On the server it installs to `/opt/shieldpress`, domain data is stored at `/home/domains`.
+
+## Start here
+
+1. Use a fresh AlmaLinux 9 or 10 VPS with root SSH access.
+2. Connect to the server and run the installer below.
+3. Type `shieldpress` to open the dashboard.
+4. For bugs or setup problems, [open a GitHub Issue](https://github.com/vithanhlam/ShieldPress-VPS/issues).
+
+> **Important:** Back up important data before installing or upgrading server software. ShieldPress VPS is designed for AlmaLinux 9 and 10 only.
+
+<details>
+<summary>Contents</summary>
+
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [First steps after installation](#first-steps-after-installation)
+- [Update source](#update-source)
+- [Quick commands](#quick-commands)
+- [What is included](#what-is-included)
+- [Issues and support](#issues-and-support)
+- [Security reports](#security)
+- [License](#license)
+
+</details>
 
 ## Requirements
 
@@ -46,6 +78,28 @@ The installer will:
 
 After installation, type `shieldpress` to open the admin panel.
 
+## First steps after installation
+
+Run the dashboard and follow the menus to configure your server:
+
+```bash
+shieldpress
+```
+
+For a command reference, run:
+
+```bash
+shieldpress help
+```
+
+Recommended order for a new server:
+
+1. Check server status and confirm the detected hostname and public IP.
+2. Add a domain and point its DNS records to the VPS.
+3. Install SSL after DNS is resolving correctly.
+4. Install WordPress, Laravel, or Node.js as needed.
+5. Configure backups before putting important data into production.
+
 ### Install from this repository
 
 ```bash
@@ -56,7 +110,7 @@ sudo bash install.sh
 
 This copies `shieldpress/` into `/opt/shieldpress` and finishes command setup.
 
-## Update Source
+## Update source
 
 Installation and updates can be triggered from your own domain, but the source
 code and version check always come from GitHub.
@@ -84,7 +138,7 @@ SHIELDPRESS_GITHUB_BRANCH="main"
 Cutting a release: update `shieldpress/version.txt`, commit, then tag `v<version>`
 so `shieldpress update` sees the new version.
 
-## Quick Commands
+## Quick commands
 
 ```bash
 shieldpress          # Open dashboard
@@ -97,6 +151,18 @@ shieldpress backup   # Backup menu
 shieldpress help     # Show help
 ```
 
+## What is included
+
+| Area | Typical tasks |
+|------|---------------|
+| Websites | WordPress, Laravel, Node.js, domain and SSL management |
+| Server | Nginx, PHP, MariaDB, PostgreSQL, Valkey and system setup |
+| Operations | Backups, restore, cache, monitoring, logs and disk tools |
+| Security | Security checks, isolation, SFTP and server hardening helpers |
+| Email | Mailbox, webmail, DNS and mail SSL setup |
+
+Most features are available from the interactive dashboard. Use `shieldpress menu` when you want to open the full admin menu directly.
+
 ## Repository Layout
 
 ```
@@ -105,7 +171,6 @@ ShieldPress-VPS/
 ├── CHANGELOG.md
 ├── LICENSE                 # ShieldPress Source-Available Software License
 ├── TRADEMARK.md            # Brand / sole-author policy
-├── CONTRIBUTING.md
 ├── SECURITY.md
 ├── install.sh              # Install from a git clone
 ├── shieldpress/            # Runtime source → /opt/shieldpress
@@ -590,11 +655,15 @@ shieldpress help               # Help displays correctly
 # Test email install, send, receive if email module changed
 ```
 
-## Contributing
+## Issues and support
 
-Bug reports, security review, research, and Pull Requests are welcome.
-See [CONTRIBUTING.md](CONTRIBUTING.md). By submitting a Pull Request, you
-grant the contribution license in [LICENSE](LICENSE).
+If you encounter a bug or other problem, please [open an issue on
+GitHub](https://github.com/vithanhlam/ShieldPress-VPS/issues) with clear
+steps to reproduce it. Include your AlmaLinux version, the command or menu
+used, the relevant error message, and any safe-to-share log details.
+
+This repository uses GitHub Issues for problem reports. Pull Requests are not
+accepted through the public repository.
 
 ## Security
 

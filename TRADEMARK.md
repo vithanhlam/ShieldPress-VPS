@@ -127,7 +127,6 @@ To request permission or report misuse: **support@shieldpress.net**
 |----------|------|
 | [LICENSE](LICENSE) | Source-available software license (All Rights Reserved) |
 | [PRIVACY-POLICY.md](PRIVACY-POLICY.md) | Privacy and terms of use |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute; commit authorship rules |
 | **This file** | Trademark, brand, sole official author |
 
 The source-available license controls use of the source code. This policy
