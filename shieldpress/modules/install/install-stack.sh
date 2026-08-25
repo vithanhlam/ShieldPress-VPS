@@ -977,29 +977,18 @@ if [ -x "$PHP84_BIN" ]; then
         fi
     done
 
-    COMPOSER_SETUP="/tmp/composer-setup.php"
-    EXPECTED_SIGNATURE=$(curl -4 -fsSL --retry 3 --connect-timeout 15 --max-time 60 https://composer.github.io/installer.sig)
-    curl -4 -fsSL --retry 3 --connect-timeout 15 --max-time 60 https://getcomposer.org/installer -o "$COMPOSER_SETUP"
-    ACTUAL_SIGNATURE=$("$PHP84_BIN" -r "echo hash_file('sha384', '$COMPOSER_SETUP');")
-
-    if [ "$EXPECTED_SIGNATURE" = "$ACTUAL_SIGNATURE" ]; then
-        COMPOSER_BIN_TMP="/tmp/composer.phar"
-        if curl -4 -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
-            "https://getcomposer.org/download/latest-stable/composer.phar" \
-            -o "$COMPOSER_BIN_TMP" \
-            && "$PHP84_BIN" "$COMPOSER_BIN_TMP" --version >/dev/null 2>&1; then
-            install -m 0755 "$COMPOSER_BIN_TMP" /usr/local/bin/composer
-            rm -f "$COMPOSER_BIN_TMP"
-            ok "Composer installed"
-        else
-            rm -f "$COMPOSER_BIN_TMP"
-            warn "Composer download failed or timed out"
-        fi
+    COMPOSER_BIN_TMP="/tmp/composer.phar"
+    if curl -4 -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
+        "https://github.com/composer/composer/releases/latest/download/composer.phar" \
+        -o "$COMPOSER_BIN_TMP" \
+        && "$PHP84_BIN" "$COMPOSER_BIN_TMP" --version >/dev/null 2>&1; then
+        install -m 0755 "$COMPOSER_BIN_TMP" /usr/local/bin/composer
+        rm -f "$COMPOSER_BIN_TMP"
+        ok "Composer installed"
     else
-        warn "Composer installer signature mismatch, skipping"
+        rm -f "$COMPOSER_BIN_TMP"
+        warn "Composer download failed or timed out; check VPS outbound HTTPS access"
     fi
-
-    rm -f "$COMPOSER_SETUP"
 else
     warn "PHP 8.4 binary not found, cannot install Composer"
 fi

@@ -170,33 +170,19 @@ install_laravel_runtime(){
     fi
 
     if ! command -v composer >/dev/null 2>&1; then
-        COMPOSER_SETUP="/tmp/composer-setup.php"
-        EXPECTED_SIGNATURE=$(curl -4 -fsSL --retry 3 --connect-timeout 15 --max-time 60 https://composer.github.io/installer.sig)
-        curl -4 -fsSL --retry 3 --connect-timeout 15 --max-time 60 https://getcomposer.org/installer -o "$COMPOSER_SETUP"
-        ACTUAL_SIGNATURE=$(php -r "echo hash_file('sha384', '$COMPOSER_SETUP');")
-
-        if [ "$EXPECTED_SIGNATURE" = "$ACTUAL_SIGNATURE" ]; then
-            # Avoid an unbounded Composer installer download on VPS hosts
-            # with unreliable IPv6/DNS connectivity.
-            COMPOSER_BIN_TMP="/tmp/composer.phar"
-            if curl -4 -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
-                "https://getcomposer.org/download/latest-stable/composer.phar" \
-                -o "$COMPOSER_BIN_TMP" \
-                && php "$COMPOSER_BIN_TMP" --version >/dev/null 2>&1; then
-                install -m 0755 "$COMPOSER_BIN_TMP" /usr/local/bin/composer
-                rm -f "$COMPOSER_BIN_TMP"
-            else
-                rm -f "$COMPOSER_BIN_TMP" "$COMPOSER_SETUP"
-                fail "Composer download failed or timed out"
-                return 1
-            fi
-        else
-            rm -f "$COMPOSER_SETUP"
-            fail "Composer installer signature mismatch"
+        # Download the phar directly so blocked installer endpoints do not
+        # produce a false signature-mismatch error.
+        COMPOSER_BIN_TMP="/tmp/composer.phar"
+        if ! curl -4 -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
+            "https://github.com/composer/composer/releases/latest/download/composer.phar" \
+            -o "$COMPOSER_BIN_TMP" \
+            || ! php "$COMPOSER_BIN_TMP" --version >/dev/null 2>&1; then
+            rm -f "$COMPOSER_BIN_TMP"
+            fail "Composer download failed or timed out; check VPS outbound HTTPS access"
             return 1
         fi
-
-        rm -f "$COMPOSER_SETUP"
+        install -m 0755 "$COMPOSER_BIN_TMP" /usr/local/bin/composer
+        rm -f "$COMPOSER_BIN_TMP"
     fi
 
     mkdir -p /etc/shieldpress

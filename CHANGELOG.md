@@ -14,6 +14,14 @@
 
 ---
 
+## v1.3.16 — 2026-08-25 — Composer download fallback
+
+- Download Composer directly from the official GitHub release when installing the Laravel runtime.
+- Removed the fragile installer-signature path that reported a misleading mismatch when the installer file could not be downloaded.
+- Added explicit outbound HTTPS guidance when the VPS cannot reach the Composer download endpoint.
+
+---
+
 ## v1.3.15 — 2026-08-25 — Laravel deployment and Composer reliability
 
 - Added Composer preflight checks to Laravel component installation and production deployment.
