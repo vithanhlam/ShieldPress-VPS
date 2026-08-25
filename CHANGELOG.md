@@ -14,6 +14,14 @@
 
 ---
 
+## v1.3.17 — 2026-08-25 — Composer runtime validation
+
+- Validate the Composer phar with the managed PHP 8.4 binary before reporting the Laravel runtime as ready.
+- Use the absolute Composer path and ensure `/usr/local/bin` is available in the runtime PATH.
+- Prevent Laravel deployment from proceeding when Composer installation is incomplete.
+
+---
+
 ## v1.3.16 — 2026-08-25 — Composer download fallback
 
 - Download Composer directly from the official GitHub release when installing the Laravel runtime.

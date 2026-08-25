@@ -984,7 +984,12 @@ if [ -x "$PHP84_BIN" ]; then
         && "$PHP84_BIN" "$COMPOSER_BIN_TMP" --version >/dev/null 2>&1; then
         install -m 0755 "$COMPOSER_BIN_TMP" /usr/local/bin/composer
         rm -f "$COMPOSER_BIN_TMP"
-        ok "Composer installed"
+        if "$PHP84_BIN" /usr/local/bin/composer --version >/dev/null 2>&1; then
+            ok "Composer installed"
+        else
+            rm -f /usr/local/bin/composer
+            warn "Composer binary validation failed"
+        fi
     else
         rm -f "$COMPOSER_BIN_TMP"
         warn "Composer download failed or timed out; check VPS outbound HTTPS access"

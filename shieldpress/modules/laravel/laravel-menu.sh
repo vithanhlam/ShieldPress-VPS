@@ -7,6 +7,9 @@ LARAVEL_DB_DIR="$DATA_DIR_LARAVEL_DB"
 LARAVEL_BACKUP_DIR="$BACKUP_GLOBAL_DIR/laravel-postgresql"
 LARAVEL_BIN_DIR="$BASE_DIR/bin"
 LARAVEL_PG_BACKUP_SCRIPT="$LARAVEL_BIN_DIR/laravel-pg-backup"
+COMPOSER_BIN="/usr/local/bin/composer"
+
+export PATH="/usr/local/bin:$PATH"
 
 source "$DOMAIN_MODULE/helpers.sh"
 source "$BASE_DIR/core/ui.sh"
@@ -125,10 +128,10 @@ install_postgresql_stack(){
 
 install_laravel_runtime(){
     local php_ok=0 composer_ok=0 node_ok=0 missing=()
-    local node_major
+    local node_major PHP84_BIN="/opt/remi/php84/root/usr/bin/php"
 
     [ -x /opt/remi/php84/root/usr/bin/php ] && php_ok=1
-    command -v composer >/dev/null 2>&1 && composer_ok=1
+    [ -x "$COMPOSER_BIN" ] && "$PHP84_BIN" "$COMPOSER_BIN" --version >/dev/null 2>&1 && composer_ok=1
     node_major=$(node -p "process.versions.node.split('.')[0]" 2>/dev/null || echo 0)
     [ "$node_major" -ge 20 ] && node_ok=1
 
@@ -139,7 +142,7 @@ install_laravel_runtime(){
     if [ ${#missing[@]} -eq 0 ]; then
         ok "Laravel runtime already installed. No setup needed."
         echo "PHP      : $(/opt/remi/php84/root/usr/bin/php -r 'echo PHP_VERSION;' 2>/dev/null)"
-        echo "Composer : $(composer --version 2>/dev/null)"
+        echo "Composer : $("$PHP84_BIN" "$COMPOSER_BIN" --version 2>/dev/null)"
         echo "Node.js  : $(node -v 2>/dev/null)"
         echo "Postgres : $(postgresql_ready && echo active || echo not-installed)"
         return 0
@@ -176,13 +179,18 @@ install_laravel_runtime(){
         if ! curl -4 -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
             "https://github.com/composer/composer/releases/latest/download/composer.phar" \
             -o "$COMPOSER_BIN_TMP" \
-            || ! php "$COMPOSER_BIN_TMP" --version >/dev/null 2>&1; then
+            || ! "$PHP84_BIN" "$COMPOSER_BIN_TMP" --version >/dev/null 2>&1; then
             rm -f "$COMPOSER_BIN_TMP"
             fail "Composer download failed or timed out; check VPS outbound HTTPS access"
             return 1
         fi
-        install -m 0755 "$COMPOSER_BIN_TMP" /usr/local/bin/composer
+        install -m 0755 "$COMPOSER_BIN_TMP" "$COMPOSER_BIN"
         rm -f "$COMPOSER_BIN_TMP"
+    fi
+
+    if [ ! -x "$COMPOSER_BIN" ] || ! "$PHP84_BIN" "$COMPOSER_BIN" --version >/dev/null 2>&1; then
+        fail "Composer was not installed correctly"
+        return 1
     fi
 
     mkdir -p /etc/shieldpress
@@ -193,7 +201,7 @@ NODE_MAJOR=$(node -p "process.versions.node.split('.')[0]" 2>/dev/null || echo 0
 UPDATED=$(date '+%Y-%m-%d %H:%M:%S')
 EOF
 
-    ok "Laravel runtime ready: PHP $(php -r 'echo PHP_VERSION;' 2>/dev/null), Composer $(composer --version 2>/dev/null | awk '{print $3}'), Node $(node -v 2>/dev/null)"
+    ok "Laravel runtime ready: PHP $("$PHP84_BIN" -r 'echo PHP_VERSION;' 2>/dev/null), Composer $("$PHP84_BIN" "$COMPOSER_BIN" --version 2>/dev/null | awk '{print $3}'), Node $(node -v 2>/dev/null)"
 }
 
 select_laravel_domain(){
