@@ -171,13 +171,25 @@ install_laravel_runtime(){
 
     if ! command -v composer >/dev/null 2>&1; then
         COMPOSER_SETUP="/tmp/composer-setup.php"
-        EXPECTED_SIGNATURE=$(curl -fsSL https://composer.github.io/installer.sig)
-        curl -fsSL https://getcomposer.org/installer -o "$COMPOSER_SETUP"
+        EXPECTED_SIGNATURE=$(curl -4 -fsSL --retry 3 --connect-timeout 15 --max-time 60 https://composer.github.io/installer.sig)
+        curl -4 -fsSL --retry 3 --connect-timeout 15 --max-time 60 https://getcomposer.org/installer -o "$COMPOSER_SETUP"
         ACTUAL_SIGNATURE=$(php -r "echo hash_file('sha384', '$COMPOSER_SETUP');")
 
         if [ "$EXPECTED_SIGNATURE" = "$ACTUAL_SIGNATURE" ]; then
-            php "$COMPOSER_SETUP" --install-dir=/usr/local/bin --filename=composer
-            chmod +x /usr/local/bin/composer
+            # Avoid an unbounded Composer installer download on VPS hosts
+            # with unreliable IPv6/DNS connectivity.
+            COMPOSER_BIN_TMP="/tmp/composer.phar"
+            if curl -4 -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
+                "https://getcomposer.org/download/latest-stable/composer.phar" \
+                -o "$COMPOSER_BIN_TMP" \
+                && php "$COMPOSER_BIN_TMP" --version >/dev/null 2>&1; then
+                install -m 0755 "$COMPOSER_BIN_TMP" /usr/local/bin/composer
+                rm -f "$COMPOSER_BIN_TMP"
+            else
+                rm -f "$COMPOSER_BIN_TMP" "$COMPOSER_SETUP"
+                fail "Composer download failed or timed out"
+                return 1
+            fi
         else
             rm -f "$COMPOSER_SETUP"
             fail "Composer installer signature mismatch"
@@ -568,7 +580,7 @@ run_laravel_command(){
         about) php artisan about ;;
         routes) php artisan route:list ;;
         npm-install) npm install ;;
-        npm-build) npm install && npm run build ;;
+        npm-build) npm install --include=dev && npm run build ;;
         composer-install) COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader ;;
         *) warn "Unknown Laravel command" ;;
     esac
@@ -579,6 +591,15 @@ install_laravel_components(){
     cd "$DOMAIN_PATH/public_html" || return
 
     echo "Installing Laravel components..."
+
+    if [ -f composer.json ] && ! command -v composer >/dev/null 2>&1; then
+        warn "Composer is not installed. Starting Laravel runtime setup..."
+        install_laravel_runtime || return 1
+    fi
+    if [ -f composer.json ] && ! command -v composer >/dev/null 2>&1; then
+        fail "Composer is required. Run Laravel Manager > Install Laravel Runtime and try again."
+        return 1
+    fi
 
     if [ -f composer.json ]; then
         COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader || {
@@ -591,7 +612,7 @@ install_laravel_components(){
     fi
 
     if [ -f package.json ]; then
-        npm install || {
+        npm install --include=dev || {
             fail "npm install failed"
             return 1
         }
@@ -612,6 +633,17 @@ npm_run_build(){
         return 1
     fi
 
+    # Vite is normally a devDependency.  Servers may have NODE_ENV=production
+    # or npm's omit=dev setting, leaving node_modules/.bin/vite absent even
+    # though npm install previously reported success.
+    if [ ! -x node_modules/.bin/vite ]; then
+        echo "Vite is missing; installing frontend dependencies..."
+        npm install --include=dev || {
+            fail "npm install failed"
+            return 1
+        }
+    fi
+
     npm run build || {
         fail "npm run build failed"
         return 1
@@ -626,12 +658,23 @@ deploy_laravel_production(){
     echo "=== Deploy / Build Production ==="
     echo ""
 
+    # Composer is installed by the Laravel runtime setup.  Recover here when
+    # a server was provisioned without completing that step.
+    if ! command -v composer >/dev/null 2>&1; then
+        warn "Composer is not installed. Starting Laravel runtime setup..."
+        install_laravel_runtime || return 1
+    fi
+    if ! command -v composer >/dev/null 2>&1; then
+        fail "Composer is required. Run Laravel Manager > Install Laravel Runtime and try again."
+        return 1
+    fi
+
     # 1. Composer install
     COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader || return
 
     # 2. npm install + build
     if [ -f package.json ]; then
-        npm install || return
+        npm install --include=dev || return
         npm run build || return
     fi
 
@@ -1023,7 +1066,7 @@ while true; do
     sp_header "Laravel 13 Manager" "Deploy, backup, artisan"
     sp_menu_grid \
         "1|Install Laravel Runtime|green" \
-        "2|Add Laravel Domain|green" \
+        "2|Add / Install Laravel Domain|green" \
         "3|List Laravel Domains|cyan" \
         "4|Backup Manager|yellow" \
         "5|Redis Cache Manager|blue" \

@@ -14,6 +14,16 @@
 
 ---
 
+## v1.3.15 — 2026-08-25 — Laravel deployment and Composer reliability
+
+- Added Composer preflight checks to Laravel component installation and production deployment.
+- Improved Composer installation with bounded IPv4 downloads, retries, timeout handling, and binary validation.
+- Ensured Laravel/Vite builds install development dependencies so the local `vite` binary is available.
+- Renamed the Laravel domain menu item to `Add / Install Laravel Domain` for clarity.
+- Documented the Laravel domain setup and deployment behavior in the README.
+
+---
+
 ## v1.3.14 — 2026-08-17 — Proprietary licensing and brand protection
 
 - Changed new releases from GPLv3 to the ShieldPress VPS Proprietary License.

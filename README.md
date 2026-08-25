@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.14`
+**Current version:** `1.3.15`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -300,12 +300,14 @@ Source: `modules/laravel/`
 
 - Install Laravel runtime.
 - Install PostgreSQL stack.
-- Add Laravel domains.
+- Add / install Laravel domains.
 - List Laravel domains.
 - Manage PostgreSQL for Laravel.
 - Backup Laravel/PostgreSQL.
 - Manage Redis/Valkey cache for Laravel.
 - Install Laravel components.
+- Automatically prepare missing Composer before component installation or production deployment.
+- Install frontend dev dependencies when building Laravel/Vite applications.
 - Run `npm run build`.
 - Deploy/build production.
 - Edit `.env` file.
