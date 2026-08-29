@@ -49,17 +49,46 @@ backup_selected_node_app(){
 
     mkdir -p "$backup_root"
 
+    # Deploy backups contain source only. Runtime/config files and large or
+    # user-generated directories must never be copied into this archive.
     tar -czf "$backup_file" \
-        --exclude="public_html/node_modules" \
-        --exclude="public_html/.next/cache" \
-        -C "$DOMAIN_PATH" public_html config \
-        -C /etc/nginx/conf.d "${CLEAN_DOMAIN}.conf" 2>/dev/null || {
-            fail "Backup failed"
-            return 1
-        }
+        --exclude="./node_modules" \
+        --exclude="*/node_modules" \
+        --exclude="./uploads" \
+        --exclude="*/uploads" \
+        --exclude="./public" \
+        --exclude="*/public" \
+        -C "$DOMAIN_PATH/public_html" . 2>/dev/null || {
+        fail "Backup failed"
+        return 1
+    }
 
     LAST_NODE_BACKUP_FILE="$backup_file"
     ok "Backup created: $backup_file"
+}
+
+select_node_deploy_mode(){
+    echo ""
+    echo "Deploy mode:"
+    echo "  1) Build + update environment (skip npm install and database commands)"
+    echo "  2) Full deploy (npm install, database commands, build, restart)"
+    echo ""
+    read -p "Select mode [1]: " NODE_DEPLOY_MODE
+    NODE_DEPLOY_MODE="${NODE_DEPLOY_MODE:-1}"
+    case "$NODE_DEPLOY_MODE" in
+        1|2) return 0 ;;
+        *) fail "Invalid deploy mode"; return 1 ;;
+    esac
+}
+
+confirm_node_backup(){
+    local answer
+    read -p "Backup source before deploy? [Y/n]: " answer
+    answer="${answer:-Y}"
+    [[ "$answer" =~ ^[Yy]$ ]] && return 0
+    [[ "$answer" =~ ^[Nn]$ ]] && return 1
+    warn "Invalid answer; backup will be created"
+    return 0
 }
 
 install_node_runtime(){
@@ -259,30 +288,40 @@ deploy_node_app(){
     fi
 
     local pm2_name="$CLEAN_DOMAIN"
-    local deploy_backup_file=""
 
-    confirm_action "This will install deps, build, and restart the app." || return
-    backup_selected_node_app || return
-    deploy_backup_file="$LAST_NODE_BACKUP_FILE"
+    select_node_deploy_mode || return
+    confirm_action "This will deploy $DOMAIN." || return
+
+    if confirm_node_backup; then
+        backup_selected_node_app || return
+    else
+        warn "Source backup skipped"
+    fi
 
     echo ""
-    echo "Step 1: Installing dependencies..."
-    npm install || { fail "npm install failed"; return 1; }
-    ok "Dependencies installed"
+    local step=1
 
-    # Run Prisma if prisma is in dependencies
-    if grep -q '"prisma"' package.json 2>/dev/null; then
-        echo ""
-        echo "Step 2: Running Prisma DB push..."
-        npx prisma db push || { warn "Prisma db push failed (non-fatal)"; }
-        npx prisma generate || true
-        ok "Prisma schema synced"
+    if [ "$NODE_DEPLOY_MODE" = "2" ]; then
+        echo "Step $step: Installing dependencies..."
+        npm install || { fail "npm install failed"; return 1; }
+        ok "Dependencies installed"
+        ((step++))
+
+        # Run Prisma only for a full deploy.
+        if grep -q '"prisma"' package.json 2>/dev/null; then
+            echo ""
+            echo "Step $step: Running Prisma DB push..."
+            npx prisma db push || { warn "Prisma db push failed (non-fatal)"; }
+            npx prisma generate || true
+            ok "Prisma schema synced"
+            ((step++))
+        fi
     fi
 
     # Build if build script exists
     if npm run 2>/dev/null | grep -q " build"; then
         echo ""
-        echo "Step 3: Building for production..."
+        echo "Step $step: Building for production..."
 
         # Clean .next cache for Next.js projects
         if [ -d ".next" ]; then
@@ -305,10 +344,10 @@ deploy_node_app(){
 
     # Restart via PM2
     echo ""
-    echo "Step 4: Restarting app via PM2..."
+    echo "Step $((step + 1)): Restarting app via PM2 and updating environment..."
 
     if pm2 describe "$pm2_name" >/dev/null 2>&1; then
-        pm2 restart "$pm2_name" && ok "App restarted via PM2"
+        pm2 restart "$pm2_name" --update-env && ok "App restarted via PM2 (environment updated)"
     else
         echo "App not yet running in PM2. Starting now..."
         echo ""
@@ -366,10 +405,6 @@ deploy_node_app(){
 
     ok "Permissions fixed (owner: $sysuser)"
 
-    if [ -n "$deploy_backup_file" ] && [ -f "$deploy_backup_file" ]; then
-        rm -f "$deploy_backup_file"
-        ok "Deploy succeeded, temporary backup removed: $deploy_backup_file"
-    fi
 }
 
 # ==========================================

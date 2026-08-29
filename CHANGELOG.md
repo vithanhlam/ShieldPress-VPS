@@ -12,6 +12,14 @@
 - Clarified that public source on GitHub does not transfer ownership and
   does not make ShieldPress Open Source software.
 
+## v1.3.18 — 2026-08-29 — Node.js deployment modes and source backup
+
+- Added build-only and full deployment modes to the Node.js Manager.
+- Full deployment runs dependency installation and Prisma database commands;
+  build-only deployment skips them and refreshes the PM2 environment.
+- Added an optional pre-deploy source backup, enabled by default, excluding
+  `uploads/`, `public/`, and `node_modules/`.
+
 ---
 
 ## v1.3.17 — 2026-08-25 — Composer runtime validation
