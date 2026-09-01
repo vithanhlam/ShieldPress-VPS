@@ -1,5 +1,10 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.20 — 2026-09-01 — Update backup retention fix
+
+- Stored updater rollback archives outside `/opt/shieldpress` so a successful atomic source switch cannot delete the backup it just created.
+- Documented the persistent update-backup location.
+
 ## v1.3.19 — 2026-09-01 — PostgreSQL WAL, secure updates and Node.js reliability
 
 - Added PostgreSQL WAL policy configuration by selecting a database from a numbered list.

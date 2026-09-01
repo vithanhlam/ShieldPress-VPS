@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.19`
+**Current version:** `1.3.20`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -642,6 +642,7 @@ Source: `modules/license/`
 └── data/                   Auxiliary data (e.g. Valkey info)
 
 /etc/shieldpress/           System configuration
+/var/shieldpress/update-backups/  Update rollback archives
 /home/domains/              Website/domain data root
 /var/mail/vhosts/           Email mailboxes (when email module installed)
 /var/log/nginx/domains/     Nginx logs per domain

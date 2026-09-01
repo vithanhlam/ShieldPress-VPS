@@ -8,7 +8,9 @@
 set -o pipefail
 
 BASE_DIR="/opt/shieldpress"
-BACKUP_DIR="$BASE_DIR/update-backups"
+# Keep update backups outside the replaceable runtime tree.  The atomic
+# switch removes the old /opt/shieldpress directory after a successful update.
+BACKUP_DIR="/var/shieldpress/update-backups"
 TMP_DIR="/tmp/shieldpress_update"
 NEW_DIR="/tmp/shieldpress_new"
 OLD_DIR="/opt/shieldpress_old"
