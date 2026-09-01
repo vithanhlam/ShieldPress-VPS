@@ -5,6 +5,7 @@ source "$BASE_DIR/core/paths.sh"
 source "$BASE_DIR/modules/backup/_backup_helper.sh"
 WAL_CONFIG="${SP_WAL_CONFIG:-/etc/shieldpress/postgresql-wal.conf}"
 STATUS_DIR="${SP_BACKUP_STATUS_DIR:-/var/log/shieldpress/domain-backup-status}"
+WAL_RETENTION_FULL=7
 mkdir -p "$STATUS_DIR" "$(dirname "$WAL_CONFIG")" 2>/dev/null || true
 
 select_pg_database(){
@@ -62,6 +63,43 @@ write_status(){
     mkdir -p "$STATUS_DIR"
     printf 'domain=%s\ndatabase=%s\nstate=%s\nupdated=%s\nmessage=%s\n' "$DOMAIN" "$DB_NAME" "$state" "$now" "$message" > "$STATUS_DIR/${CLEAN_DOMAIN:-$DOMAIN}.env"
     printf '%s | %s | %s | %s\n' "$now" "$DOMAIN" "$state" "$message" >> "$DOMAIN_PATH/logs/backup-wal.log"
+}
+
+install_expire_timer(){
+    local timer_id="shieldpress-pgbackrest-expire-${SAFE_CLUSTER}"
+    local service="/etc/systemd/system/${timer_id}.service"
+    local timer="/etc/systemd/system/${timer_id}.timer"
+    local expire_log="/var/log/shieldpress/pgbackrest-expire-${SAFE_CLUSTER}.log"
+
+    cat > "$service" <<EOF
+[Unit]
+Description=ShieldPress pgBackRest WAL retention (${SAFE_CLUSTER})
+After=postgresql.service
+
+[Service]
+Type=oneshot
+User=postgres
+ExecStart=/bin/sh -c '/usr/bin/pgbackrest --stanza=${STANZA} --repo1-retention-full=${WAL_RETENTION_FULL} expire >> ${expire_log} 2>&1'
+EOF
+    cat > "$timer" <<EOF
+[Unit]
+Description=Daily ShieldPress pgBackRest WAL retention (${SAFE_CLUSTER})
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+Unit=${timer_id}.service
+
+[Install]
+WantedBy=timers.target
+EOF
+    install -d -o postgres -g postgres -m 750 "$(dirname "$expire_log")"
+    touch "$expire_log"
+    chown postgres:postgres "$expire_log"
+    chmod 640 "$expire_log"
+    systemctl daemon-reload
+    systemctl enable --now "${timer_id}.timer" >/dev/null 2>&1 || return 1
+    echo "$timer_id"
 }
 
 select_pg_database || exit 1
@@ -157,6 +195,7 @@ EOF
     restorecon "$PG_CONF" >/dev/null 2>&1 || true
     systemctl restart postgresql >/dev/null 2>&1 || { write_status failed "PostgreSQL restart failed"; exit 1; }
     runuser -u postgres -- pgbackrest --stanza="$STANZA" check >/dev/null 2>&1 || { write_status failed "pgBackRest check failed"; exit 1; }
+    install_expire_timer >/dev/null 2>&1 || { write_status failed "could not install WAL retention timer"; exit 1; }
     if [ "$STANZA_MODE" = pgbackrest ]; then
         write_status success "WAL archive enabled for explicitly isolated PostgreSQL cluster"
     else

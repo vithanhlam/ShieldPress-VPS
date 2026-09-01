@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.20`
+**Current version:** `1.3.21`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -372,6 +372,10 @@ PostgreSQL features:
   status, while the one-minute job only checks status and never runs pg_dump.
 - Explicitly isolated PostgreSQL clusters can use `postgres_backup_mode=pgbackrest`
   with their own `PG_CLUSTER_DATA_DIR` and pgBackRest stanza.
+- WAL retention is set to 7 pgBackRest full backups and a daily systemd timer runs
+  `pgbackrest expire` at 03:30. Existing ShieldPress daily backups are not changed
+  or deleted; pgBackRest can only expire WAL that is no longer needed by its own
+  retained backup chain.
 - List backups.
 
 WAL archive prerequisites:

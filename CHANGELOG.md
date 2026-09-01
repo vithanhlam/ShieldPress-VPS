@@ -1,5 +1,11 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.21 — 2026-09-01 — PostgreSQL WAL retention
+
+- Added a daily per-cluster systemd timer for `pgBackRest expire` with a retention target of 7 full pgBackRest backups.
+- Added retention logs outside the runtime source tree.
+- Preserved existing ShieldPress daily backups; WAL expiry only operates on the pgBackRest repository and backup chain.
+
 ## v1.3.20 — 2026-09-01 — Update backup retention fix
 
 - Stored updater rollback archives outside `/opt/shieldpress` so a successful atomic source switch cannot delete the backup it just created.
