@@ -1186,3 +1186,6 @@ Added missing excludes across all backup methods (manual, auto-full, auto-files,
   logged without blocking PostgreSQL WAL archiving.
 ## v1.3.23 — 2026-09-02 — WAL remote sync packaging fix
 - Fixed the executable permission on the systemd WAL remote synchronization script.
+## v1.3.24 — 2026-09-02 — SELinux-compatible WAL remote service
+- Updated the WAL remote systemd unit to invoke the ShieldPress script through
+  `/bin/bash`, avoiding direct execution denial on SELinux-enforcing AlmaLinux.

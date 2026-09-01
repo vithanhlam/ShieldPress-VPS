@@ -24,7 +24,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/opt/shieldpress/modules/backup/sync-wal-remote.sh --run
+ExecStart=/bin/bash /opt/shieldpress/modules/backup/sync-wal-remote.sh --run
 EOF
     cat > "$TIMER_FILE" <<EOF
 [Unit]
