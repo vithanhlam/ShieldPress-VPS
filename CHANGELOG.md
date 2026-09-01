@@ -1184,3 +1184,5 @@ Added missing excludes across all backup methods (manual, auto-full, auto-files,
   remotes including FTP/SFTP.
 - Kept PostgreSQL archive-push local-first and append-safe; remote failures are
   logged without blocking PostgreSQL WAL archiving.
+## v1.3.23 — 2026-09-02 — WAL remote sync packaging fix
+- Fixed the executable permission on the systemd WAL remote synchronization script.
