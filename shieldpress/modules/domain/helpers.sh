@@ -966,6 +966,12 @@ create_backup_env(){
 # BACKUP_RETENTION : override global retention for this domain (number of backups)
 
 BACKUP_ENABLED=1
+backup_enabled=1
+backup_frequency=daily
+backup_storage=
+wal_backup_enabled=0
+wal_backup_interval=1m
+postgres_backup_mode=cluster-wal
 BACKUP_PATHS=
 BACKUP_EXCLUDE=
 INCR_EXCLUDE=
@@ -1044,6 +1050,27 @@ BACKUP_RETENTION=
 BKEOF
             ;;
     esac
+
+    # PostgreSQL/WAL settings are deliberately additive.  The existing daily
+    # backup settings above remain the source of truth for legacy jobs.
+    if ! grep -q '^backup_enabled=' "$BENV" 2>/dev/null; then
+        cat >> "$BENV" << 'WALCFG'
+
+# Database backup policy (lowercase keys are new and independent of legacy jobs)
+backup_enabled=1
+backup_frequency=daily
+backup_storage=
+# WAL is archived continuously by PostgreSQL/pgBackRest, not by pg_dump.
+wal_backup_enabled=0
+wal_backup_interval=1m
+# cluster-wal = shared local PostgreSQL cluster; pgbackrest = explicitly isolated cluster
+postgres_backup_mode=cluster-wal
+postgres_cluster_id=
+pgbackrest_stanza=
+# Set postgres_backup_mode=pgbackrest and PG_CLUSTER_DATA_DIR in domain.env
+# only when this domain is on an explicitly separate PostgreSQL cluster.
+WALCFG
+    fi
 
     chmod 600 "$BENV"
 }

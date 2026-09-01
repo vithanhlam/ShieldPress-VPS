@@ -3,7 +3,7 @@
 #
 # Works in two modes:
 #   1. From a git clone:  sudo bash install.sh
-#   2. Piped from a URL:  curl -fsSL https://install.shieldpress.net | bash
+#   2. Downloaded from a URL, then reviewed/executed locally.
 #
 # The source and version always come from GitHub, so a domain only needs to
 # serve this bootstrap script.
@@ -42,9 +42,21 @@ if [ -z "$SOURCE_DIR" ]; then
     echo "[INFO] Downloading source from github.com/$SHIELDPRESS_GITHUB_REPO ..."
     WORK_DIR=$(mktemp -d)
 
-    TARBALL="https://github.com/${SHIELDPRESS_GITHUB_REPO}/archive/refs/heads/${SHIELDPRESS_GITHUB_BRANCH}.tar.gz"
+    VERSION_URL="https://raw.githubusercontent.com/${SHIELDPRESS_GITHUB_REPO}/${SHIELDPRESS_GITHUB_BRANCH}/shieldpress/version.txt"
+    SOURCE_VERSION=$(curl -fsSL --connect-timeout 10 --max-time 30 "$VERSION_URL" | tr -d '[:space:]')
+    [ -n "$SOURCE_VERSION" ] || { echo "[ERROR] Cannot determine source version"; exit 1; }
+
+    TARBALL="https://github.com/${SHIELDPRESS_GITHUB_REPO}/releases/download/v${SOURCE_VERSION}/shieldpress.tar.gz"
+    CHECKSUM_URL="https://github.com/${SHIELDPRESS_GITHUB_REPO}/releases/download/v${SOURCE_VERSION}/shieldpress.sha256"
+    curl -fsSL --connect-timeout 10 --max-time 30 "$CHECKSUM_URL" -o "$WORK_DIR/source.sha256" \
+        || { echo "[ERROR] Release checksum unavailable; refusing unverified install"; exit 1; }
     curl -fsSL --connect-timeout 10 --max-time 300 "$TARBALL" -o "$WORK_DIR/source.tar.gz" \
         || { echo "[ERROR] Cannot download $TARBALL"; exit 1; }
+
+    EXPECTED_SHA=$(awk 'NF {print $1; exit}' "$WORK_DIR/source.sha256")
+    ACTUAL_SHA=$(sha256sum "$WORK_DIR/source.tar.gz" | awk '{print $1}')
+    [ -n "$EXPECTED_SHA" ] && [ "$EXPECTED_SHA" = "$ACTUAL_SHA" ] \
+        || { echo "[ERROR] Source checksum mismatch; refusing install"; exit 1; }
 
     mkdir -p "$WORK_DIR/extract"
     tar -xzf "$WORK_DIR/source.tar.gz" -C "$WORK_DIR/extract" \

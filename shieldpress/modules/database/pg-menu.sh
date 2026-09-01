@@ -56,6 +56,7 @@ configure_shieldpress_postgresql(){
         } > "${PG_HBA}.tmp"
         mv "${PG_HBA}.tmp" "$PG_HBA"
         chown postgres:postgres "$PG_HBA"
+        restorecon "$PG_HBA" >/dev/null 2>&1 || true
     fi
 
     TOTAL_RAM=$(free -m | awk '/Mem:/ {print $2}')
@@ -228,7 +229,7 @@ DB_PORT=5432
 DB_DATABASE=$DB_NAME
 DB_USERNAME=$DB_USER
 DB_PASSWORD=$DB_PASS
-CREATED=$(date '+%Y-%m-%d %H:%M:%S')
+CREATED='$(date '+%Y-%m-%d %H:%M:%S')'
 EOF
     then
         [ "$created_db" = "1" ] && runuser -u postgres -- dropdb --if-exists "$DB_NAME" >/dev/null 2>&1

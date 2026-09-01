@@ -82,6 +82,14 @@ load_backup_config(){
     BK_CUSTOM_INCR_EXCLUDE=""
     BK_ENABLED=1
     BK_RETENTION=""
+    DB_BACKUP_ENABLED=1
+    DB_BACKUP_FREQUENCY="daily"
+    DB_BACKUP_STORAGE=""
+    WAL_BACKUP_ENABLED=0
+    WAL_BACKUP_INTERVAL="1m"
+    POSTGRES_BACKUP_MODE="cluster-wal"
+    POSTGRES_CLUSTER_ID=""
+    PG_BACKREST_STANZA=""
 
     [ -f "$BENV" ] || return 0
 
@@ -91,7 +99,21 @@ load_backup_config(){
     BK_ENABLED=$(grep "^BACKUP_ENABLED=" "$BENV" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]')
     BK_RETENTION=$(grep "^BACKUP_RETENTION=" "$BENV" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]')
 
+    DB_BACKUP_ENABLED=$(grep '^backup_enabled=' "$BENV" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]')
+    DB_BACKUP_FREQUENCY=$(grep '^backup_frequency=' "$BENV" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]')
+    DB_BACKUP_STORAGE=$(grep '^backup_storage=' "$BENV" 2>/dev/null | cut -d'=' -f2- | sed 's/^ *//')
+    WAL_BACKUP_ENABLED=$(grep '^wal_backup_enabled=' "$BENV" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]')
+    WAL_BACKUP_INTERVAL=$(grep '^wal_backup_interval=' "$BENV" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]')
+    POSTGRES_BACKUP_MODE=$(grep '^postgres_backup_mode=' "$BENV" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]')
+    POSTGRES_CLUSTER_ID=$(grep '^postgres_cluster_id=' "$BENV" 2>/dev/null | cut -d'=' -f2- | sed 's/^ *//')
+    PG_BACKREST_STANZA=$(grep '^pgbackrest_stanza=' "$BENV" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]')
+
     BK_ENABLED="${BK_ENABLED:-1}"
+    DB_BACKUP_ENABLED="${DB_BACKUP_ENABLED:-${BK_ENABLED:-1}}"
+    DB_BACKUP_FREQUENCY="${DB_BACKUP_FREQUENCY:-daily}"
+    WAL_BACKUP_ENABLED="${WAL_BACKUP_ENABLED:-0}"
+    WAL_BACKUP_INTERVAL="${WAL_BACKUP_INTERVAL:-1m}"
+    POSTGRES_BACKUP_MODE="${POSTGRES_BACKUP_MODE:-cluster-wal}"
 }
 
 # Build --exclude flags from comma-separated list

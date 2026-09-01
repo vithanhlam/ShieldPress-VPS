@@ -174,6 +174,9 @@ if [ -n "$CHECKSUM_URL" ]; then
         || EXPECTED=""
 fi
 
+# Never install an update whose release artifact cannot be verified.
+[ -n "$EXPECTED" ] || fail "Release checksum unavailable; refusing unverified update"
+
 SOURCE_ROOT=""
 PACKAGE_USED=""
 

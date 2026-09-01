@@ -19,6 +19,7 @@ while true; do
         "9|Restore Website|red" \
         "10|Delete Backups|red" \
         "11|Encryption|yellow" \
+        "12|PostgreSQL WAL Policy|blue" \
         "0|Back|white"
 
     sp_prompt opt
@@ -35,6 +36,7 @@ while true; do
         9) bash "$BASE_DIR/modules/backup/restore-site.sh" ;;
         10) bash "$BASE_DIR/modules/backup/delete-backup.sh" ;;
         11) bash "$BASE_DIR/modules/backup/backup-encrypt.sh" ;;
+        12) bash "$BASE_DIR/modules/backup/configure-postgres-wal.sh" ;;
         0) break ;;
         *) sp_invalid ;;
     esac

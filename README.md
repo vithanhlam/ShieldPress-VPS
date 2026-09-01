@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.18`
+**Current version:** `1.3.19`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -65,7 +65,9 @@ Source code is in the `shieldpress/` directory. On the server it installs to `/o
 Connect to your VPS via SSH as root and run:
 
 ```bash
-curl -fsSL https://install.shieldpress.net | bash
+curl -fsSL https://install.shieldpress.net -o /tmp/shieldpress-install.sh
+bash /tmp/shieldpress-install.sh
+rm -f /tmp/shieldpress-install.sh
 ```
 
 The installer will:
@@ -125,7 +127,9 @@ To publish the install command on your own domain, serve this repository's
 root `install.sh` at that URL. The script downloads everything else from GitHub:
 
 ```bash
-curl -fsSL https://install.shieldpress.net | bash
+curl -fsSL https://install.shieldpress.net -o /tmp/shieldpress-install.sh
+bash /tmp/shieldpress-install.sh
+rm -f /tmp/shieldpress-install.sh
 ```
 
 Override the source on a server with `/etc/shieldpress/update.conf`:
@@ -362,7 +366,19 @@ PostgreSQL features:
 - Import SQL.
 - Backup database.
 - Configure auto backup (hour, daily/weekly/monthly, retention count).
+- Configure PostgreSQL WAL policy per domain. Domains created by ShieldPress use
+  one PostgreSQL cluster, so pgBackRest archives WAL once at cluster level;
+  the per-domain setting controls participation, storage policy and health
+  status, while the one-minute job only checks status and never runs pg_dump.
+- Explicitly isolated PostgreSQL clusters can use `postgres_backup_mode=pgbackrest`
+  with their own `PG_CLUSTER_DATA_DIR` and pgBackRest stanza.
 - List backups.
+
+WAL archive prerequisites:
+
+- Install `pgBackRest` when WAL archiving is needed; ShieldPress does not install PostgreSQL or pgBackRest during the base stack installation.
+- Select a PostgreSQL database by number in the WAL policy flow. The database must be linked to a domain metadata file.
+- For shared PostgreSQL clusters, WAL is archived once at cluster level and the per-domain policy records participation and health status.
 
 ### 7. Backup & Restore
 
@@ -416,6 +432,7 @@ Source: `modules/security/`
 - Auto-block attackers from access logs.
 - **Auto-Guard** — Automated scheduled blocking via systemd timer. Configurable thresholds for total requests, 4xx errors and wp-login/xmlrpc hits per 10 minutes. Triggers `auto_block_attackers` and sends Telegram notification when thresholds are exceeded.
 - Security audit.
+- CVE/dependency audit for system security advisories, Laravel Composer packages, Node.js npm packages, WordPress core checksums, plugins and themes.
 
 ### 10. Monitoring & Logs
 
@@ -643,6 +660,7 @@ When upgrading ShieldPress VPS, check the following:
 7. If changing database/cache, verify MariaDB, PostgreSQL, Valkey, Adminer, backup and restore.
 8. If changing the update flow, verify `modules/update/update-menu.sh`, `modules/update/updater.sh` and `/opt/shieldpress/logs/update.log`.
 9. After release, test key menus: domain, SSL, WordPress, backup, cache, security, email and update.
+10. For WAL changes, verify pgBackRest stanza status, SELinux context, archive_command and per-domain status logs.
 
 ## Pre-release Checklist
 

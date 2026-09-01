@@ -25,6 +25,35 @@ confirm_action(){
     [[ "$CONFIRM" =~ ^[Yy]$ ]] || { warn "Cancelled"; return 1; }
 }
 
+# Start Next.js with an explicit CLI port. This avoids package.json scripts
+# such as `next start -p 3000` overriding the domain's configured port.
+start_pm2_next_app(){
+    local pm2_name="$1"
+    local next_bin="./node_modules/.bin/next"
+    [ -x "$next_bin" ] || next_bin="$(command -v next 2>/dev/null || true)"
+    [ -n "$next_bin" ] || return 1
+    PORT="$NODE_APP_PORT" NODE_ENV=production pm2 start "$next_bin" \
+        --name "$pm2_name" --update-env -- start --port "$NODE_APP_PORT"
+}
+
+is_nextjs_app(){
+    [ -f "$DOMAIN_PATH/public_html/package.json" ] || return 1
+    grep -Eq '"next"[[:space:]]*:' "$DOMAIN_PATH/public_html/package.json"
+}
+
+restart_pm2_app_with_config(){
+    local pm2_name="$1"
+    if is_nextjs_app; then
+        # A PM2 restart cannot change an old npm command that hard-codes
+        # port 3000. Recreate the process with the domain port explicitly.
+        pm2 delete "$pm2_name" 2>/dev/null || true
+        start_pm2_next_app "$pm2_name" || return 1
+    else
+        PORT="$NODE_APP_PORT" NODE_ENV=production pm2 restart "$pm2_name" --update-env || return 1
+    fi
+    pm2 save || true
+}
+
 ensure_pm2(){
     if ! command -v pm2 >/dev/null 2>&1; then
         echo "PM2 not installed. Installing..."
@@ -104,10 +133,10 @@ select_node_domain(){
     echo "--------------------------------"
     for env in "$DOMAINS_ROOT"/*/config/domain.env; do
         [ -f "$env" ] || continue
-        APP_TYPE=$(grep "^APP_TYPE=" "$env" | cut -d= -f2)
+        APP_TYPE=$(grep "^APP_TYPE=" "$env" | cut -d= -f2 | tr -d '[:space:]')
         [ "$APP_TYPE" = "nodejs" ] || continue
         DOMAIN=$(grep "^DOMAIN=" "$env" | cut -d= -f2)
-        NODE_APP_PORT=$(grep "^NODE_APP_PORT=" "$env" | cut -d= -f2)
+        NODE_APP_PORT=$(grep "^NODE_APP_PORT=" "$env" | cut -d= -f2 | tr -d '[:space:]')
         echo "  $i) $DOMAIN (port ${NODE_APP_PORT:-N/A})"
         DOMAIN_CHOICES[$i]=$(dirname "$(dirname "$env")")
         ((i++))
@@ -122,8 +151,17 @@ select_node_domain(){
     ENV_FILE="$DOMAIN_PATH/config/domain.env"
     DOMAIN=$(grep "^DOMAIN=" "$ENV_FILE" | cut -d= -f2)
     CLEAN_DOMAIN=$(basename "$DOMAIN_PATH")
-    NODE_APP_PORT=$(grep "^NODE_APP_PORT=" "$ENV_FILE" | cut -d= -f2)
+    NODE_APP_PORT=$(grep "^NODE_APP_PORT=" "$ENV_FILE" | cut -d= -f2 | tr -d '[:space:]')
+    # Recover the configured proxy port for older/incomplete domain.env files.
+    if ! [[ "$NODE_APP_PORT" =~ ^[0-9]+$ ]]; then
+        NODE_APP_PORT=$(grep -oE 'proxy_pass http://127\.0\.0\.1:[0-9]+' \
+            "/etc/nginx/conf.d/${CLEAN_DOMAIN}.conf" 2>/dev/null | grep -oE '[0-9]+$' | head -1)
+    fi
     NODE_APP_PORT="${NODE_APP_PORT:-3000}"
+    if ! [[ "$NODE_APP_PORT" =~ ^[0-9]+$ ]] || [ "$NODE_APP_PORT" -lt 1 ] || [ "$NODE_APP_PORT" -gt 65535 ]; then
+        fail "Invalid Node.js app port in $ENV_FILE"
+        return 1
+    fi
     NODE_ENTRY=$(grep "^NODE_ENTRY=" "$ENV_FILE" | cut -d= -f2)
     NODE_ENTRY="${NODE_ENTRY:-app.js}"
     return 0
@@ -146,7 +184,7 @@ list_node_domains(){
         found=1
         DOMAIN=$(grep "^DOMAIN=" "$env" | cut -d= -f2)
         ROOT=$(grep "^ROOT=" "$env" | cut -d= -f2)
-        NODE_APP_PORT=$(grep "^NODE_APP_PORT=" "$env" | cut -d= -f2)
+        NODE_APP_PORT=$(grep "^NODE_APP_PORT=" "$env" | cut -d= -f2 | tr -d '[:space:]')
         local pm2_name=$(basename "$(dirname "$(dirname "$env")")")
         local pm2_state="unknown"
         if command -v pm2 >/dev/null 2>&1; then
@@ -211,17 +249,24 @@ start_node_app(){
 
     case "$PM2_MODE" in
         1)
-            PORT=${NODE_APP_PORT} pm2 start npm --name "$pm2_name" -- start || {
-                fail "PM2 start failed"
-                return 1
-            }
+            if is_nextjs_app; then
+                start_pm2_next_app "$pm2_name" || {
+                    fail "Next.js PM2 start failed on port $NODE_APP_PORT"
+                    return 1
+                }
+            else
+                PORT=${NODE_APP_PORT} NODE_ENV=production pm2 start npm --name "$pm2_name" --update-env -- start || {
+                    fail "PM2 start failed"
+                    return 1
+                }
+            fi
             ;;
         2)
             if [ ! -f "$DOMAIN_PATH/public_html/$NODE_ENTRY" ]; then
                 fail "Entry file not found: $NODE_ENTRY"
                 return 1
             fi
-            PORT=${NODE_APP_PORT} pm2 start "$NODE_ENTRY" --name "$pm2_name" || {
+            PORT=${NODE_APP_PORT} NODE_ENV=production pm2 start "$NODE_ENTRY" --name "$pm2_name" --update-env || {
                 fail "PM2 start failed"
                 return 1
             }
@@ -231,7 +276,7 @@ start_node_app(){
                 fail ".next/standalone/server.js not found. Run Deploy/Build first."
                 return 1
             fi
-            PORT=${NODE_APP_PORT} pm2 start ".next/standalone/server.js" --name "$pm2_name" || {
+            PORT=${NODE_APP_PORT} NODE_ENV=production pm2 start ".next/standalone/server.js" --name "$pm2_name" --update-env || {
                 fail "PM2 start failed"
                 return 1
             }
@@ -268,9 +313,12 @@ stop_node_app(){
 restart_node_app(){
     select_node_domain || return
     ensure_pm2 || return
+    cd "$DOMAIN_PATH/public_html" || return
 
     local pm2_name="$CLEAN_DOMAIN"
-    pm2 restart "$pm2_name" 2>/dev/null && ok "PM2 app restarted: $pm2_name" || fail "PM2 app not found: $pm2_name"
+    restart_pm2_app_with_config "$pm2_name" && \
+        ok "PM2 app restarted with updated environment (PORT=$NODE_APP_PORT)" || \
+        fail "PM2 app not found or restart failed"
 }
 
 # ==========================================
@@ -347,7 +395,11 @@ deploy_node_app(){
     echo "Step $((step + 1)): Restarting app via PM2 and updating environment..."
 
     if pm2 describe "$pm2_name" >/dev/null 2>&1; then
-        pm2 restart "$pm2_name" --update-env && ok "App restarted via PM2 (environment updated)"
+        restart_pm2_app_with_config "$pm2_name" && \
+            ok "App restarted via PM2 (environment updated, PORT=$NODE_APP_PORT)" || {
+                fail "PM2 restart failed"
+                return 1
+            }
     else
         echo "App not yet running in PM2. Starting now..."
         echo ""
@@ -360,9 +412,15 @@ deploy_node_app(){
         PM2_MODE="${PM2_MODE:-1}"
 
         case "$PM2_MODE" in
-            1) PORT=${NODE_APP_PORT} pm2 start npm --name "$pm2_name" -- start || { fail "PM2 start failed"; return 1; } ;;
-            2) PORT=${NODE_APP_PORT} pm2 start "$NODE_ENTRY" --name "$pm2_name" || { fail "PM2 start failed"; return 1; } ;;
-            3) PORT=${NODE_APP_PORT} pm2 start ".next/standalone/server.js" --name "$pm2_name" || { fail "PM2 start failed"; return 1; } ;;
+            1)
+                if is_nextjs_app; then
+                    start_pm2_next_app "$pm2_name" || { fail "Next.js PM2 start failed"; return 1; }
+                else
+                    PORT=${NODE_APP_PORT} NODE_ENV=production pm2 start npm --name "$pm2_name" --update-env -- start || { fail "PM2 start failed"; return 1; }
+                fi
+                ;;
+            2) PORT=${NODE_APP_PORT} NODE_ENV=production pm2 start "$NODE_ENTRY" --name "$pm2_name" --update-env || { fail "PM2 start failed"; return 1; } ;;
+            3) PORT=${NODE_APP_PORT} NODE_ENV=production pm2 start ".next/standalone/server.js" --name "$pm2_name" --update-env || { fail "PM2 start failed"; return 1; } ;;
             *) fail "Invalid mode"; return 1 ;;
         esac
 
@@ -471,7 +529,12 @@ change_node_port(){
             local pm2_name="$CLEAN_DOMAIN"
             pm2 delete "$pm2_name" 2>/dev/null || true
             cd "$DOMAIN_PATH/public_html" || return
-            PORT=${NEW_PORT} pm2 start npm --name "$pm2_name" -- start 2>/dev/null || true
+            NODE_APP_PORT="$NEW_PORT"
+            if is_nextjs_app; then
+                start_pm2_next_app "$pm2_name" || warn "Next.js PM2 restart failed"
+            else
+                PORT=${NEW_PORT} NODE_ENV=production pm2 start npm --name "$pm2_name" --update-env -- start 2>/dev/null || true
+            fi
             pm2 save || true
         fi
 
@@ -524,7 +587,7 @@ change_node_entry(){
         local pm2_name="$CLEAN_DOMAIN"
         pm2 delete "$pm2_name" 2>/dev/null || true
         cd "$DOMAIN_PATH/public_html" || return
-        PORT=${NODE_APP_PORT} pm2 start "$NEW_ENTRY" --name "$pm2_name" || {
+        PORT=${NODE_APP_PORT} NODE_ENV=production pm2 start "$NEW_ENTRY" --name "$pm2_name" --update-env || {
             fail "PM2 restart failed"
             return 1
         }
@@ -587,7 +650,7 @@ except: print('unknown')
     # Check HTTP response
     status_code=$(curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 3 --max-time 8 "http://127.0.0.1:${NODE_APP_PORT}/" 2>/dev/null || echo "000")
 
-    if [[ "$status_code" =~ ^2|3|4 ]]; then
+    if [[ "$status_code" =~ ^[234][0-9][0-9]$ ]]; then
         ok "Local app responded with HTTP $status_code"
     else
         fail "Local app did not respond on http://127.0.0.1:${NODE_APP_PORT}/"
@@ -626,7 +689,7 @@ migrate_systemd_to_pm2(){
 
         local dpath=$(dirname "$(dirname "$env")")
         local clean=$(basename "$dpath")
-        local port=$(grep "^NODE_APP_PORT=" "$env" | cut -d= -f2)
+        local port=$(grep "^NODE_APP_PORT=" "$env" | cut -d= -f2 | tr -d '[:space:]')
         local domain=$(grep "^DOMAIN=" "$env" | cut -d= -f2)
         local old_service="${clean}-node.service"
         port="${port:-3000}"
@@ -639,10 +702,23 @@ migrate_systemd_to_pm2(){
 
             cd "$dpath/public_html" || continue
             pm2 delete "$clean" 2>/dev/null || true
-            PORT=${port} pm2 start npm --name "$clean" -- start || {
-                warn "Failed to start $clean via PM2, check manually"
-                continue
-            }
+            DOMAIN_PATH="$dpath"
+            DOMAIN="$domain"
+            CLEAN_DOMAIN="$clean"
+            NODE_APP_PORT="$port"
+            NODE_ENTRY=$(grep "^NODE_ENTRY=" "$env" | cut -d= -f2 | tr -d '[:space:]')
+            NODE_ENTRY="${NODE_ENTRY:-app.js}"
+            if is_nextjs_app; then
+                start_pm2_next_app "$clean" || {
+                    warn "Failed to start $clean via Next.js/PM2, check manually"
+                    continue
+                }
+            else
+                PORT=${port} NODE_ENV=production pm2 start npm --name "$clean" --update-env -- start || {
+                    warn "Failed to start $clean via PM2, check manually"
+                    continue
+                }
+            fi
             ok "$domain migrated to PM2"
             ((migrated++))
         fi

@@ -1,5 +1,17 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.19 — 2026-09-01 — PostgreSQL WAL, secure updates and Node.js reliability
+
+- Added PostgreSQL WAL policy configuration by selecting a database from a numbered list.
+- Added shared-cluster WAL archive handling with pgBackRest, per-domain status files, logs, alerts and one-minute health polling without running `pg_dump` every minute.
+- Added support for explicitly isolated PostgreSQL clusters with separate pgBackRest stanzas.
+- Preserved the existing daily backup schedule and documented the shared-cluster model.
+- Fixed PostgreSQL metadata quoting, SELinux context restoration and missing WAL registry handling.
+- Fixed Next.js PM2 start/restart flows so the domain port is passed explicitly and environment changes are refreshed.
+- Added checksum-gated ShieldPress installation and update packages.
+- Added a CVE/dependency audit covering DNF security advisories, Composer, npm and WordPress checksums.
+- Fixed installer behavior without a TTY, normalized installed source ownership/permissions and made Fail2ban start on fresh servers without domain logs.
+
 ## Unreleased — Source-Available Software License
 
 - Replaced the ShieldPress VPS Proprietary License with the ShieldPress

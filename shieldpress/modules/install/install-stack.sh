@@ -144,11 +144,19 @@ fi
 # BASE PACKAGES
 # ------------------------------------------------
 
-dnf clean all
 dnf -y install dnf-plugins-core || true
-rm -rf /var/cache/dnf
 
-dnf makecache --refresh --setopt=skip_if_unavailable=true -y
+# Keep usable metadata when a third-party mirror is slow or temporarily
+# unavailable. Cleaning the cache first can turn a transient mirror issue
+# into a full installer stall.
+if command -v timeout >/dev/null 2>&1; then
+    timeout 180 dnf makecache --refresh --setopt=skip_if_unavailable=true \
+        --setopt=timeout=20 --setopt=retries=1 -y \
+        || warn "Repository metadata refresh incomplete; continuing with available cache"
+else
+    dnf makecache --refresh --setopt=skip_if_unavailable=true -y \
+        || warn "Repository metadata refresh incomplete; continuing with available cache"
+fi
 
 # ------------------------------------------------
 # FIX SYSTEM PACKAGE MISMATCH (QUAN TRỌNG)
@@ -333,13 +341,17 @@ fi
 # SET ROOT PASSWORD (if not already set)
 # ------------------------------------------------
 if ! passwd -S root 2>/dev/null | grep -qw "P"; then
-    echo "" >/dev/tty
-    echo "===============================================" >/dev/tty
-    echo "  Root password is not set."                   >/dev/tty
-    echo "  Please set a root password to allow SSH"     >/dev/tty
-    echo "  login with password authentication."         >/dev/tty
-    echo "===============================================" >/dev/tty
-    passwd root </dev/tty
+    if [ -t 0 ] && [ -w /dev/tty ]; then
+        echo "" >/dev/tty
+        echo "===============================================" >/dev/tty
+        echo "  Root password is not set."                   >/dev/tty
+        echo "  Please set a root password to allow SSH"     >/dev/tty
+        echo "  login with password authentication."         >/dev/tty
+        echo "===============================================" >/dev/tty
+        passwd root </dev/tty
+    else
+        warn "Root password is not set; skipping password prompt because no TTY is available"
+    fi
 fi
 
 # ------------------------------------------------
@@ -591,7 +603,7 @@ cat > /etc/fail2ban/jail.d/nginx-4xx.conf <<'EOF'
 enabled  = true
 port     = http,https
 filter   = nginx-4xx
-logpath  = /var/log/nginx/domains/*/access.log
+logpath  = /var/log/nginx/access.log
 maxretry = 30
 findtime = 60
 bantime  = 3600
@@ -609,7 +621,7 @@ cat > /etc/fail2ban/jail.d/nginx-limit.conf <<'EOF'
 enabled  = true
 port     = http,https
 filter   = nginx-limit-req
-logpath  = /var/log/nginx/domains/*/error.log
+logpath  = /var/log/nginx/error.log
 maxretry = 10
 findtime = 120
 bantime  = 7200
@@ -621,7 +633,7 @@ cat > /etc/fail2ban/jail.d/wordpress.conf <<'EOF'
 enabled  = true
 port     = http,https
 filter   = wordpress
-logpath  = /var/log/nginx/domains/*/access.log
+logpath  = /var/log/nginx/access.log
 maxretry = 5
 findtime = 600
 bantime  = 3600
@@ -633,6 +645,10 @@ failregex = ^<HOST> -.*(POST /wp-login\.php|POST /xmlrpc\.php)
 ignoreregex =
 EOF
 
+# A fresh server has no per-domain log directories yet.  Use the standard
+# Nginx logs so Fail2ban can start before the first domain is created.
+mkdir -p /var/log/nginx
+touch /var/log/nginx/access.log /var/log/nginx/error.log
 systemctl restart fail2ban
 ok "Fail2ban jails configured (nginx-4xx, nginx-limit, wordpress)"
 

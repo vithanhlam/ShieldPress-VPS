@@ -29,7 +29,11 @@ install_rclone(){
     # If package manager failed, use official install script
     if ! command -v rclone >/dev/null 2>&1; then
         echo "Package manager install failed, using official script..."
-        curl -fsSL https://rclone.org/install.sh | bash 2>/dev/null
+        RCLONE_INSTALLER=$(mktemp /tmp/shieldpress-rclone-install.XXXXXX)
+        if curl -fsSL --connect-timeout 10 --max-time 120 https://rclone.org/install.sh -o "$RCLONE_INSTALLER"; then
+            bash "$RCLONE_INSTALLER"
+        fi
+        rm -f "$RCLONE_INSTALLER"
     fi
 
     if command -v rclone >/dev/null 2>&1; then
@@ -37,7 +41,7 @@ install_rclone(){
         return 0
     else
         echo "[FAIL] Could not install rclone automatically"
-        echo "Try manually: curl https://rclone.org/install.sh | bash"
+        echo "Try manually: download https://rclone.org/install.sh, review it, then execute locally"
         return 1
     fi
 }

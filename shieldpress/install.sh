@@ -19,9 +19,13 @@ if [ ! -f "$BASE_DIR/shieldpress.sh" ]; then
     exit 1
 fi
 
-# Set execute permission
-chmod +x "$BASE_DIR/shieldpress.sh"
-chmod -R +x "$BASE_DIR/modules" 2>/dev/null
+# Normalize ownership and permissions after copying the source.  This matters
+# when the installer ran from an archive created by a non-root user: preserving
+# that archive's UID/GID could make root-executed code writable by another user.
+chown -R root:root "$BASE_DIR"
+find "$BASE_DIR" -type d -exec chmod 755 {} +
+find "$BASE_DIR" -type f -name '*.sh' -exec chmod 755 {} +
+find "$BASE_DIR" -type f ! -name '*.sh' -exec chmod 644 {} +
 
 # Create global command
 ln -sf "$BASE_DIR/shieldpress.sh" /usr/bin/shieldpress

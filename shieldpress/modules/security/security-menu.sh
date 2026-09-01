@@ -1740,6 +1740,7 @@ while true; do
         "17|Auto-block Attackers|red" \
         "18|Auto-Guard (Scheduled)|magenta" \
         "19|Security Audit|magenta" \
+        "20|CVE / Dependency Audit|red" \
         "0|Back|white"
 
     sp_prompt choice
@@ -1764,6 +1765,7 @@ while true; do
         17) auto_block_attackers ;;
         18) manage_auto_guard ;;
         19) security_audit ;;
+        20) bash "$BASE_DIR/modules/security/cve-audit.sh" ;;
         0)  break ;;
         *)  sp_invalid; continue ;;
     esac

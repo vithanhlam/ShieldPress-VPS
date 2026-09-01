@@ -34,10 +34,20 @@ install_shieldpress_nodejs(){
     dnf module reset -y nodejs >/dev/null 2>&1 || true
     dnf module disable -y nodejs >/dev/null 2>&1 || true
 
-    if ! curl -fsSL "$setup_url" | bash -; then
+    # Materialize the installer so it can be audited and removed after use.
+    local setup_script
+    setup_script=$(mktemp /tmp/shieldpress-nodejs-setup.XXXXXX)
+    if ! curl -fsSL --connect-timeout 10 --max-time 120 "$setup_url" -o "$setup_script"; then
+        rm -f "$setup_script"
+        shieldpress_fail "NodeSource setup download failed"
+        return 1
+    fi
+    if ! bash "$setup_script"; then
+        rm -f "$setup_script"
         shieldpress_fail "NodeSource setup failed"
         return 1
     fi
+    rm -f "$setup_script"
 
     if ! dnf install -y nodejs --allowerasing; then
         shieldpress_warn "Node.js install hit package conflicts. Removing AppStream Node.js packages and retrying..."
