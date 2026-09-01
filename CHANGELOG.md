@@ -1,5 +1,10 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.26 — 2026-09-02 — Complete user guide
+- Added `GUIDE.md`, a full English operational guide covering installation,
+  application managers, backups, remote storage, PostgreSQL WAL, streaming
+  replication, failover, security, monitoring and troubleshooting.
+
 ## v1.3.21 — 2026-09-01 — PostgreSQL WAL retention
 
 - Added a daily per-cluster systemd timer for `pgBackRest expire` with a retention target of 7 full pgBackRest backups.

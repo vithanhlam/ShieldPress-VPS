@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.21`
+**Current version:** `1.3.26`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -36,6 +36,7 @@ Source code is in the `shieldpress/` directory. On the server it installs to `/o
 - [Installation](#installation)
 - [First steps after installation](#first-steps-after-installation)
 - [Update source](#update-source)
+- [Full user guide](GUIDE.md)
 - [Quick commands](#quick-commands)
 - [What is included](#what-is-included)
 - [Issues and support](#issues-and-support)
