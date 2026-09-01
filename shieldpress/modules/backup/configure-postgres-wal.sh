@@ -196,6 +196,7 @@ EOF
     systemctl restart postgresql >/dev/null 2>&1 || { write_status failed "PostgreSQL restart failed"; exit 1; }
     runuser -u postgres -- pgbackrest --stanza="$STANZA" check >/dev/null 2>&1 || { write_status failed "pgBackRest check failed"; exit 1; }
     install_expire_timer >/dev/null 2>&1 || { write_status failed "could not install WAL retention timer"; exit 1; }
+    bash "$BASE_DIR/modules/backup/sync-wal-remote.sh" --install >/dev/null 2>&1 || { write_status failed "could not install remote WAL sync timer"; exit 1; }
     if [ "$STANZA_MODE" = pgbackrest ]; then
         write_status success "WAL archive enabled for explicitly isolated PostgreSQL cluster"
     else

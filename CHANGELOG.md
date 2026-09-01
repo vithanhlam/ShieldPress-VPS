@@ -1178,3 +1178,9 @@ Added missing excludes across all backup methods (manual, auto-full, auto-files,
 - Toast notifications for success/failure
 - Last command output displayed in panel
 - Uses `api()` helper with JWT authentication
+## v1.3.22 — 2026-09-02 — Off-site PostgreSQL WAL replication
+- Added an every-minute systemd replication job for the local pgBackRest repository.
+- Added support for S3-compatible, Google Drive, OneDrive and existing rclone
+  remotes including FTP/SFTP.
+- Kept PostgreSQL archive-push local-first and append-safe; remote failures are
+  logged without blocking PostgreSQL WAL archiving.

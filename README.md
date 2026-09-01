@@ -376,6 +376,11 @@ PostgreSQL features:
   `pgbackrest expire` at 03:30. Existing ShieldPress daily backups are not changed
   or deleted; pgBackRest can only expire WAL that is no longer needed by its own
   retained backup chain.
+- When Remote Storage is configured, a separate every-minute systemd job copies
+  the local pgBackRest repository to S3/S3-compatible, Google Drive, OneDrive or
+  any configured rclone remote (including FTP/SFTP). PostgreSQL writes locally
+  first, and remote replication uses append-safe `rclone copy`; a cloud outage
+  does not block WAL archiving. Remote WAL is not deleted automatically.
 - List backups.
 
 WAL archive prerequisites:

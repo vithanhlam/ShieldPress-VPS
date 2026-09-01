@@ -523,7 +523,7 @@ configure_remote(){
     echo "  1) S3 / S3-compatible (AWS, Cloudflare R2, DO Spaces, etc.)"
     echo "  2) Google Drive"
     echo "  3) OneDrive"
-    echo "  4) Use existing rclone remote"
+    echo "  4) Use existing rclone remote (FTP/SFTP also supported)"
     echo ""
     read -p "Select (1-4): " PROVIDER
 
@@ -582,6 +582,10 @@ configure_remote(){
 
     REMOTE_ENABLED=1
     write_config
+    # Install even when WAL was configured earlier; it remains a no-op until
+    # remote credentials and an active WAL registry are available.
+    bash "$BASE_DIR/modules/backup/sync-wal-remote.sh" --install >/dev/null 2>&1 || \
+        echo "[WARN] Could not install the PostgreSQL remote WAL sync timer"
 
     echo ""
     echo "===================================================="
