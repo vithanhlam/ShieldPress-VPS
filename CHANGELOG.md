@@ -1189,3 +1189,9 @@ Added missing excludes across all backup methods (manual, auto-full, auto-files,
 ## v1.3.24 — 2026-09-02 — SELinux-compatible WAL remote service
 - Updated the WAL remote systemd unit to invoke the ShieldPress script through
   `/bin/bash`, avoiding direct execution denial on SELinux-enforcing AlmaLinux.
+## v1.3.25 — 2026-09-02 — PostgreSQL streaming replication
+- Added asynchronous physical Primary/Standby replication with a physical
+  replication slot and restricted `pg_hba.conf` access.
+- Added pgBackRest S3 repository configuration, isolated restore verification,
+  replication health timer and explicit promote/failover workflow.
+- Preserved existing daily backups and kept Laravel single-write to Primary.

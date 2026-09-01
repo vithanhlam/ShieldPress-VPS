@@ -545,6 +545,8 @@ while true; do
         "7|Backup Database|green" \
         "8|Configure Auto Backup|yellow" \
         "9|List Backups|cyan" \
+        "10|Streaming Replication|magenta" \
+        "10|Streaming Replication|magenta" \
         "0|Back|white"
     sp_prompt choice
 
@@ -558,6 +560,8 @@ while true; do
         7) pg_backup_db ;;
         8) pg_auto_backup ;;
         9) pg_list_backups ;;
+        10) bash "$MODULE_DIR/postgres-replication.sh" ;;
+        10) bash "$MODULE_DIR/postgres-replication.sh" ;;
         0) break ;;
         *) sp_invalid ;;
     esac

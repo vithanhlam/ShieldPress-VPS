@@ -381,6 +381,18 @@ PostgreSQL features:
   any configured rclone remote (including FTP/SFTP). PostgreSQL writes locally
   first, and remote replication uses append-safe `rclone copy`; a cloud outage
   does not block WAL archiving. Remote WAL is not deleted automatically.
+- PostgreSQL streaming replication is physical, asynchronous and slot-backed.
+  Configure it from `Database → PostgreSQL Manager → Streaming Replication`.
+  The Primary setup adds a restricted replication `pg_hba.conf` rule, creates a
+  physical slot, configures pgBackRest S3 repository settings and installs a
+  one-minute health timer. Standby setup uses `pg_basebackup -R -X stream` and
+  refuses to replace the data directory without an explicit `REPLACE` answer.
+  Promotion requires an explicit confirmation; fence the old Primary before
+  reconnecting applications and move DNS/endpoint manually. Laravel is never
+  configured for dual-write.
+- Use `Run pgBackRest full` before initializing a Standby and `Test isolated
+  restore` to verify PITR safely in a temporary directory. These actions are
+  additive and do not remove the existing daily ShieldPress backup schedule.
 - List backups.
 
 WAL archive prerequisites:
