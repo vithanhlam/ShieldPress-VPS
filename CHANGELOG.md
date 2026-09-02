@@ -1,5 +1,16 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.27 — 2026-09-03 — Laravel Supervisor queue workers
+
+- Added `Laravel Manager → Supervisor Manager` as menu option 6.
+- Added Supervisor installation and service checks for DNF and APT systems.
+- Added per-domain Laravel queue worker configuration using `supervisorctl`.
+- Added worker status, start, stop, restart, log viewing and removal actions.
+- Added automatic Supervisor configuration reload and queue worker autostart.
+- Tested Laravel 13 domain creation, Composer/npm build, production deployment,
+  Artisan commands, permissions, scheduler and Supervisor worker lifecycle on
+  AlmaLinux 9.8.
+
 ## v1.3.26 — 2026-09-02 — Complete user guide
 - Added `GUIDE.md`, a full English operational guide covering installation,
   application managers, backups, remote storage, PostgreSQL WAL, streaming

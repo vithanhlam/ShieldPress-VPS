@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.26`
+**Current version:** `1.3.27`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -310,6 +310,9 @@ Source: `modules/laravel/`
 - Manage PostgreSQL for Laravel.
 - Backup Laravel/PostgreSQL.
 - Manage Redis/Valkey cache for Laravel.
+- Manage Laravel queue workers with Supervisor (`supervisorctl`).
+- Open `Laravel Manager → Supervisor Manager` to install Supervisor and configure
+  per-domain queue workers with status, start, stop, restart, logs and removal.
 - Install Laravel components.
 - Automatically prepare missing Composer before component installation or production deployment.
 - Install frontend dev dependencies when building Laravel/Vite applications.

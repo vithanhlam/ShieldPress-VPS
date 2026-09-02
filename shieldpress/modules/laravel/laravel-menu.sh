@@ -972,6 +972,151 @@ laravel_status(){
     list_laravel_domains
 }
 
+supervisor_service_name(){
+    if systemctl list-unit-files 2>/dev/null | grep -q '^supervisord\.service'; then
+        echo "supervisord"
+    else
+        echo "supervisor"
+    fi
+}
+
+supervisor_config_dir(){
+    if [ -d /etc/supervisord.d ] || [ ! -d /etc/supervisor/conf.d ]; then
+        echo "/etc/supervisord.d"
+    else
+        echo "/etc/supervisor/conf.d"
+    fi
+}
+
+ensure_supervisor(){
+    if ! command -v supervisorctl >/dev/null 2>&1; then
+        echo "Installing Supervisor..."
+        if command -v dnf >/dev/null 2>&1; then
+            dnf install -y supervisor || return 1
+        elif command -v apt-get >/dev/null 2>&1; then
+            apt-get update && apt-get install -y supervisor || return 1
+        else
+            fail "No supported package manager found"
+            return 1
+        fi
+    fi
+    systemctl enable --now "$(supervisor_service_name)" >/dev/null 2>&1 || {
+        fail "Supervisor service could not be started"
+        return 1
+    }
+}
+
+supervisor_program_name(){ echo "shieldpress-laravel-${CLEAN_DOMAIN}-queue"; }
+supervisor_config_file(){
+    local EXT="conf"
+    [ "$(supervisor_config_dir)" = "/etc/supervisord.d" ] && EXT="ini"
+    echo "$(supervisor_config_dir)/$(supervisor_program_name).$EXT"
+}
+
+supervisor_reload(){
+    supervisorctl reread >/dev/null 2>&1 && supervisorctl update >/dev/null 2>&1
+}
+
+supervisor_configure_queue(){
+    select_laravel_domain || return
+    ensure_supervisor || return 1
+    local APP_DIR="$DOMAIN_PATH/public_html"
+    local CONFIG_DIR CONFIG_FILE PROGRAM PHP_BIN NUMPROCS
+    [ -f "$APP_DIR/artisan" ] || { fail "Laravel artisan not found: $APP_DIR/artisan"; return 1; }
+    CONFIG_DIR=$(supervisor_config_dir)
+    CONFIG_FILE=$(supervisor_config_file)
+    PROGRAM=$(supervisor_program_name)
+    PHP_BIN=$(command -v php)
+    read -p "Number of queue workers [1]: " NUMPROCS
+    NUMPROCS="${NUMPROCS:-1}"
+    [[ "$NUMPROCS" =~ ^[1-9][0-9]*$ ]] || { fail "Invalid worker count"; return 1; }
+
+    mkdir -p "$CONFIG_DIR" "$DOMAIN_PATH/logs" || return 1
+    cat > "$CONFIG_FILE" <<EOF
+[program:$PROGRAM]
+command=$PHP_BIN $APP_DIR/artisan queue:work --sleep=3 --tries=3 --timeout=90
+directory=$APP_DIR
+user=$CLEAN_DOMAIN
+numprocs=$NUMPROCS
+process_name=%(program_name)s_%(process_num)02d
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+redirect_stderr=true
+stdout_logfile=$DOMAIN_PATH/logs/supervisor-queue.log
+stdout_logfile_maxbytes=20MB
+stdout_logfile_backups=5
+stopwaitsecs=3600
+EOF
+    chown root:root "$CONFIG_FILE"
+    chmod 644 "$CONFIG_FILE"
+    supervisor_reload || { fail "Supervisor configuration reload failed"; return 1; }
+    supervisorctl start "$PROGRAM:*" >/dev/null 2>&1 || supervisorctl restart "$PROGRAM:*" >/dev/null 2>&1 || {
+        fail "Queue worker could not be started"
+        return 1
+    }
+    ok "Supervisor queue worker configured for $DOMAIN ($NUMPROCS worker(s))"
+    echo "  Config: $CONFIG_FILE"
+}
+
+supervisor_select_and_run(){
+    local ACTION="$1" PROGRAM
+    select_laravel_domain || return
+    ensure_supervisor || return 1
+    PROGRAM=$(supervisor_program_name)
+    case "$ACTION" in
+        status) supervisorctl status "$PROGRAM:*" 2>/dev/null || warn "No Supervisor worker configured for $DOMAIN" ;;
+        start) supervisorctl start "$PROGRAM:*" && ok "Queue worker started" ;;
+        stop) supervisorctl stop "$PROGRAM:*" && ok "Queue worker stopped" ;;
+        restart) supervisorctl restart "$PROGRAM:*" && ok "Queue worker restarted" ;;
+        logs) tail -n 100 "$DOMAIN_PATH/logs/supervisor-queue.log" 2>/dev/null || warn "Supervisor queue log not found" ;;
+    esac
+}
+
+supervisor_remove_queue(){
+    select_laravel_domain || return
+    ensure_supervisor || return 1
+    local PROGRAM CONFIG_FILE
+    PROGRAM=$(supervisor_program_name)
+    CONFIG_FILE=$(supervisor_config_file)
+    supervisorctl stop "$PROGRAM:*" >/dev/null 2>&1 || true
+    rm -f "$CONFIG_FILE"
+    supervisor_reload || { fail "Supervisor configuration reload failed"; return 1; }
+    ok "Supervisor queue worker removed for $DOMAIN"
+}
+
+laravel_supervisor_menu(){
+    while true; do
+        clear
+        sp_header "Laravel Supervisor" "Queue worker management"
+        sp_menu_grid \
+            "1|Install / Check Supervisor|green" \
+            "2|Configure Queue Worker|blue" \
+            "3|Worker Status|cyan" \
+            "4|Start Worker|green" \
+            "5|Stop Worker|yellow" \
+            "6|Restart Worker|yellow" \
+            "7|View Worker Log|magenta" \
+            "8|Remove Queue Worker|red" \
+            "0|Back|white"
+        sp_prompt opt
+        case $opt in
+            1) ensure_supervisor && ok "Supervisor is ready" ;;
+            2) supervisor_configure_queue ;;
+            3) supervisor_select_and_run status ;;
+            4) supervisor_select_and_run start ;;
+            5) supervisor_select_and_run stop ;;
+            6) supervisor_select_and_run restart ;;
+            7) supervisor_select_and_run logs ;;
+            8) supervisor_remove_queue ;;
+            0) break ;;
+            *) sp_invalid ;;
+        esac
+        pause
+    done
+}
+
 laravel_database_menu(){
     while true; do
         clear
@@ -1064,19 +1209,20 @@ while true; do
         "3|List Laravel Domains|cyan" \
         "4|Backup Manager|yellow" \
         "5|Redis Cache Manager|blue" \
-        "6|Install Components|green" \
-        "7|npm run build|blue" \
-        "8|Deploy / Build Prod|blue" \
-        "9|Edit Laravel .env|yellow" \
-        "10|storage:link|cyan" \
-        "11|optimize:clear|yellow" \
-        "12|optimize cache|green" \
-        "13|Queue restart|yellow" \
-        "14|Scheduler run|cyan" \
-        "15|View Laravel Log|magenta" \
-        "16|Runtime / Status|cyan" \
-        "17|Fix Permissions|green" \
-        "18|Advanced Artisan|magenta" \
+        "6|Supervisor Manager|cyan" \
+        "7|Install Components|green" \
+        "8|npm run build|blue" \
+        "9|Deploy / Build Prod|blue" \
+        "10|Edit Laravel .env|yellow" \
+        "11|storage:link|cyan" \
+        "12|optimize:clear|yellow" \
+        "13|optimize cache|green" \
+        "14|Queue restart|yellow" \
+        "15|Scheduler run|cyan" \
+        "16|View Laravel Log|magenta" \
+        "17|Runtime / Status|cyan" \
+        "18|Fix Permissions|green" \
+        "19|Advanced Artisan|magenta" \
         "0|Back|white"
     sp_prompt opt
 
@@ -1086,19 +1232,20 @@ while true; do
         3) list_laravel_domains ;;
         4) laravel_backup_menu ;;
         5) laravel_redis_menu ;;
-        6) install_laravel_components ;;
-        7) npm_run_build ;;
-        8) deploy_laravel_production ;;
-        9) edit_laravel_env ;;
-        10) run_laravel_command storage ;;
-        11) run_laravel_command clear ;;
-        12) run_laravel_command optimize ;;
-        13) run_laravel_command queue-restart ;;
-        14) run_laravel_command schedule ;;
-        15) laravel_logs ;;
-        16) laravel_status ;;
-        17) fix_laravel_permissions ;;
-        18) laravel_advanced_menu ;;
+        6) laravel_supervisor_menu ;;
+        7) install_laravel_components ;;
+        8) npm_run_build ;;
+        9) deploy_laravel_production ;;
+        10) edit_laravel_env ;;
+        11) run_laravel_command storage ;;
+        12) run_laravel_command clear ;;
+        13) run_laravel_command optimize ;;
+        14) run_laravel_command queue-restart ;;
+        15) run_laravel_command schedule ;;
+        16) laravel_logs ;;
+        17) laravel_status ;;
+        18) fix_laravel_permissions ;;
+        19) laravel_advanced_menu ;;
         0) break ;;
         *) sp_invalid ;;
     esac
