@@ -1,0 +1,31 @@
+name: Build release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Build release package and checksum
+        run: |
+          tar -czf /tmp/shieldpress.tar.gz -C . shieldpress
+          sha256sum /tmp/shieldpress.tar.gz | awk '{print $1 "  shieldpress.tar.gz"}' > /tmp/shieldpress.sha256
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            /tmp/shieldpress.tar.gz \
+            /tmp/shieldpress.sha256 \
+            --title "ShieldPress VPS ${GITHUB_REF_NAME#v}" \
+            --generate-notes
