@@ -84,8 +84,9 @@ else
 fi
 
 echo ""
-read -p "Confirm reset password for '$SELECTED_USER'? (y/n): " CONFIRM
-[ "$CONFIRM" != "y" ] && echo "Cancelled." && exit 1
+read -p "Confirm reset password for '$SELECTED_USER'? [Y/n]: " CONFIRM
+CONFIRM="${CONFIRM:-y}"
+[[ "$CONFIRM" =~ ^[Yy]$ ]] || { echo "Cancelled."; exit 1; }
 
 # ==========================
 # RESET PASSWORD

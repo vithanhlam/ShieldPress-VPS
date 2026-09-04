@@ -69,10 +69,10 @@ sp_menu_grid(){
 }
 
 sp_prompt(){
-    read -p "Select: " "$1"
+    read -r -p "Select: " "$1"
 }
 
 sp_invalid(){
     echo -e "${SP_RED}[FAIL]${SP_RESET} Invalid option"
-    sleep 1
+    sleep 0.2
 }

@@ -88,9 +88,10 @@ FILE_SIZE=$(du -h "$FILE" | awk '{print $1}')
 echo "File size: $FILE_SIZE"
 
 echo ""
-read -p "Backup database before import? (y/n): " BACKUP_CONFIRM
+read -p "Backup database before import? [Y/n]: " BACKUP_CONFIRM
+BACKUP_CONFIRM="${BACKUP_CONFIRM:-y}"
 
-if [[ "$BACKUP_CONFIRM" == "y" ]]; then
+if [[ "$BACKUP_CONFIRM" =~ ^[Yy]$ ]]; then
     echo "Creating backup..."
 
     BACKUP_FILE="$BACKUP_DIR/${DB_NAME}_before_import_$(date +%Y%m%d_%H%M%S).sql"

@@ -149,7 +149,8 @@ install_laravel_runtime(){
     fi
 
     warn "Missing runtime: ${missing[*]}"
-    read -p "Install missing Laravel runtime components now? [y/N]: " CONFIRM
+    read -p "Install missing Laravel runtime components now? [Y/n]: " CONFIRM
+    CONFIRM="${CONFIRM:-y}"
     [[ "$CONFIRM" =~ ^[Yy]$ ]] || { warn "Cancelled"; return 0; }
 
     echo "Installing missing Laravel 13 runtime components..."
@@ -362,7 +363,8 @@ delete_pg_database(){
     select_pg_database || return
     echo ""
     echo -e "\e[31mWARNING: This will permanently drop database '$DB_NAME' and user '$DB_USER'!\e[0m"
-    read -p "Continue? (y/n): " CONFIRM
+    read -p "Continue? [y/N]: " CONFIRM
+    CONFIRM="${CONFIRM:-n}"
     [[ "$CONFIRM" =~ ^[Yy]$ ]] || { warn "Cancelled"; return; }
 
     cd /tmp
@@ -474,8 +476,9 @@ import_pg_database(){
     echo "File size: $FILE_SIZE"
 
     echo ""
-    read -p "Backup database before import? (y/n): " BACKUP_CONFIRM
-    if [[ "$BACKUP_CONFIRM" == "y" ]]; then
+    read -p "Backup database before import? [Y/n]: " BACKUP_CONFIRM
+    BACKUP_CONFIRM="${BACKUP_CONFIRM:-y}"
+    if [[ "$BACKUP_CONFIRM" =~ ^[Yy]$ ]]; then
         echo "Creating backup..."
         ensure_pg_backup_script
         BACKUP_FILE=$("$LARAVEL_PG_BACKUP_SCRIPT" "$DB_NAME") || {
@@ -486,8 +489,9 @@ import_pg_database(){
     fi
 
     echo ""
-    read -p "Confirm import into '$DB_NAME'? This may overwrite data (y/n): " CONFIRM
-    [[ "$CONFIRM" == "y" ]] || { warn "Cancelled"; return; }
+    read -p "Confirm import into '$DB_NAME'? This may overwrite data [y/N]: " CONFIRM
+    CONFIRM="${CONFIRM:-n}"
+    [[ "$CONFIRM" =~ ^[Yy]$ ]] || { warn "Cancelled"; return; }
 
     echo ""
     echo "Starting import..."
@@ -546,13 +550,15 @@ run_laravel_command(){
         migrate) php artisan migrate --force ;;
         rollback)
             echo -e "\e[31mWARNING: This can revert production schema!\e[0m"
-            read -p "Continue? (y/n): " CONFIRM
+            read -p "Continue? [y/N]: " CONFIRM
+            CONFIRM="${CONFIRM:-n}"
             [[ "$CONFIRM" =~ ^[Yy]$ ]] || { warn "Cancelled"; return; }
             php artisan migrate:rollback
             ;;
         seed)
             echo -e "\e[31mWARNING: This can change production data!\e[0m"
-            read -p "Continue? (y/n): " CONFIRM
+            read -p "Continue? [y/N]: " CONFIRM
+            CONFIRM="${CONFIRM:-n}"
             [[ "$CONFIRM" =~ ^[Yy]$ ]] || { warn "Cancelled"; return; }
             php artisan db:seed --force
             ;;
@@ -933,7 +939,8 @@ laravel_redis_menu(){
             4)
                 if command -v valkey-cli >/dev/null 2>&1; then
                     echo -e "\e[31mWARNING: This will flush ALL Redis/Valkey data!\e[0m"
-                    read -p "Continue? (y/n): " CONFIRM
+                    read -p "Continue? [y/N]: " CONFIRM
+                    CONFIRM="${CONFIRM:-n}"
                     [[ "$CONFIRM" =~ ^[Yy]$ ]] && valkey-cli FLUSHALL && ok "Redis cache flushed" || warn "Cancelled"
                 else
                     fail "Valkey not installed"

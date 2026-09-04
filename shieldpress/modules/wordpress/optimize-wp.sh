@@ -66,8 +66,9 @@ case $OPT in
     echo "Running Deep Optimize..."
     echo "This will clean: revisions, spam, trash, orphan data"
     echo ""
-    read -p "Continue? (y/n): " CONFIRM
-    [ "$CONFIRM" != "y" ] && { echo "Cancelled."; read -p "Press Enter..."; exit 0; }
+    read -p "Continue? [y/N]: " CONFIRM
+    CONFIRM="${CONFIRM:-n}"
+    [[ "$CONFIRM" =~ ^[Yy]$ ]] || { echo "Cancelled."; read -p "Press Enter..."; exit 0; }
 
     echo ""
 

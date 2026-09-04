@@ -130,7 +130,7 @@ ensure_pg_backup_script(){
     local RETENTION="${1:-7}"
     cat > "$PG_BACKUP_SCRIPT" <<BKEOF
 #!/bin/bash
-set -e
+set -euo pipefail
 
 DB_NAME="\$1"
 KEEP=${RETENTION}
@@ -145,7 +145,9 @@ BACKUP_DIR="\$BACKUP_GLOBAL_DIR/laravel-postgresql/\${DB_NAME}"
 mkdir -p "\$BACKUP_DIR"
 BACKUP_FILE="\$BACKUP_DIR/\${DB_NAME}_\$(date '+%Y%m%d_%H%M%S').sql.gz"
 
-cd /tmp && runuser -u postgres -- pg_dump "\$DB_NAME" | gzip > "\$BACKUP_FILE"
+cd /tmp
+runuser -u postgres -- pg_dump --no-owner --no-privileges "\$DB_NAME" | gzip > "\$BACKUP_FILE"
+[ -s "\$BACKUP_FILE" ] || { echo "Backup file is empty: \$BACKUP_FILE" >&2; exit 1; }
 chmod 600 "\$BACKUP_FILE"
 
 cd "\$BACKUP_DIR" && ls -1t \${DB_NAME}_*.sql.gz 2>/dev/null | tail -n +\$((\$KEEP + 1)) | xargs -r rm -f
@@ -373,8 +375,9 @@ pg_import_db(){
     echo "File size: $FILE_SIZE"
 
     echo ""
-    read -p "Backup database before import? (y/n): " BACKUP_CONFIRM
-    if [[ "$BACKUP_CONFIRM" == "y" ]]; then
+    read -p "Backup database before import? [Y/n]: " BACKUP_CONFIRM
+    BACKUP_CONFIRM="${BACKUP_CONFIRM:-y}"
+    if [[ "$BACKUP_CONFIRM" =~ ^[Yy]$ ]]; then
         echo "Creating backup..."
         ensure_pg_backup_script 7
         BACKUP_FILE=$("$PG_BACKUP_SCRIPT" "$DB_NAME") || {
@@ -546,7 +549,6 @@ while true; do
         "8|Configure Auto Backup|yellow" \
         "9|List Backups|cyan" \
         "10|Streaming Replication|magenta" \
-        "10|Streaming Replication|magenta" \
         "0|Back|white"
     sp_prompt choice
 
@@ -560,7 +562,6 @@ while true; do
         7) pg_backup_db ;;
         8) pg_auto_backup ;;
         9) pg_list_backups ;;
-        10) bash "$MODULE_DIR/postgres-replication.sh" ;;
         10) bash "$MODULE_DIR/postgres-replication.sh" ;;
         0) break ;;
         *) sp_invalid ;;

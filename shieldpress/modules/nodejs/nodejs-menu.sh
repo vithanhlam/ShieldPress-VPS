@@ -21,7 +21,8 @@ pause(){ echo ""; read -p "Press Enter..."; }
 confirm_action(){
     local prompt="$1"
     echo -e "${RED}WARNING: ${prompt}${RESET}"
-    read -p "Continue? (y/n): " CONFIRM
+    read -p "Continue? [Y/n]: " CONFIRM
+    CONFIRM="${CONFIRM:-y}"
     [[ "$CONFIRM" =~ ^[Yy]$ ]] || { warn "Cancelled"; return 1; }
 }
 

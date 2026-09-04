@@ -168,8 +168,11 @@ info "Step 2/5 - Downloading Roundcube..."
 WEBMAIL_DIR="/var/www/webmail"
 
 # Get latest stable version
-RC_VERSION=$(curl -s https://api.github.com/repos/roundcube/roundcubemail/releases/latest 2>/dev/null | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
-[ -z "$RC_VERSION" ] && RC_VERSION="1.6.9"
+RC_VERSION=$(curl -fsSL --connect-timeout 3 --max-time 8 \
+    https://api.github.com/repos/roundcube/roundcubemail/releases/latest 2>/dev/null \
+    | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' | head -1)
+# Keep the fallback on the current stable security branch, never an old release.
+[ -z "$RC_VERSION" ] && RC_VERSION="1.7.3"
 
 RC_URL="https://github.com/roundcube/roundcubemail/releases/download/${RC_VERSION}/roundcubemail-${RC_VERSION}-complete.tar.gz"
 

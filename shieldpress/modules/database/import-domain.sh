@@ -124,9 +124,10 @@ echo "File size: $FILE_SIZE"
 # ==========================
 
 echo ""
-read -p "Backup current DB before import? (y/n): " BACKUP_CONFIRM
+read -p "Backup current DB before import? [Y/n]: " BACKUP_CONFIRM
+BACKUP_CONFIRM="${BACKUP_CONFIRM:-y}"
 
-if [[ "$BACKUP_CONFIRM" == "y" ]]; then
+if [[ "$BACKUP_CONFIRM" =~ ^[Yy]$ ]]; then
     BACKUP_FILE="$TMP_BACKUP/${DB_NAME}_before_import_$(date +%Y%m%d_%H%M%S).sql"
 
     echo "Creating backup..."

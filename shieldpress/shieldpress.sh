@@ -57,8 +57,16 @@ fi
 REMOTE_SHIELDPRESS_VERSION=""
 UPDATE_AVAILABLE=0
 UPDATE_CHECK_STATUS="not_checked"
+UPDATE_CHECK_TTL=300
+LAST_UPDATE_CHECK=0
 
 check_shieldpress_update(){
+    local now
+    now=$(date +%s)
+    if [ "$UPDATE_CHECK_STATUS" != "not_checked" ] && [ $((now - LAST_UPDATE_CHECK)) -lt "$UPDATE_CHECK_TTL" ]; then
+        return
+    fi
+    LAST_UPDATE_CHECK="$now"
     UPDATE_CHECK_STATUS="checking"
 
     if ! command -v curl >/dev/null 2>&1; then
@@ -67,7 +75,7 @@ check_shieldpress_update(){
         return
     fi
 
-    REMOTE_SHIELDPRESS_VERSION=$(curl -fsS --connect-timeout 3 --max-time 5 "$UPDATE_VERSION_URL" 2>/dev/null | tr -d '[:space:]')
+    REMOTE_SHIELDPRESS_VERSION=$(curl -fsS --connect-timeout 1 --max-time 2 "$UPDATE_VERSION_URL" 2>/dev/null | tr -d '[:space:]')
 
     if [ -z "$REMOTE_SHIELDPRESS_VERSION" ]; then
         UPDATE_CHECK_STATUS="failed"
@@ -511,7 +519,7 @@ if [ "$SHIELDPRESS_ACTION" != "menu" ]; then
 while true; do
 show_dashboard
 key=""
-read -t 3 -n 1 key
+    read -r -t 3 -p "Quick action [1-7, q]: " key
 case "$key" in
 1) break ;;
 "" ) continue ;;
@@ -583,7 +591,7 @@ printf "  "; menu_button 25 "About Us" "$CYAN"; menu_button 26 "Migration Patche
 printf "  "; menu_button 0 "Exit" "$RED"; echo ""
 hr
 
-read -p "Select: " choice
+read -r -p "Select: " choice
 
 case $choice in
 1)

@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.27`
+**Current version:** `1.3.28`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -124,6 +124,12 @@ code and version check always come from GitHub.
   2. Tag tarball `v<version>`
   3. Branch tarball `main`
 
+Each GitHub release publishes both `shieldpress.tar.gz` and
+`shieldpress.sha256`. The installer and updater verify the package with
+SHA-256 before installing it; they refuse to continue when the checksum is
+missing or does not match. SHA-256 is used instead of MD5 for package
+integrity and tamper detection.
+
 To publish the install command on your own domain, serve this repository's
 root `install.sh` at that URL. The script downloads everything else from GitHub:
 
@@ -140,8 +146,10 @@ SHIELDPRESS_GITHUB_REPO="vithanhlam/ShieldPress-VPS"
 SHIELDPRESS_GITHUB_BRANCH="main"
 ```
 
-Cutting a release: update `shieldpress/version.txt`, commit, then tag `v<version>`
-so `shieldpress update` sees the new version.
+Cutting a release: update `shieldpress/version.txt` and this README to the same
+version, commit, then tag `v<version>` and push the tag. GitHub Actions builds
+the release package and checksum automatically, so `shieldpress update` can
+verify and install the matching artifact.
 
 ## Quick commands
 

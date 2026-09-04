@@ -253,8 +253,9 @@ EOF
     else
         echo "  Security audit: $ISSUES issue(s) found"
         echo ""
-        read -p "  Auto-fix with Quick Harden? (y/n): " FIX
-        if [ "$FIX" = "y" ]; then
+        read -p "  Auto-fix with Quick Harden? [Y/n]: " FIX
+        FIX="${FIX:-y}"
+        if [[ "$FIX" =~ ^[Yy]$ ]]; then
             bash "$0"
         fi
     fi

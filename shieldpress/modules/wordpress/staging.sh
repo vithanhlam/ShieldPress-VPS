@@ -281,7 +281,8 @@ delete_staging(){
     STAGING_USER=$(grep "^STAGING_USER=" "$STAGING_ENV" | cut -d'=' -f2 | tr -d '[:space:]')
 
     echo -e "\e[31mWARNING: This will permanently delete the staging environment!\e[0m"
-    read -p "Continue? (y/n): " CONFIRM
+    read -p "Continue? [y/N]: " CONFIRM
+    CONFIRM="${CONFIRM:-n}"
     [[ ! "$CONFIRM" =~ ^[Yy]$ ]] && return
 
     rm -rf "$STAGING_PATH"

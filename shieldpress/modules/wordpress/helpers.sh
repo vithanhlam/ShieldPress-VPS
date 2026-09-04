@@ -40,8 +40,9 @@ if [ -z "$SELECTED_DOMAIN" ]; then
     return 1
 fi
 
-read -p "You selected '$SELECTED_DOMAIN'. Confirm? (y/n): " confirm
-[ "$confirm" != "y" ] && echo "Cancelled." && return 1
+read -p "You selected '$SELECTED_DOMAIN'. Confirm? [Y/n]: " confirm
+confirm="${confirm:-y}"
+[[ "$confirm" =~ ^[Yy]$ ]] || { echo "Cancelled."; return 1; }
 
 
 # convert domain → folder

@@ -235,7 +235,8 @@ config_telegram(){
         echo "Chat ID   : $TELEGRAM_CHAT"
         echo "----------------------------------------"
         echo ""
-        read -p "Keep current config? (y/n): " KEEP
+        read -p "Keep current config? [Y/n]: " KEEP
+        KEEP="${KEEP:-y}"
 
         if [[ "$KEEP" =~ ^[yY]$ ]]; then
             echo ""

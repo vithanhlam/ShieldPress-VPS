@@ -51,6 +51,14 @@ sp_hr
 echo ""
 WEBMAIL_DIR="/var/www/webmail"
 RC_CONFIG="$WEBMAIL_DIR/config/config.inc.php"
+RC_VERSION="unknown"
+if [ -d "$WEBMAIL_DIR/program" ]; then
+    RC_VERSION=$(grep -RhoE "RCMAIL_VERSION[^0-9]*[0-9]+\.[0-9]+\.[0-9]+" \
+        "$WEBMAIL_DIR/program" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    RC_VERSION="${RC_VERSION:-unknown}"
+fi
+echo -e "  ${BOLD}Roundcube:${RESET} ${CYAN}${RC_VERSION}${RESET}"
+echo ""
 
 # Show session info
 if [ -f "$RC_CONFIG" ]; then

@@ -175,9 +175,10 @@ echo "Size     : ${DB_SIZE} MB"
 # =========================================
 
 echo ""
-read -p "Backup database before deletion? (y/n): " BACKUP_CONFIRM
+read -p "Backup database before deletion? [Y/n]: " BACKUP_CONFIRM
+BACKUP_CONFIRM="${BACKUP_CONFIRM:-y}"
 
-if [[ "$BACKUP_CONFIRM" == "y" ]]; then
+if [[ "$BACKUP_CONFIRM" =~ ^[Yy]$ ]]; then
 
 BACKUP_FILE="$BACKUP_DIR/${DB_NAME}_$(date +%Y%m%d_%H%M%S).sql"
 

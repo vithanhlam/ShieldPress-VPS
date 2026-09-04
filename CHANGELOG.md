@@ -1,5 +1,23 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.28 — 2026-09-04 — PostgreSQL replication and safer operations
+
+- Improved the PostgreSQL backup pipeline with strict error handling and empty
+  dump detection so failed or incomplete backups are not reported as valid.
+- Reworked Streaming Replication setup with clearly separated Primary and
+  Standby roles, active-cluster detection, safer confirmation prompts and a
+  rollback path when Standby initialization fails.
+- Removed the duplicate PostgreSQL Manager menu entry and improved fast menu
+  input handling in the dashboard.
+- Added sensible defaults to common Laravel, WordPress, Node.js, database and
+  backup prompts while retaining explicit confirmation for destructive actions.
+- Updated Roundcube installation detection to follow the current upstream
+  release and added installed webmail version reporting.
+- Verified shell syntax and PostgreSQL backup/replication menu smoke tests on
+  AlmaLinux 9.8.
+- Release artifacts include a SHA-256 checksum; installers and updaters refuse
+  unverified or mismatched packages.
+
 ## v1.3.27 — 2026-09-03 — Laravel Supervisor queue workers
 
 - Added `Laravel Manager → Supervisor Manager` as menu option 6.
