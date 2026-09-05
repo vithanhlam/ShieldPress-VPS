@@ -20,6 +20,7 @@ fi
 command -v rclone >/dev/null 2>&1 || { echo "rclone is not installed"; pause; exit 1; }
 
 COUNT=0
+START_TIME=$(date +%s)
 for d in "$DOMAINS_ROOT"/*/; do
     [ -d "$d" ] || continue
     [ -f "$d/config/domain.env" ] || continue
@@ -36,6 +37,22 @@ for d in "$DOMAINS_ROOT"/*/; do
     done
 done
 
+# PostgreSQL Manager backups are stored centrally rather than below a domain.
+# Use the database name as the remote scope so multiple databases stay isolated.
+PG_BACKUP_ROOT="/home/backup-all/laravel-postgresql"
+for db_dir in "$PG_BACKUP_ROOT"/*/; do
+    [ -d "$db_dir" ] || continue
+    DOMAIN=$(basename "$db_dir")
+    for file in "$db_dir"/*.sql.gz; do
+        [ -f "$file" ] || continue
+        remote_upload_backup "$file" "db"
+        COUNT=$((COUNT + 1))
+    done
+done
+
+END_TIME=$(date +%s)
+ELAPSED=$((END_TIME - START_TIME))
+
 echo ""
-echo "[OK] Upload finished. Files processed: $COUNT"
+echo "[OK] Upload finished. Files processed: $COUNT | Total time: ${ELAPSED}s"
 pause

@@ -151,6 +151,15 @@ runuser -u postgres -- pg_dump --no-owner --no-privileges "\$DB_NAME" | gzip > "
 chmod 600 "\$BACKUP_FILE"
 
 cd "\$BACKUP_DIR" && ls -1t \${DB_NAME}_*.sql.gz 2>/dev/null | tail -n +\$((\$KEEP + 1)) | xargs -r rm -f
+
+# Upload PostgreSQL Manager backups using the shared Remote Backup settings.
+# Keep output out of stdout because callers capture the final backup path.
+if [ -f "\$BASE_DIR/modules/backup/_backup_helper.sh" ]; then
+    DOMAIN="\$DB_NAME"
+    source "\$BASE_DIR/modules/backup/_backup_helper.sh"
+    remote_upload_backup "\$BACKUP_FILE" "db" >> "\$LOG_DIR/remote-backup.log" 2>&1 || true
+fi
+
 echo "\$BACKUP_FILE"
 BKEOF
     chmod +x "$PG_BACKUP_SCRIPT"
@@ -504,6 +513,62 @@ pg_auto_backup(){
     ok "Auto backup: $DB_NAME | ${BACKUP_HOUR}h | $FREQ_LABEL | keep $RETENTION backups"
 }
 
+pg_disable_auto_backup(){
+    select_pg_database || return
+
+    local CRON_TAG="SHIELDPRESS_LARAVEL_PG_BACKUP_${DB_NAME}"
+    if ! crontab -l 2>/dev/null | grep -qF "$CRON_TAG"; then
+        warn "No PostgreSQL auto backup schedule found for: $DB_NAME"
+        return 0
+    fi
+
+    if ! crontab -l 2>/dev/null | grep -vF "$CRON_TAG" | crontab -; then
+        fail "Unable to disable auto backup for: $DB_NAME"
+        return 1
+    fi
+
+    ok "Auto backup disabled: $DB_NAME"
+    echo "Existing backup files were not deleted."
+}
+
+pg_list_auto_backups(){
+    echo ""
+    echo "PostgreSQL Auto Backup Schedules:"
+    echo "--------------------------------"
+    local JOBS
+    JOBS=$(crontab -l 2>/dev/null | grep -F "SHIELDPRESS_LARAVEL_PG_BACKUP_" || true)
+    if [ -n "$JOBS" ]; then
+        echo "$JOBS"
+    else
+        echo "No PostgreSQL auto backup schedules found."
+    fi
+}
+
+pg_auto_backup_menu(){
+    while true; do
+        clear
+        sp_header "PostgreSQL Auto Backup" "Enable, disable or reconfigure schedules"
+
+        sp_menu_grid \
+            "1|Configure / Enable Auto Backup|green" \
+            "2|Disable Auto Backup|red" \
+            "3|View PostgreSQL Schedules|cyan" \
+            "0|Back|white"
+        sp_prompt auto_choice
+
+        case $auto_choice in
+            1) pg_auto_backup ;;
+            2) pg_disable_auto_backup ;;
+            3) pg_list_auto_backups ;;
+            0) break ;;
+            *) sp_invalid ;;
+        esac
+
+        echo ""
+        read -p "Press Enter..."
+    done
+}
+
 pg_list_backups(){
     echo ""
     echo "PostgreSQL Backups:"
@@ -546,7 +611,7 @@ while true; do
         "5|Change DB Password|yellow" \
         "6|Import SQL|blue" \
         "7|Backup Database|green" \
-        "8|Configure Auto Backup|yellow" \
+        "8|Auto Backup (Set / Disable)|yellow" \
         "9|List Backups|cyan" \
         "10|Streaming Replication|magenta" \
         "0|Back|white"
@@ -560,7 +625,7 @@ while true; do
         5) pg_change_pass ;;
         6) pg_import_db ;;
         7) pg_backup_db ;;
-        8) pg_auto_backup ;;
+        8) pg_auto_backup_menu ;;
         9) pg_list_backups ;;
         10) bash "$MODULE_DIR/postgres-replication.sh" ;;
         0) break ;;

@@ -1,5 +1,13 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.29 — 2026-09-05 — Remote backup and PostgreSQL auto-backup controls
+
+- Added enable, disable and schedule-list controls to PostgreSQL Manager Auto Backup.
+- Connected PostgreSQL Manager backups to the shared Remote Backup configuration.
+- Added manual upload of existing domain and PostgreSQL backups from Remote Backup Settings.
+- Added upload timing, bounded timeouts and retries to remote backup transfers.
+- Release assets now include an MD5 checksum alongside the SHA-256 checksum.
+
 ## v1.3.28 — 2026-09-04 — PostgreSQL replication and safer operations
 
 - Improved the PostgreSQL backup pipeline with strict error handling and empty

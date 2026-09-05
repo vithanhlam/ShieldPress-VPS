@@ -124,11 +124,11 @@ code and version check always come from GitHub.
   2. Tag tarball `v<version>`
   3. Branch tarball `main`
 
-Each GitHub release publishes both `shieldpress.tar.gz` and
-`shieldpress.sha256`. The installer and updater verify the package with
-SHA-256 before installing it; they refuse to continue when the checksum is
-missing or does not match. SHA-256 is used instead of MD5 for package
-integrity and tamper detection.
+Each GitHub release publishes `shieldpress.tar.gz`, `shieldpress.sha256`, and
+`shieldpress.md5`. The installer and updater verify the package with SHA-256
+before installing it; they refuse to continue when the checksum is missing or
+does not match. The MD5 file is included for compatibility and quick manual
+checks; SHA-256 remains the authoritative integrity check.
 
 To publish the install command on your own domain, serve this repository's
 root `install.sh` at that URL. The script downloads everything else from GitHub:

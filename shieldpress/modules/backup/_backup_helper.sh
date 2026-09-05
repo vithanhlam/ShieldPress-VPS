@@ -723,19 +723,25 @@ remote_upload_backup(){
         return 1
     fi
 
-    local REMOTE DEST UPLOAD_OK=1
+    local REMOTE DEST UPLOAD_OK=1 START_TIME END_TIME DURATION
     while read -r REMOTE; do
         REMOTE="${REMOTE%:}"
         [ -z "$REMOTE" ] && continue
         DEST="${REMOTE}:${RCLONE_PATH}/${DOMAIN}/${TYPE}"
+        START_TIME=$(date +%s)
         # Use --no-traverse for single-file uploads; omit --create-empty-src-dirs
         # (that flag is for directory copies and creates unexpected empty folders/files
         # on Google Drive when the source is a single file path)
-        if rclone copy "$FILE" "$DEST" --no-traverse; then
-            ok "Remote uploaded: $DEST/$(basename "$FILE")"
+        if rclone copy "$FILE" "$DEST" --no-traverse \
+            --contimeout=10s --timeout=60s --retries=3 --low-level-retries=10; then
+            END_TIME=$(date +%s)
+            DURATION=$((END_TIME - START_TIME))
+            ok "Remote uploaded: $DEST/$(basename "$FILE") | Upload time: ${DURATION}s"
             prune_remote_backups "$DEST" "$REMOTE_RETENTION"
         else
-            warn "Remote upload failed: $DEST"
+            END_TIME=$(date +%s)
+            DURATION=$((END_TIME - START_TIME))
+            warn "Remote upload failed: $DEST | Elapsed: ${DURATION}s"
             UPLOAD_OK=0
         fi
     done <<< "$(echo "$RCLONE_REMOTES" | tr ',' '\n')"

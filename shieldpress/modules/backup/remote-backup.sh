@@ -643,13 +643,17 @@ test_remote(){
         REMOTE="${REMOTE%:}"
         [ -z "$REMOTE" ] && continue
         echo "Testing upload to: ${REMOTE}:${RCLONE_PATH}/_test ..."
-        if rclone copy "$TMP" "${REMOTE}:${RCLONE_PATH}/_test" --no-traverse; then
-            echo "[OK] Upload to $REMOTE succeeded"
+        START_TIME=$(date +%s)
+        if rclone copy "$TMP" "${REMOTE}:${RCLONE_PATH}/_test" --no-traverse \
+            --contimeout=10s --timeout=60s --retries=3 --low-level-retries=10; then
+            END_TIME=$(date +%s)
+            echo "[OK] Upload to $REMOTE succeeded (time: $((END_TIME - START_TIME))s)"
             # Cleanup: delete the test file then remove the empty _test/ folder
             rclone deletefile "${REMOTE}:${RCLONE_PATH}/_test/$(basename "$TMP")" >/dev/null 2>&1 || true
             rclone rmdir "${REMOTE}:${RCLONE_PATH}/_test" >/dev/null 2>&1 || true
         else
-            echo "[FAIL] Upload to $REMOTE failed"
+            END_TIME=$(date +%s)
+            echo "[FAIL] Upload to $REMOTE failed (elapsed: $((END_TIME - START_TIME))s)"
             STATUS=1
         fi
     done <<< "$(echo "$RCLONE_REMOTES" | tr ',' '\n')"
@@ -770,9 +774,10 @@ while true; do
     show_current
     echo "1) Configure S3 / Google Drive / OneDrive"
     echo "2) Edit Options (retention, delete local, path)"
-    echo "3) Test Remote Upload"
-    echo "4) View Remote Storage"
-    echo "5) Disable Remote Backup"
+    echo "3) Test Remote Connection (temporary file)"
+    echo "4) Upload Existing Backups Now"
+    echo "5) View Remote Storage"
+    echo "6) Disable Remote Backup"
     echo "0) Back"
     echo "--------------------------------------------------"
     read -p "Select: " opt
@@ -781,8 +786,9 @@ while true; do
         1) configure_remote ;;
         2) edit_options ;;
         3) test_remote ;;
-        4) show_remote_info ;;
-        5) disable_remote ;;
+        4) bash "$BASE_DIR/modules/backup/upload-backups-remote.sh" ;;
+        5) show_remote_info ;;
+        6) disable_remote ;;
         0) break ;;
         *) echo "Invalid option"; sleep 1 ;;
     esac

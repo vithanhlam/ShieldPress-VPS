@@ -19,6 +19,7 @@ jobs:
         run: |
           tar -czf /tmp/shieldpress.tar.gz -C . shieldpress
           sha256sum /tmp/shieldpress.tar.gz | awk '{print $1 "  shieldpress.tar.gz"}' > /tmp/shieldpress.sha256
+          md5sum /tmp/shieldpress.tar.gz | awk '{print $1 "  shieldpress.tar.gz"}' > /tmp/shieldpress.md5
 
       - name: Publish GitHub release
         env:
@@ -27,5 +28,6 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             /tmp/shieldpress.tar.gz \
             /tmp/shieldpress.sha256 \
+            /tmp/shieldpress.md5 \
             --title "ShieldPress VPS ${GITHUB_REF_NAME#v}" \
             --generate-notes
