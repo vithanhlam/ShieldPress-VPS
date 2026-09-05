@@ -51,6 +51,7 @@ ensure_laravel_conf(){
     ensure_after "$conf" "fastcgi_buffers" "fastcgi_buffers 16 16k" "fastcgi_buffer_size"
     ensure_after "$conf" "fastcgi_busy_buffers_size" "fastcgi_busy_buffers_size 64k" "fastcgi_buffers"
 
+    grep -qF "location ^~ /storage/" "$conf" || sed -i '/location ~ \/\\./i\    location ^~ /storage/ {\n        try_files $uri =404;\n        access_log off;\n    }\n' "$conf"
     grep -q "bootstrap/cache" "$conf" || sed -i '/location ~ \/\./i\\    location ~* ^/(app|bootstrap/cache|config|database|resources|routes|storage|tests|vendor)/ {\n        deny all;\n    }\n' "$conf"
 }
 

@@ -348,9 +348,10 @@ inject_url_auth(){
     local url="$3"
 
     # Determine if url looks like a file (has extension) or a path
-    local location_match
+    local location_match is_exact_file=0
     if [[ "$url" == *.* ]]; then
         location_match="= $url"
+        is_exact_file=1
     else
         location_match="$url"
     fi
@@ -363,8 +364,26 @@ inject_url_auth(){
     local php_sock
     php_sock=$(grep -oP 'fastcgi_pass unix:\K[^;]+' "$conf" 2>/dev/null | head -1)
 
-    if [ -n "$php_sock" ]; then
-        # PHP app - use fastcgi
+    if [ -n "$php_sock" ] && [ "$is_exact_file" = "1" ]; then
+        # Exact-match location (e.g. protecting /wp-login.php directly).
+        # Nginx forbids a nested "location" inside a "location =" block, so
+        # the fastcgi directives go straight in this block instead of a
+        # nested "location ~ \.php$" - the exact match already guarantees
+        # this request is for that one file.
+        cat > "$tmpblock" <<HEREDOC
+
+    # >>> ShieldPress Auth Protection Start <<<
+    location ${location_match} {
+        auth_basic "Restricted Access";
+        auth_basic_user_file ${htpasswd};
+        include fastcgi_params;
+        fastcgi_pass unix:${php_sock};
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+    }
+    # >>> ShieldPress Auth Protection End <<<
+HEREDOC
+    elif [ -n "$php_sock" ]; then
+        # PHP app, path-style prefix location - safe to nest the PHP location
         cat > "$tmpblock" <<HEREDOC
 
     # >>> ShieldPress Auth Protection Start <<<
@@ -414,9 +433,21 @@ HEREDOC
         fi
     fi
 
-    # Insert the block before the last closing brace of the server block
-    local last_brace_line
-    last_brace_line=$(grep -n "^}" "$conf" | tail -1 | cut -d: -f1)
+    # Insert the block before the closing brace of the server block that
+    # actually serves content. With SSL enabled, Certbot appends a separate
+    # port-80 redirect-only server block at the end of the file, so the last
+    # "^}" in the whole file is NOT necessarily the real HTTPS block - anchor
+    # on "listen 443 ssl" (or the fastcgi/proxy line we already detected) and
+    # take the first closing brace after that instead.
+    local last_brace_line anchor_line
+    anchor_line=$(grep -n "listen 443 ssl" "$conf" | head -1 | cut -d: -f1)
+    if [ -z "$anchor_line" ]; then
+        anchor_line=$(grep -n "fastcgi_pass\|proxy_pass" "$conf" | head -1 | cut -d: -f1)
+    fi
+    if [ -n "$anchor_line" ]; then
+        last_brace_line=$(awk -v start="$anchor_line" 'NR>=start && /^}/{print NR; exit}' "$conf")
+    fi
+    [ -z "$last_brace_line" ] && last_brace_line=$(grep -n "^}" "$conf" | tail -1 | cut -d: -f1)
 
     if [ -z "$last_brace_line" ]; then
         fail "Could not find server block closing brace in config"

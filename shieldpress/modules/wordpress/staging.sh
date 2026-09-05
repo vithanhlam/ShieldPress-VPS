@@ -359,6 +359,9 @@ sync_menu(){
         else
             echo "Deploy failed. Rolling back..."
             mysql "$DB_NAME" < "$BACKUP"
+            if [ -f "$SNAP" ]; then
+                tar -xzf "$SNAP" -C "$DOMAIN_PATH"
+            fi
             echo "Rollback completed."
             log "Deploy failed, rollback executed: $SELECTED_DOMAIN"
         fi
@@ -372,15 +375,23 @@ sync_menu(){
     1)
         BACKUP="$BACKUP_DIR/${DB_NAME}_before_sync_$(date +%Y%m%d_%H%M%S).sql"
         mysqldump "$DB_NAME" > "$BACKUP"
-        mysqldump "$STAGING_DB" | mysql "$DB_NAME"
-        $WP_CMD cache flush --path="$ROOT" --quiet
-        redis-cli -h 127.0.0.1 FLUSHALL >/dev/null 2>&1 || true
-        echo "DB synced to live."
+        if mysqldump "$STAGING_DB" | mysql "$DB_NAME"; then
+            $WP_CMD cache flush --path="$ROOT" --quiet
+            redis-cli -h 127.0.0.1 FLUSHALL >/dev/null 2>&1 || true
+            echo "DB synced to live."
+        else
+            echo "Sync failed. Restoring live DB from backup..."
+            mysql "$DB_NAME" < "$BACKUP"
+            echo "Live DB restored."
+        fi
         ;;
 
     2)
-        mysqldump "$DB_NAME" | mysql "$STAGING_DB"
-        echo "DB synced to staging."
+        if mysqldump "$DB_NAME" | mysql "$STAGING_DB"; then
+            echo "DB synced to staging."
+        else
+            echo "Sync failed."
+        fi
         ;;
 
     3)

@@ -17,7 +17,11 @@ class ShieldPress_Cache_Purge {
     private $purged = false;
 
     public function __construct() {
-        $clean = preg_replace( '/[^a-zA-Z0-9]/', '_', $_SERVER['HTTP_HOST'] ?? '' );
+        // Use the site's configured home URL, not the client-supplied Host
+        // header - a spoofed Host would otherwise let a request for this
+        // domain trigger a cache purge signal for a different tenant's domain.
+        $host  = wp_parse_url( home_url() )['host'] ?? '';
+        $clean = preg_replace( '/[^a-zA-Z0-9]/', '_', $host );
         $this->cache_dir    = '/var/cache/nginx/' . $clean;
         $this->purge_script = '/opt/shieldpress/bin/purge-fastcgi-cache';
 

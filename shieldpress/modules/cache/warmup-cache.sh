@@ -477,7 +477,7 @@ ask_cron_pref(){
 # =========================
 # START
 # =========================
-ask_cron_pref
+[ "$AUTO_MODE" -eq 0 ] && ask_cron_pref
 log "Loading sitemap..."
 
 URLS=$(get_sitemap_urls | filter_urls)
@@ -520,4 +520,4 @@ log "MISS  : $MISS_COUNT"
 log "FAIL  : $FAIL_COUNT"
 log "======================"
 
-read -p "Press Enter..."
+[ "$AUTO_MODE" -eq 0 ] && read -p "Press Enter..."

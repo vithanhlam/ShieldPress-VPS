@@ -714,6 +714,11 @@ server {
         try_files \$uri /index.php?\$query_string;
     }
 
+    location ^~ /storage/ {
+        try_files \$uri =404;
+        access_log off;
+    }
+
     location / {
         try_files \$uri \$uri/ /index.php?\$query_string;
     }

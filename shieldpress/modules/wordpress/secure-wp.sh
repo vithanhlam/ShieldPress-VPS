@@ -133,7 +133,7 @@ EOF
     fi
 
     # --- Setup system cron thay WP-Cron ---
-    CRON_CMD="*/5 * * * * $SYSTEM_USER $PHP_BIN $ROOT/wp-cron.php >/dev/null 2>&1"
+    CRON_CMD="*/5 * * * * sudo -u $SYSTEM_USER $PHP_BIN $ROOT/wp-cron.php >/dev/null 2>&1"
     if ! crontab -l 2>/dev/null | grep -q "$ROOT/wp-cron.php"; then
         (crontab -l 2>/dev/null; echo "$CRON_CMD") | crontab -
         echo "[OK] System cron added (every 5 min)"

@@ -724,15 +724,25 @@ remote_upload_backup(){
     fi
 
     local REMOTE DEST UPLOAD_OK=1 START_TIME END_TIME DURATION
+    local UPLOAD_LABEL="$(basename "$FILE")"
     while read -r REMOTE; do
         REMOTE="${REMOTE%:}"
         [ -z "$REMOTE" ] && continue
         DEST="${REMOTE}:${RCLONE_PATH}/${DOMAIN}/${TYPE}"
+        if [ -n "${REMOTE_UPLOAD_TOTAL:-}" ]; then
+            printf '[%s/%s] Uploading %s (%s) -> %s\n' \
+                "${REMOTE_UPLOAD_INDEX:-0}" "$REMOTE_UPLOAD_TOTAL" "$UPLOAD_LABEL" \
+                "$(du -h "$FILE" 2>/dev/null | awk '{print $1}')" "$DEST"
+        else
+            printf 'Uploading %s (%s) -> %s\n' \
+                "$UPLOAD_LABEL" "$(du -h "$FILE" 2>/dev/null | awk '{print $1}')" "$DEST"
+        fi
         START_TIME=$(date +%s)
         # Use --no-traverse for single-file uploads; omit --create-empty-src-dirs
         # (that flag is for directory copies and creates unexpected empty folders/files
         # on Google Drive when the source is a single file path)
         if rclone copy "$FILE" "$DEST" --no-traverse \
+            --progress --stats=10s --stats-one-line --stats-log-level NOTICE \
             --contimeout=10s --timeout=60s --retries=3 --low-level-retries=10; then
             END_TIME=$(date +%s)
             DURATION=$((END_TIME - START_TIME))

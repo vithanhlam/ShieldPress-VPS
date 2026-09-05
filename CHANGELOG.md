@@ -1,5 +1,46 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.30 — 2026-09-06 — Backup, cron and Nginx auth reliability fixes
+
+- Fixed Laravel PostgreSQL Manager backups being reported as successful when
+  `pg_dump` failed, silently leaving an empty or truncated `.sql.gz` file;
+  the backup script now detects the failure and removes the bad file instead.
+- Fixed the Laravel PostgreSQL Manager backup directory ignoring a custom
+  `BACKUP_GLOBAL_DIR`, which could make backups land in a different path than
+  where they are listed from.
+- Fixed changing a Laravel PostgreSQL database password failing (or silently
+  desyncing the stored password from the real one) when the password
+  contained a single quote or other SQL-sensitive characters.
+- Fixed WordPress Quick Harden and WP-Cron Manager installing a malformed
+  system cron entry that never actually ran `wp-cron.php`, leaving scheduled
+  posts, plugin cron tasks and other scheduled events silently stopped after
+  hardening; the generated cron job now runs correctly as the domain's own
+  system user instead of failing (or running as root).
+- Fixed WordPress Staging "Full Deploy (Staging → Live)" rollback restoring
+  only the database and not the live files when a deploy failed partway
+  through a file sync.
+- Fixed WordPress Staging DB sync commands reporting success even when the
+  underlying import failed; a failed live DB sync is now automatically
+  restored from its pre-sync backup.
+- Fixed the WordPress Auto-Recovery daemon flushing Redis, Memcached and the
+  Nginx cache for the entire server when only one domain was unhealthy; cache
+  clearing is now scoped to the affected domain.
+- Fixed Nginx URL Password Protection inserting the auth block into the wrong
+  server block on SSL-enabled domains (the HTTP-to-HTTPS redirect block
+  instead of the real HTTPS server block), leaving the intended URL
+  unprotected while reporting success.
+- Fixed Nginx URL Password Protection generating an invalid config (nested
+  `location` inside an exact-match `location`) when protecting a file-like
+  URL such as `/wp-login.php`, which made protecting the most common
+  WordPress login/admin files impossible.
+- Fixed the auto cache-purge mu-plugin trusting the client-supplied `Host`
+  header to pick which domain's cache to purge; it now uses the site's
+  configured home URL, closing a cross-domain cache-purge spoofing path on
+  shared hosts.
+- Fixed the cache warmup script prompting for cron setup input and waiting on
+  a keypress even when run unattended via its own `--auto` cron job, which
+  could hang the process.
+
 ## v1.3.29 — 2026-09-05 — Remote backup and PostgreSQL auto-backup controls
 
 - Added enable, disable and schedule-list controls to PostgreSQL Manager Auto Backup.

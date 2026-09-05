@@ -28,26 +28,38 @@ fail(){ echo -e "${RED}[FAIL]${RESET} $1"; }
 pause(){ echo ""; read -p "Press Enter..."; }
 
 ensure_pg_backup_script(){
-    cat > "$LARAVEL_PG_BACKUP_SCRIPT" <<'EOF'
+    cat > "$LARAVEL_PG_BACKUP_SCRIPT" <<EOF
 #!/bin/bash
 set -e
+set -o pipefail
 
-DB_NAME="$1"
+DB_NAME="\$1"
 BASE_DIR="/opt/shieldpress"
-DB_META="/var/shieldpress/data/laravel-databases/${DB_NAME}.env"
-BACKUP_DIR="/home/backup-all/laravel-postgresql/${DB_NAME}"
+DB_META="/var/shieldpress/data/laravel-databases/\${DB_NAME}.env"
+BACKUP_DIR="$LARAVEL_BACKUP_DIR/\${DB_NAME}"
 
-[ -n "$DB_NAME" ] || { echo "Usage: laravel-pg-backup <db_name>"; exit 1; }
-[ -f "$DB_META" ] || { echo "Database metadata not found: $DB_META"; exit 1; }
+[ -n "\$DB_NAME" ] || { echo "Usage: laravel-pg-backup <db_name>"; exit 1; }
+[ -f "\$DB_META" ] || { echo "Database metadata not found: \$DB_META"; exit 1; }
 
-mkdir -p "$BACKUP_DIR"
-BACKUP_FILE="$BACKUP_DIR/${DB_NAME}_$(date '+%Y%m%d_%H%M%S').sql.gz"
+mkdir -p "\$BACKUP_DIR"
+BACKUP_FILE="\$BACKUP_DIR/\${DB_NAME}_\$(date '+%Y%m%d_%H%M%S').sql.gz"
 
-cd /tmp && runuser -u postgres -- pg_dump "$DB_NAME" | gzip > "$BACKUP_FILE"
-chmod 600 "$BACKUP_FILE"
+if ! cd /tmp || ! runuser -u postgres -- pg_dump "\$DB_NAME" | gzip > "\$BACKUP_FILE"; then
+    echo "pg_dump failed for database: \$DB_NAME" >&2
+    rm -f "\$BACKUP_FILE"
+    exit 1
+fi
 
-find "$BACKUP_DIR" -type f -name "${DB_NAME}_*.sql.gz" -mtime +14 -delete
-echo "$BACKUP_FILE"
+if [ ! -s "\$BACKUP_FILE" ]; then
+    echo "Backup file is empty, removing: \$BACKUP_FILE" >&2
+    rm -f "\$BACKUP_FILE"
+    exit 1
+fi
+
+chmod 600 "\$BACKUP_FILE"
+
+find "\$BACKUP_DIR" -type f -name "\${DB_NAME}_*.sql.gz" -mtime +14 -delete
+echo "\$BACKUP_FILE"
 EOF
     chmod +x "$LARAVEL_PG_BACKUP_SCRIPT"
 }
@@ -398,7 +410,11 @@ change_pg_database_password(){
     fi
 
     cd /tmp
-    runuser -u postgres -- psql -c "SET password_encryption = 'scram-sha-256'; ALTER USER \"${DB_USER}\" WITH PASSWORD '${NEW_PASS}';" >/dev/null || {
+    # Variable interpolation (:'newpass') for safe SQL-literal quoting only
+    # works when psql reads the statement from stdin/a file - it is NOT
+    # applied when passed via -c, so the SQL is piped in instead.
+    printf '%s\n' "SET password_encryption = 'scram-sha-256'; ALTER USER \"${DB_USER}\" WITH PASSWORD :'newpass';" \
+        | runuser -u postgres -- psql -v ON_ERROR_STOP=1 -v newpass="$NEW_PASS" >/dev/null || {
         fail "Failed to change PostgreSQL password"
         return 1
     }

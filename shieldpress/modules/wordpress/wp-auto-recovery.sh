@@ -160,21 +160,16 @@ clear_wp_caches(){
         sudo -u "$sys_user" "$php_bin" /usr/local/bin/wp transient delete --all --path="$docroot" --quiet 2>/dev/null && cleared="${cleared}transients,"
     fi
 
-    # 4. Redis
-    if command -v redis-cli >/dev/null 2>&1; then
-        if systemctl is-active --quiet redis 2>/dev/null || systemctl is-active --quiet redis-server 2>/dev/null; then
-            redis-cli FLUSHALL 2>/dev/null && cleared="${cleared}redis,"
-        fi
+    # 4. Object cache (Redis/Memcached) - scoped to this site via WP-CLI,
+    # not a blanket FLUSHALL/flush_all which would wipe every other domain's cache
+    if [ -x "$php_bin" ] && [ -f /usr/local/bin/wp ]; then
+        sudo -u "$sys_user" "$php_bin" /usr/local/bin/wp cache flush --path="$docroot" --quiet 2>/dev/null && cleared="${cleared}object-cache,"
     fi
 
-    # 5. Memcached
-    if systemctl is-active --quiet memcached 2>/dev/null; then
-        echo "flush_all" | nc -q1 localhost 11211 2>/dev/null && cleared="${cleared}memcached,"
-    fi
-
-    # 6. Nginx proxy/fastcgi cache
-    if [ -d /var/cache/nginx ]; then
-        find /var/cache/nginx -type f -delete 2>/dev/null && cleared="${cleared}nginx-cache,"
+    # 5. Nginx proxy/fastcgi cache - only this domain's cache directory
+    NGINX_CACHE_DIR="/var/cache/nginx/${clean}"
+    if [ -d "$NGINX_CACHE_DIR" ]; then
+        find "$NGINX_CACHE_DIR" -type f -delete 2>/dev/null && cleared="${cleared}nginx-cache,"
     fi
 
     echo "${cleared%,}"

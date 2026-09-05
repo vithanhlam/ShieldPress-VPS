@@ -100,7 +100,7 @@ enable_system_cron(){
 # WP-Cron system script for $SELECTED_DOMAIN
 # Created by ShieldPress
 
-$PHP_BIN "$ROOT/wp-cron.php" >/dev/null 2>&1
+sudo -u $SYSTEM_USER $PHP_BIN "$ROOT/wp-cron.php" >/dev/null 2>&1
 SCRIPT
 
     chmod +x "$CRON_SCRIPT"
