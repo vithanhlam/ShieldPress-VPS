@@ -80,7 +80,8 @@ fi
 ok "DNS OK: ${MAIL_HOSTNAME} → ${A_RECORD}"
 
 echo ""
-read -p "Install/renew SSL for ${MAIL_HOSTNAME}? (y/n): " CONFIRM
+read -p "Install/renew SSL for ${MAIL_HOSTNAME}? [Y/n]: " CONFIRM
+CONFIRM="${CONFIRM:-Y}"
 [[ ! "$CONFIRM" =~ ^[Yy]$ ]] && exit 0
 
 echo ""
@@ -99,7 +100,7 @@ certbot certonly --standalone \
     --email "postmaster@${MAIL_DOMAIN}" \
     2>&1 | tee -a "$LOG_FILE"
 
-CERTBOT_EXIT=$?
+CERTBOT_EXIT=${PIPESTATUS[0]}
 
 if $NGINX_WAS_RUNNING; then
     systemctl start nginx 2>/dev/null

@@ -30,22 +30,13 @@ find "$BASE_DIR" -type f ! -name '*.sh' -exec chmod 644 {} +
 # Create global command
 ln -sf "$BASE_DIR/shieldpress.sh" /usr/bin/shieldpress
 
-# Create numeric shortcut scripts in /usr/bin/
-declare -A SHORTCUTS=(
-    [1]="menu"
-    [2]="update"
-    [3]="cache"
-    [4]="domain"
-    [5]="ssl"
-    [6]="backup"
-)
-
-for NUM in "${!SHORTCUTS[@]}"; do
-    cat > "/usr/bin/$NUM" <<SHORTCUT_EOF
-#!/bin/bash
-exec shieldpress ${SHORTCUTS[$NUM]}
-SHORTCUT_EOF
-    chmod +x "/usr/bin/$NUM"
+# Remove single-digit shortcuts from older installs (e.g. /usr/bin/2 -> update,
+# /usr/bin/6 -> backup): a single stray digit typed in any shell on the server
+# could silently trigger a full update/backup. Use `shieldpress <word>` instead.
+for NUM in 1 2 3 4 5 6; do
+    if [ -f "/usr/bin/$NUM" ] && grep -q "exec shieldpress" "/usr/bin/$NUM" 2>/dev/null; then
+        rm -f "/usr/bin/$NUM"
+    fi
 done
 
 # Show help guide on interactive VPS login (no auto-launch dashboard).
@@ -79,7 +70,7 @@ if [ -z "$SHIELDPRESS_HELP_SHOWN" ] && [ -t 1 ] && [ "$(id -u)" -eq 0 ] && comma
         fi
     fi
 
-    echo -e "  \e[2mType a number anytime for quick access\e[0m"
+    echo -e "  \e[2mType 'shieldpress <command>' for quick access (e.g. shieldpress update)\e[0m"
     echo -e "  \e[2mType 'shieldpress' for full dashboard\e[0m"
     echo ""
 

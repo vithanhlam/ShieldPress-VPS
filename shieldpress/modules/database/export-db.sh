@@ -127,7 +127,8 @@ echo "User     : ${DB_USER:-root/default}"
 echo "Size     : ${DB_SIZE_MB} MB"
 echo "Output   : $OUT_FILE"
 echo ""
-read -p "Confirm export? (y/n): " CONFIRM
+read -p "Confirm export? [Y/n]: " CONFIRM
+CONFIRM="${CONFIRM:-Y}"
 
 if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
     echo "Cancelled."

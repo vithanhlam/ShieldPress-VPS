@@ -361,7 +361,8 @@ pre_upgrade_actions(){
             mkdir -p "$DUMP_DIR"
             local DUMP_FILE="$DUMP_DIR/mariadb-$(date +%Y%m%d_%H%M%S).sql.gz"
             mysqldump --all-databases --single-transaction --routines --triggers 2>/dev/null | gzip > "$DUMP_FILE"
-            if [ $? -eq 0 ] && [ -s "$DUMP_FILE" ]; then
+            local DUMP_EXIT=${PIPESTATUS[0]}
+            if [ "$DUMP_EXIT" -eq 0 ] && [ -s "$DUMP_FILE" ]; then
                 local SIZE=$(du -h "$DUMP_FILE" | awk '{print $1}')
                 _ROLLBACK_DUMP="$DUMP_FILE"
                 ok "MariaDB dump saved ($SIZE): $DUMP_FILE"
@@ -377,7 +378,8 @@ pre_upgrade_actions(){
             mkdir -p "$DUMP_DIR"
             local DUMP_FILE="$DUMP_DIR/postgresql-$(date +%Y%m%d_%H%M%S).sql.gz"
             sudo -u postgres pg_dumpall 2>/dev/null | gzip > "$DUMP_FILE"
-            if [ $? -eq 0 ] && [ -s "$DUMP_FILE" ]; then
+            local DUMP_EXIT=${PIPESTATUS[0]}
+            if [ "$DUMP_EXIT" -eq 0 ] && [ -s "$DUMP_FILE" ]; then
                 local SIZE=$(du -h "$DUMP_FILE" | awk '{print $1}')
                 _ROLLBACK_DUMP="$DUMP_FILE"
                 ok "PostgreSQL dump saved ($SIZE): $DUMP_FILE"
@@ -455,7 +457,7 @@ auto_rollback(){
                 sleep 2
                 if systemctl is-active --quiet mariadb; then
                     gunzip < "$_ROLLBACK_DUMP" | mysql 2>/dev/null
-                    if [ $? -eq 0 ]; then
+                    if [ ${PIPESTATUS[0]} -eq 0 ] && [ ${PIPESTATUS[1]} -eq 0 ]; then
                         ok "MariaDB data restored from dump"
                         log "AUTO-ROLLBACK MariaDB data restored"
                     else
@@ -473,7 +475,7 @@ auto_rollback(){
                 sleep 2
                 if systemctl is-active --quiet postgresql; then
                     gunzip < "$_ROLLBACK_DUMP" | sudo -u postgres psql 2>/dev/null
-                    if [ $? -eq 0 ]; then
+                    if [ ${PIPESTATUS[0]} -eq 0 ] && [ ${PIPESTATUS[1]} -eq 0 ]; then
                         ok "PostgreSQL data restored from dump"
                         log "AUTO-ROLLBACK PostgreSQL data restored"
                     else

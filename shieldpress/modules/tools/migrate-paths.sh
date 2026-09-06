@@ -43,7 +43,8 @@ echo "  /var/log/nginx/domains/{domain}/ →  /home/domains/{domain}/logs/"
 echo ""
 echo "Backward-compatible symlinks will be created."
 echo ""
-read -p "Continue? (y/n): " confirm
+read -p "Continue? [Y/n]: " confirm
+confirm="${confirm:-Y}"
 [[ "$confirm" =~ ^[yY]$ ]] || { warn "Cancelled"; exit 0; }
 
 echo ""

@@ -174,7 +174,7 @@ TMP=$(mktemp -d /tmp/fullbak_incr_XXXXXX)
 FINAL="$BACKUP_DIR/full_incr_$DATE.tar.gz"
 mkdir -p "$BACKUP_DIR"
 
-trap 'rm -rf "$TMP"' EXIT INT TERM
+trap 'rm -rf "$TMP"' EXIT  # chỉ EXIT - xem ghi chú ở backup-full.sh (INT/TERM không gọi exit sẽ vô hiệu hoá Ctrl+C/kill -TERM)
 
 # Load per-domain backup config
 BKENV="$DOMAIN_PATH/config/backup.env"
@@ -359,7 +359,7 @@ TMP="/tmp/$(basename "$DOMAIN_PATH")_fullbak_$DATE"
 FINAL="$BACKUP_DIR/full_$DATE.tar.gz"
 mkdir -p "$BACKUP_DIR" "$TMP"
 
-trap 'rm -rf "$TMP"' EXIT INT TERM
+trap 'rm -rf "$TMP"' EXIT  # chỉ EXIT - xem ghi chú ở backup-full.sh (INT/TERM không gọi exit sẽ vô hiệu hoá Ctrl+C/kill -TERM)
 
 if [ -n "$DB_NAME" ] && [ "$DB_CONNECTION" != "none" ]; then
     case "$DB_CONNECTION" in

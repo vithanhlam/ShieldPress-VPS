@@ -349,10 +349,13 @@ delete_sftp(){
 
     echo ""
     echo -e "\e[31mWARNING: This will remove SFTP access for $DOMAIN!\e[0m"
-    read -p "Continue? (y/n): " CONFIRM
+    read -p "Continue? [y/N]: " CONFIRM
     [[ ! "$CONFIRM" =~ ^[Yy]$ ]] && { echo "Cancelled."; return; }
 
     gpasswd -d "$FOLDER" sftpusers &>/dev/null
+    # Khoá luôn password OS - chỉ bỏ khỏi group sftpusers không đủ, mật khẩu
+    # cũ vẫn hợp lệ vô thời hạn cho service khác (SSH nếu shell đổi sau này...).
+    usermod -L "$FOLDER" &>/dev/null
     sed -i '/^SFTP=/d; /^SFTP_USER=/d; /^SFTP_PASS=/d; /^SFTP_PORT=/d' "$ENV_FILE"
 
     ok "SFTP removed for $DOMAIN"

@@ -118,7 +118,8 @@ if (( NEW_BUFFER < MIN_BUFFER || NEW_BUFFER > MAX_BUFFER )); then
 fi
 
 echo ""
-read -p "Apply changes? (y/n): " CONFIRM
+read -p "Apply changes? [Y/n]: " CONFIRM
+CONFIRM="${CONFIRM:-Y}"
 
 if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
     echo "❌ Cancelled."

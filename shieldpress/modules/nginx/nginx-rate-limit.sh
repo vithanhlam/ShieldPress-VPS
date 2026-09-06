@@ -134,7 +134,8 @@ apply_to_domain(){
 
     if grep -q "limit_req zone=shieldpress" "$DOMAIN_CONF" 2>/dev/null; then
         warn "Rate limiting already applied to $SELECTED_DOMAIN"
-        read -p "Update? (y/n): " update
+        read -p "Update? [Y/n]: " update
+        update="${update:-Y}"
         [[ "$update" =~ ^[yY]$ ]] || return
         # Remove existing rate limit directives
         sed -i '/# ShieldPress Rate Limit/d' "$DOMAIN_CONF"
@@ -203,7 +204,8 @@ disable_global(){
         return
     fi
 
-    read -p "Disable global rate limiting? This removes zones config. (y/n): " confirm
+    read -p "Disable global rate limiting? This removes zones config. [Y/n]: " confirm
+    confirm="${confirm:-Y}"
     [[ "$confirm" =~ ^[yY]$ ]] || { warn "Cancelled"; return; }
 
     cp "$CONF" "$BACKUP"

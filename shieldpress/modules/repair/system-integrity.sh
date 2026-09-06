@@ -141,7 +141,11 @@ check_nginx(){
         [ -f "$d" ] || continue
         local DN=$(grep "^DOMAIN=" "$d" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')
         [ -z "$DN" ] && continue
-        local CLEAN=$(echo "$DN" | sed 's/[^a-zA-Z0-9.-]/_/g')
+        # Tên file vhost thật do clean_domain_name() (domain/helpers.sh) tạo ra:
+        # sed 's/[^a-zA-Z0-9]/_/g' | cut -c1-30 - đổi CẢ dấu chấm thành "_".
+        # Dùng CLEAN_DOMAIN đã lưu sẵn trong domain.env, fallback tự tính nếu thiếu.
+        local CLEAN=$(grep "^CLEAN_DOMAIN=" "$d" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')
+        [ -z "$CLEAN" ] && CLEAN=$(echo "$DN" | sed 's/[^a-zA-Z0-9]/_/g' | cut -c1-30)
         local NGINX_CONF="/etc/nginx/conf.d/${CLEAN}.conf"
 
         if [ -f "$NGINX_CONF" ]; then

@@ -170,7 +170,8 @@ while true; do
         3)
             echo ""
             echo "This will deploy Auto Purge to ALL WordPress sites."
-            read -p "Continue? (y/n): " confirm
+            read -p "Continue? [Y/n]: " confirm
+            confirm="${confirm:-Y}"
             if [[ "$confirm" =~ ^[Yy]$ ]]; then
                 deploy_all
             else

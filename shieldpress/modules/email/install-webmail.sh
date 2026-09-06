@@ -108,7 +108,8 @@ if $SETUP_AUTH; then
 fi
 
 echo ""
-read -p "Start installation? (y/n): " START
+read -p "Start installation? [Y/n]: " START
+START="${START:-Y}"
 [[ ! "$START" =~ ^[Yy]$ ]] && exit 0
 
 echo ""
@@ -373,7 +374,7 @@ if [ -n "$A_RECORD" ] && [ "$A_RECORD" = "$SERVER_IP" ]; then
         --email "postmaster@${MAIL_DOMAIN}" \
         2>&1 | tee -a "$LOG_FILE"
 
-    if [ $? -eq 0 ]; then
+    if [ ${PIPESTATUS[0]} -eq 0 ]; then
         ok "Let's Encrypt SSL installed for ${MAIL_HOSTNAME}"
     else
         warn "SSL failed - webmail accessible via HTTP only"

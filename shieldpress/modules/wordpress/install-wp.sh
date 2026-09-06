@@ -349,6 +349,13 @@ chmod 600 "$ROOT/wp-config.php" 2>/dev/null
 
 log "Final permissions applied."
 
+# SELinux: wp-content chỉ tồn tại sau khi cài WordPress ở trên, cần restorecon
+# để nhận context httpd_sys_rw_content_t đã đăng ký lúc tạo domain (giúp
+# upload media, cài plugin/theme, cache không bị SELinux denied).
+if command -v restorecon >/dev/null 2>&1; then
+    restorecon -Rv "$ROOT" >/dev/null 2>&1 || true
+fi
+
 # ==========================
 # AUTO PURGE CACHE MU-PLUGIN
 # ==========================

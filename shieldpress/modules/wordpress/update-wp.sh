@@ -49,35 +49,56 @@ echo "0) Cancel"
 echo "----------------------------------------------------"
 read -p "Select: " opt
 
-case $opt in
-1)
-    echo "Updating WordPress core..."
-    $WP_CMD core update --path="$ROOT"
-    ;;
-2)
-    echo "Updating plugins..."
-    $WP_CMD plugin update --all --path="$ROOT"
-    ;;
-3)
-    echo "Updating themes..."
-    $WP_CMD theme update --all --path="$ROOT"
-    ;;
-4)
-    echo "Updating core..."
-    $WP_CMD core update --path="$ROOT"
-    echo "Updating plugins..."
-    $WP_CMD plugin update --all --path="$ROOT"
-    echo "Updating themes..."
-    $WP_CMD theme update --all --path="$ROOT"
-    ;;
-0)
+if [ "$opt" = "0" ]; then
     echo "Cancelled."
     exit 0
-    ;;
-*)
+fi
+
+if ! [[ "$opt" =~ ^[1-4]$ ]]; then
     echo "Invalid option"
     read -p "Press Enter..."
     exit 1
+fi
+
+# ------------------------------------------------
+# Backup nhanh wp-content trước khi update - đủ để rollback
+# nếu plugin/theme mới không tương thích làm site die.
+# ------------------------------------------------
+BACKUP_DIR="$DOMAIN_PATH/backup/files"
+mkdir -p "$BACKUP_DIR"
+PRE_UPDATE_BACKUP="$BACKUP_DIR/pre-update_$(date '+%Y-%m-%d_%H-%M-%S').tar.gz"
+echo "Backing up wp-content before update..."
+if tar -czf "$PRE_UPDATE_BACKUP" -C "$ROOT" wp-content 2>/dev/null; then
+    chown "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$PRE_UPDATE_BACKUP" 2>/dev/null
+    echo "[OK] Backup saved: $PRE_UPDATE_BACKUP"
+else
+    rm -f "$PRE_UPDATE_BACKUP"
+    echo "[WARN] Backup failed - continuing without pre-update backup"
+    PRE_UPDATE_BACKUP=""
+fi
+
+UPDATE_FAILED=0
+
+case $opt in
+1)
+    echo "Updating WordPress core..."
+    $WP_CMD core update --path="$ROOT" || UPDATE_FAILED=1
+    ;;
+2)
+    echo "Updating plugins..."
+    $WP_CMD plugin update --all --path="$ROOT" || UPDATE_FAILED=1
+    ;;
+3)
+    echo "Updating themes..."
+    $WP_CMD theme update --all --path="$ROOT" || UPDATE_FAILED=1
+    ;;
+4)
+    echo "Updating core..."
+    $WP_CMD core update --path="$ROOT" || UPDATE_FAILED=1
+    echo "Updating plugins..."
+    $WP_CMD plugin update --all --path="$ROOT" || UPDATE_FAILED=1
+    echo "Updating themes..."
+    $WP_CMD theme update --all --path="$ROOT" || UPDATE_FAILED=1
     ;;
 esac
 
@@ -112,7 +133,15 @@ systemctl reload php${PHP_SHORT}-php-fpm 2>/dev/null && echo "[OK] OPcache reloa
 
 echo ""
 echo "===================================================="
-echo "Update complete! - $SELECTED_DOMAIN"
+if [ "$UPDATE_FAILED" -eq 0 ]; then
+    echo "Update complete! - $SELECTED_DOMAIN"
+else
+    echo "[FAIL] Update finished WITH ERRORS - $SELECTED_DOMAIN"
+    if [ -n "$PRE_UPDATE_BACKUP" ]; then
+        echo "Restore wp-content from: $PRE_UPDATE_BACKUP"
+        echo "  tar -xzf \"$PRE_UPDATE_BACKUP\" -C \"$ROOT\""
+    fi
+fi
 echo "===================================================="
 
 read -p "Press Enter..."

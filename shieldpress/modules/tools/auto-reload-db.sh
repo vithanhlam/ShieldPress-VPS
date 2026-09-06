@@ -116,7 +116,8 @@ EOF
     log "Service file created: $SERVICE_FILE"
 
     echo ""
-    read -p "Start service now? (y/n): " confirm
+    read -p "Start service now? [Y/n]: " confirm
+    confirm="${confirm:-Y}"
     if [[ "$confirm" =~ ^[yY]$ ]]; then
         systemctl start shieldpress-auto-reload-db.service
         sleep 1

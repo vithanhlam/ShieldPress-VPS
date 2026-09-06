@@ -27,8 +27,15 @@ lock(){
     LOCKED=1
 }
 
-# Only unlock if we actually acquired the lock
-trap '[ "$LOCKED" -eq 1 ] && unlock' EXIT INT TERM
+# Only unlock if we actually acquired the lock.
+# CHỈ trap EXIT - bash tự động chạy trap EXIT ngay cả khi tiến trình bị kết
+# thúc bởi tín hiệu INT/TERM chưa bắt (đây là hành vi chuẩn), nên không cần
+# trap thêm INT/TERM. Nếu trap CẢ INT/TERM mà handler không tự gọi `exit`,
+# script sẽ "nuốt" tín hiệu và chạy tiếp thay vì dừng lại - khiến Ctrl+C và
+# `timeout`/`kill -TERM` không còn tác dụng dừng script (đã tái hiện thật:
+# script rơi vào vòng lặp menu vô hạn "Invalid option" mà timeout không dừng
+# được, phải kill -9 mới thoát).
+trap '[ "$LOCKED" -eq 1 ] && unlock' EXIT
 
 unlock(){ rm -rf "$LOCK_FILE"; LOCKED=0; }
 
@@ -113,8 +120,23 @@ rollback_target(){
     mysql -N -e "SHOW TABLES FROM \`$TARGET_DB\`;" 2>/dev/null | \
         xargs -I{} mysql -e "DROP TABLE \`$TARGET_DB\`.\`{}\`;" 2>/dev/null
 
-    if [ -f "$SNAPSHOT_FILE" ]; then
-        mysql "$TARGET_DB" < "$SNAPSHOT_FILE" && log "Target DB restored from snapshot"
+    if [ -n "$TARGET_ROLLBACK_DIR" ] && [ -d "$TARGET_ROLLBACK_DIR" ]; then
+        # Đích vốn có dữ liệu trước khi clone - phải phục hồi ĐÚNG bản gốc của
+        # đích (không phải snapshot nguồn) nếu không sẽ mất trắng dữ liệu
+        # người dùng, không thể khôi phục.
+        RESTORE_OK=1
+        rsync -a --delete "$TARGET_ROLLBACK_DIR/files/" "$TARGET_ROOT/" 2>/dev/null || RESTORE_OK=0
+        if [ -f "$TARGET_ROLLBACK_DIR/database.sql" ]; then
+            mysql "$TARGET_DB" < "$TARGET_ROLLBACK_DIR/database.sql" 2>/dev/null || RESTORE_OK=0
+        fi
+        [ -n "$TARGET_SYS_USER" ] && chown -R "$TARGET_SYS_USER:$TARGET_SYS_USER" "$TARGET_ROOT"
+
+        if [ "$RESTORE_OK" -eq 1 ]; then
+            log "Target files+DB restored from pre-clone backup"
+            rm -rf "$TARGET_ROLLBACK_DIR"
+        else
+            fail "Target restore FAILED - ban goc van con nguyen tai $TARGET_ROLLBACK_DIR, can khoi phuc thu cong"
+        fi
     fi
     log "ROLLBACK COMPLETED"
 }
@@ -151,6 +173,9 @@ clone_site(){
     read_domain_env "$SRC_PATH"
     SRC_DB="$_DB"; SRC_DB_USER="$_DB_USER"; SRC_DB_PASS="$_DB_PASS"
     SRC_ROOT="$_ROOT"; SRC_SSL="$_SSL"; SRC_PHP="$_PHP"
+
+    # Reset state - tránh dùng nhầm giá trị của lượt clone trước trong cùng phiên
+    TARGET_ROLLBACK_DIR=""
 
     # Verify WordPress
     if ! verify_wp_db "$SRC_DB" "$SRC_DOMAIN"; then
@@ -191,8 +216,9 @@ clone_site(){
     [[ ! "$CONFIRM" =~ ^[Yy]$ ]] && { echo "Cancelled."; unlock; return 1; }
 
     # --- BACKUP SOURCE (optional) ---
-    read -p "Backup source before clone? (y/n): " DO_BACKUP
-    if [ "$DO_BACKUP" = "y" ]; then
+    read -p "Backup source before clone? [Y/n]: " DO_BACKUP
+    DO_BACKUP="${DO_BACKUP:-y}"
+    if [[ "$DO_BACKUP" =~ ^[Yy]$ ]]; then
         BDIR="$SRC_PATH/backup/full/clone_$(date +%Y%m%d_%H%M%S)"
         mkdir -p "$BDIR"
         echo "Backing up source files..."
@@ -212,6 +238,19 @@ clone_site(){
         read -p "Wipe target and continue? (y/n): " CONFIRM2
         [[ ! "$CONFIRM2" =~ ^[Yy]$ ]] && { echo "Cancelled."; unlock; return 1; }
 
+        # Backup dữ liệu GỐC của domain đích trước khi wipe. Nếu clone thất
+        # bại giữa chừng, rollback_target() cần phục hồi ĐÚNG dữ liệu này -
+        # không có bước này thì domain đích mất trắng không thể khôi phục.
+        TARGET_ROLLBACK_DIR="/home/domains/.clone-rollback-${TARGET_DOMAIN}-$(date +%s)"
+        mkdir -p "$TARGET_ROLLBACK_DIR/files"
+        echo "Backing up target before wipe (rollback safety)..."
+        rsync -a "$TARGET_ROOT/" "$TARGET_ROLLBACK_DIR/files/" 2>/dev/null
+        if [ "$TABLE_COUNT" -gt 0 ]; then
+            mysqldump --single-transaction --quick --routines --triggers \
+                "$TARGET_DB" > "$TARGET_ROLLBACK_DIR/database.sql" 2>/dev/null
+        fi
+        ok "Target rollback backup: $TARGET_ROLLBACK_DIR"
+
         rm -rf "${TARGET_ROOT:?}"/*
         mysql -N -e "SHOW TABLES FROM \`$TARGET_DB\`;" 2>/dev/null | \
             xargs -I{} mysql -e "DROP TABLE \`$TARGET_DB\`.\`{}\`;" 2>/dev/null
@@ -219,10 +258,13 @@ clone_site(){
     fi
 
     # --- SNAPSHOT SOURCE DB ---
+    # QUAN TRỌNG: bước này chạy SAU khi target đã bị wipe ở trên - nếu fail ở
+    # đây mà không rollback_target(), domain đích bị bỏ trống vĩnh viễn dù
+    # bản backup gốc (TARGET_ROLLBACK_DIR) vẫn nằm sẵn đó không được dùng tới.
     SNAPSHOT_FILE="/tmp/${SRC_DB}_snap_$(date +%s).sql"
     echo "Creating DB snapshot..."
     mysqldump --single-transaction --quick --routines --triggers \
-        "$SRC_DB" > "$SNAPSHOT_FILE" || { fail "DB snapshot failed"; unlock; return 1; }
+        "$SRC_DB" > "$SNAPSHOT_FILE" || { fail "DB snapshot failed"; rollback_target; unlock; return 1; }
     ok "Snapshot: $SNAPSHOT_FILE"
 
     # --- CLONE FILES ---
@@ -280,8 +322,17 @@ clone_site(){
     verify_clone || { rollback_target; unlock; return 1; }
 
     # --- FLUSH CACHE ---
-    valkey-cli FLUSHALL >/dev/null 2>&1 || true
+    # Chỉ xoá cache của domain đích (prefix "domain:" - cùng quy ước với
+    # WP_REDIS_PREFIX ở cache/wp-valkey.sh) - KHÔNG FLUSHALL vì sẽ xoá sạch
+    # cache của mọi domain khác đang dùng chung Valkey instance.
+    if command -v valkey-cli >/dev/null 2>&1 && valkey-cli ping >/dev/null 2>&1; then
+        valkey-cli --scan --pattern "${TARGET_DOMAIN}:*" 2>/dev/null | \
+            xargs -r valkey-cli del >/dev/null 2>&1
+    fi
     rm -f "$SNAPSHOT_FILE"
+
+    # Clone thành công - không cần bản backup rollback của đích nữa
+    [ -n "$TARGET_ROLLBACK_DIR" ] && rm -rf "$TARGET_ROLLBACK_DIR"
 
     unlock
 

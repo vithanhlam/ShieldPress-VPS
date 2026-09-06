@@ -29,6 +29,13 @@ case "$1" in
     ssl|--ssl)         SHIELDPRESS_ACTION="ssl" ;;
     backup|--backup)   SHIELDPRESS_ACTION="backup" ;;
     help|--help|-h)    SHIELDPRESS_ACTION="help" ;;
+    version|--version|-v) SHIELDPRESS_ACTION="version" ;;
+    "") ;; # no args - open dashboard
+    *)
+        echo "Unknown option: $1"
+        echo "Run 'shieldpress --help' for available commands, or 'shieldpress' with no arguments to open the dashboard."
+        exit 1
+        ;;
 esac
 
 # ===== COLORS =====
@@ -471,6 +478,10 @@ hr
 # ===== HANDLE DIRECT ACTIONS =====
 if [ -n "$SHIELDPRESS_ACTION" ]; then
     case "$SHIELDPRESS_ACTION" in
+        version)
+            cat "$VERSION_FILE" 2>/dev/null || echo "unknown"
+            exit 0
+            ;;
         help)
             echo ""
             echo -e "${BOLD}${WHITE}ShieldPress VPS - Quick Commands${RESET}"
@@ -493,7 +504,7 @@ if [ -n "$SHIELDPRESS_ACTION" ]; then
             fi
 
             echo ""
-            echo -e "  ${DIM}Type a number in terminal to quick access${RESET}"
+            echo -e "  ${DIM}Type 'shieldpress <command>' for quick access (e.g. shieldpress update)${RESET}"
             echo -e "  ${DIM}Type 'shieldpress' for full dashboard${RESET}"
             echo ""
             exit 0

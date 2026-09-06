@@ -70,7 +70,8 @@ edit_nginx(){
     fi
 
     echo ""
-    read -p "Test & reload Nginx now? (y/n): " confirm
+    read -p "Test & reload Nginx now? [Y/n]: " confirm
+    confirm="${confirm:-Y}"
 
     if [[ "$confirm" =~ ^[yY]$ ]]; then
 
@@ -121,7 +122,8 @@ edit_php(){
     fi
 
     echo ""
-    read -p "Reload PHP-FPM now? (y/n): " confirm
+    read -p "Reload PHP-FPM now? [Y/n]: " confirm
+    confirm="${confirm:-Y}"
 
     if [[ "$confirm" =~ ^[yY]$ ]]; then
         systemctl restart php${PHP_SHORT}-php-fpm \

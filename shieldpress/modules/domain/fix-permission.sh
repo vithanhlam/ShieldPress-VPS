@@ -84,6 +84,40 @@ fix_nodejs_permissions(){
     fi
 }
 
+fix_selinux_context(){
+    # Domain Node.js/Laravel-DB tạo trước khi 2 boolean này được set mặc định
+    # sẽ bị 502 (proxy tới Node) hoặc 500 (kết nối MySQL/PostgreSQL qua TCP)
+    # cho tới khi chạy Fix Permissions - set lại ở đây cho chắc.
+    if command -v setsebool >/dev/null 2>&1; then
+        setsebool -P httpd_can_network_connect 1 2>/dev/null || true
+        setsebool -P httpd_can_network_connect_db 1 2>/dev/null || true
+    fi
+
+    command -v semanage >/dev/null 2>&1 || return 0
+
+    # Domain đã tạo trước khi có fix fcontext (v1.3.31) sẽ vẫn bị SELinux
+    # denied cho tới khi được restorecon lại - áp dụng retroactive ở đây.
+    semanage fcontext -a -t httpd_sys_content_t "$DOMAIN_PATH(/.*)?" 2>/dev/null || \
+        semanage fcontext -m -t httpd_sys_content_t "$DOMAIN_PATH(/.*)?" 2>/dev/null || true
+    semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/logs(/.*)?" 2>/dev/null || \
+        semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/logs(/.*)?" 2>/dev/null || true
+    semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/tmp(/.*)?" 2>/dev/null || \
+        semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/tmp(/.*)?" 2>/dev/null || true
+    semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/wp-content(/.*)?" 2>/dev/null || \
+        semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/wp-content(/.*)?" 2>/dev/null || true
+    semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/storage(/.*)?" 2>/dev/null || \
+        semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/storage(/.*)?" 2>/dev/null || true
+    semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/bootstrap/cache(/.*)?" 2>/dev/null || \
+        semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/bootstrap/cache(/.*)?" 2>/dev/null || true
+    restorecon -Rv "$DOMAIN_PATH" >/dev/null 2>&1 || true
+
+    # Slowlog dir global (nằm ngoài $DOMAIN_PATH) - thiếu context này khiến
+    # php-fpm FAIL LÚC START và sập toàn bộ site cùng version PHP trên server.
+    semanage fcontext -a -t httpd_log_t "$LOG_DIR_PHP_SLOW(/.*)?" 2>/dev/null || \
+        semanage fcontext -m -t httpd_log_t "$LOG_DIR_PHP_SLOW(/.*)?" 2>/dev/null || true
+    restorecon -Rv "$LOG_DIR_PHP_SLOW" >/dev/null 2>&1 || true
+}
+
 fix_selected_domain_permissions(){
     [ -n "$SYSUSER" ] || SYSUSER="$FOLDER"
     [ -n "$ROOT" ] || ROOT="$DOMAIN_PATH/public_html"
@@ -91,6 +125,8 @@ fix_selected_domain_permissions(){
 
     echo ""
     echo "Fixing permissions for $DOMAIN ($SYSUSER / $APP_TYPE)..."
+
+    fix_selinux_context
 
     chown root:root "$DOMAIN_PATH"
     chmod 755 "$DOMAIN_PATH"

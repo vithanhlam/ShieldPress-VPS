@@ -247,6 +247,26 @@ check_site_http(){
     echo "$code"
 }
 
+# Nhiều lỗi WordPress phổ biến nhất (critical error, mất kết nối DB, xung đột
+# plugin/theme) vẫn trả về HTTP 200 kèm thông báo lỗi trong nội dung trang -
+# is_server_error() (chỉ nhìn status code) bỏ sót hoàn toàn các trường hợp
+# này, khiến trang lỗi bị FastCGI cache giữ lại cả 6h mà daemon không hề hay
+# biết để tự xoá cache (đây chính là lý do phải vào VPS xoá tay). Kiểm tra
+# thêm ~20KB đầu nội dung trang để bắt các dấu hiệu lỗi phổ biến.
+check_site_body_error(){
+    local domain="$1"
+    local body
+    body=$(curl -s --connect-timeout 5 --max-time 10 -r 0-20000 \
+        -H "User-Agent: ShieldPress-Recovery/1.0" \
+        "https://${domain}/" 2>/dev/null)
+    [ -z "$body" ] && body=$(curl -s --connect-timeout 5 --max-time 10 -r 0-20000 \
+        -H "User-Agent: ShieldPress-Recovery/1.0" \
+        "http://${domain}/" 2>/dev/null)
+
+    echo "$body" | grep -qiE \
+        'There has been a critical error on this website|Error establishing a database connection|This site is experiencing technical difficulties|<b>Fatal error</b>:|<b>Parse error</b>:|Fatal error:.*on line|Parse error:.*on line'
+}
+
 is_server_error(){
     [[ "$1" =~ ^50[0-4]$ ]]
 }
@@ -342,9 +362,16 @@ scan_all_sites(){
 
         sites_checked=$((sites_checked + 1))
         local http_code=$(check_site_http "$domain")
+        local content_error=0
+        # Chỉ cần soi nội dung khi status không đã là lỗi rõ ràng (200/301/302/304) -
+        # tránh 1 lượt curl thừa cho site đang chắc chắn lỗi hoặc chắc chắn ổn theo cách khác.
+        if is_healthy "$http_code" && [ "$http_code" = "200" ] && check_site_body_error "$domain"; then
+            content_error=1
+        fi
 
-        if is_server_error "$http_code"; then
+        if is_server_error "$http_code" || [ "$content_error" -eq 1 ]; then
             sites_error=$((sites_error + 1))
+            [ "$content_error" -eq 1 ] && http_code="200 (error content)"
 
             if is_on_cooldown "$domain"; then
                 [ -z "$silent" ] && echo -e "  \e[33m[HTTP $http_code]\e[0m $domain — on cooldown, skipped"

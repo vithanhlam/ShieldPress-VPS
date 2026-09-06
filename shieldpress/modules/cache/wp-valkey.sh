@@ -66,6 +66,13 @@ read -p "Select: " OPT
 
 WP_CONFIG="$ROOT/wp-config.php"
 
+# Every domain shares one Valkey DB (WP_REDIS_PREFIX below is the only thing
+# separating them), so FLUSHALL/FLUSHDB here would wipe every other domain's
+# object cache too. Delete only keys under this domain's own prefix instead.
+valkey_flush_domain(){
+    valkey-cli --scan --pattern "${SELECTED_DOMAIN}:*" 2>/dev/null | xargs -r valkey-cli del >/dev/null 2>&1
+}
+
 add_wp_define(){
     local KEY=$1 VAL=$2
     # Remove old define to avoid duplicates, then add fresh
@@ -93,7 +100,7 @@ case $OPT in
     rm -f "$ROOT/wp-content/object-cache.php"
     $WP_CMD redis enable --path="$ROOT" 2>/dev/null
 
-    valkey-cli FLUSHALL >/dev/null 2>&1
+    valkey_flush_domain
     systemctl restart "php${PHP_SHORT}-php-fpm"
     systemctl reload nginx
 
@@ -114,7 +121,7 @@ case $OPT in
     echo "[OK] Valkey Object Cache disabled"
     ;;
 3)
-    valkey-cli FLUSHALL 2>/dev/null && echo "[OK] Valkey flushed"
+    valkey_flush_domain && echo "[OK] Valkey cache flushed for $SELECTED_DOMAIN"
     $WP_CMD cache flush --path="$ROOT" 2>/dev/null
     ;;
 4)

@@ -187,7 +187,8 @@ echo -e "  ${DIM}├── Fail2Ban jails (brute-force protection)${RESET}"
 echo -e "  ${DIM}└── Let's Encrypt SSL (mail.${MAIL_DOMAIN})${RESET}"
 echo ""
 
-read -p "Start installation? (y/n): " START_CONFIRM
+read -p "Start installation? [Y/n]: " START_CONFIRM
+START_CONFIRM="${START_CONFIRM:-Y}"
 [[ ! "$START_CONFIRM" =~ ^[Yy]$ ]] && exit 0
 
 echo ""
@@ -208,6 +209,7 @@ dnf install -y \
     opendkim-tools \
     certbot \
     cyrus-sasl cyrus-sasl-plain \
+    bind-utils \
     2>&1 | tee -a "$LOG_FILE"
 
 # Rspamd repo + install
@@ -690,7 +692,10 @@ if [ -f "$CERT_DIR/fullchain.pem" ] && openssl x509 -checkend 86400 -noout -in "
     EXPIRY=$(openssl x509 -enddate -noout -in "$CERT_DIR/fullchain.pem" 2>/dev/null | cut -d= -f2)
     ok "SSL certificate applied (expires: ${EXPIRY})"
 else
-    A_RECORD=$(dig +short A "mail.${MAIL_DOMAIN}" 2>/dev/null | tail -1)
+    # `|| true`: dig thoát != 0 khi DNS timeout/không resolve được (không phải
+    # lỗi của script) - với `set -e -o pipefail` ở đầu file, không chặn thì cả
+    # script sẽ thoát ngay tại đây, bỏ dở start/enable service và ghi marker.
+    A_RECORD=$(dig +short A "mail.${MAIL_DOMAIN}" 2>/dev/null | tail -1) || true
 
     if [ -n "$A_RECORD" ] && [ "$A_RECORD" = "$SERVER_IP" ]; then
         info "Requesting Let's Encrypt certificate for mail.${MAIL_DOMAIN}..."

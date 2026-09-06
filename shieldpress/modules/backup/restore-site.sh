@@ -147,7 +147,12 @@ echo "[Step 2/4] Extracting backup..."
 if command -v pv >/dev/null 2>&1 && [ "$BACKUP_SIZE_BYTES" -gt 0 ]; then
     pv -s "$BACKUP_SIZE_BYTES" -p -t -e -r "$FULL_PATH" | tar -xzf - -C "$TMP"
 else
+    HB_PID=""
+    [ -t 1 ] && { start_heartbeat "Extracting backup" ""; HB_PID=$HEARTBEAT_PID; }
     tar -xzf "$FULL_PATH" -C "$TMP"
+    EXTRACT_STATUS=$?
+    [ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
+    ( exit "$EXTRACT_STATUS" )
 fi
 if [ $? -ne 0 ]; then
     echo "[FAIL] Failed to extract backup!"
@@ -177,14 +182,24 @@ if [ "$ARCHIVE_HAS_PUBLIC" -gt 0 ]; then
     if command -v pv >/dev/null 2>&1 && [ "$FILES_SIZE_BYTES" -gt 0 ]; then
         pv -s "$FILES_SIZE_BYTES" -p -t -e -r "$TMP/files.tar.gz" | tar -xzf - -C "$DOMAIN_PATH"
     else
+        HB_PID=""
+        [ -t 1 ] && { start_heartbeat "Restoring files" ""; HB_PID=$HEARTBEAT_PID; }
         tar -xzf "$TMP/files.tar.gz" -C "$DOMAIN_PATH"
+        EXTRACT_STATUS=$?
+        [ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
+        ( exit "$EXTRACT_STATUS" )
     fi
 else
     # Laravel/Node.js backup: archive contains ./ (app root files directly)
     if command -v pv >/dev/null 2>&1 && [ "$FILES_SIZE_BYTES" -gt 0 ]; then
         pv -s "$FILES_SIZE_BYTES" -p -t -e -r "$TMP/files.tar.gz" | tar -xzf - -C "$DOMAIN_PATH/public_html"
     else
+        HB_PID=""
+        [ -t 1 ] && { start_heartbeat "Restoring files" ""; HB_PID=$HEARTBEAT_PID; }
         tar -xzf "$TMP/files.tar.gz" -C "$DOMAIN_PATH/public_html"
+        EXTRACT_STATUS=$?
+        [ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
+        ( exit "$EXTRACT_STATUS" )
     fi
 fi
 if [ $? -ne 0 ]; then

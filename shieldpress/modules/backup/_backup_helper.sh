@@ -256,6 +256,52 @@ run_piped_with_progress(){
     fi
 }
 
+# Không phải server nào cũng có `pv` để hiện progress bar - khi thiếu, in
+# 1 dòng trạng thái định kỳ (kèm size file output nếu có) để người dùng biết
+# lệnh còn chạy, không tưởng nhầm là bị treo. Chỉ dùng khi KHÔNG có pv (nhánh
+# có pv đã tự hiện progress rồi, không cần heartbeat chồng lên).
+_heartbeat_loop(){
+    local label="$1" outfile="$2" start="$3" parent_pid="$4"
+    while :; do
+        sleep 5
+        # Lưới an toàn cuối: nếu ai đó kill đúng tiến trình backup (không phải
+        # đóng cả phiên SSH) thay vì để nó chạy xong tự gọi stop_heartbeat(),
+        # process cha biến mất nhưng vòng lặp nền này (không có SIGHUP vì
+        # terminal vẫn còn sống) sẽ chạy MÃI MÃI nếu không tự kiểm tra. Thoát
+        # ngay khi cha đã chết, không cần đợi ai kill mình.
+        kill -0 "$parent_pid" 2>/dev/null || exit 0
+        local elapsed fmt
+        elapsed=$(( $(date +%s) - start ))
+        fmt=$(format_duration "$elapsed")
+        if [ -n "$outfile" ] && [ -f "$outfile" ]; then
+            local sz
+            sz=$(du -h "$outfile" 2>/dev/null | cut -f1)
+            echo "  ... $label - đã chạy $fmt, dung lượng hiện tại: ${sz:-0}"
+        else
+            echo "  ... $label - đã chạy $fmt, đang xử lý..."
+        fi
+    done
+}
+
+start_heartbeat(){
+    local label="$1" outfile="$2"
+    # QUAN TRỌNG: không gọi hàm này qua command substitution $(...) - tiến
+    # trình nền bên dưới kế thừa fd 1 của lời gọi, nếu fd đó là pipe của
+    # $(...) thì lệnh đó sẽ TREO VĨNH VIỄN chờ EOF (không bao giờ có, vì
+    # heartbeat chạy tới khi bị kill). Gọi bình thường rồi đọc biến
+    # HEARTBEAT_PID ngay sau đó: `start_heartbeat "..."; HB_PID=$HEARTBEAT_PID`
+    _heartbeat_loop "$label" "$outfile" "$(date +%s)" "$$" &
+    disown
+    HEARTBEAT_PID=$!
+}
+
+stop_heartbeat(){
+    local pid="$1"
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+    true
+}
+
 backup_db_to_file(){
     local OUT_FILE="$1"
 
@@ -289,14 +335,22 @@ password=$DB_PASS
 CNFEOF
     fi
 
+    # Không có `pv` (trường hợp phổ biến) thì dump DB lớn im lặng nhiều phút,
+    # dễ tưởng bị treo - bật heartbeat định kỳ, CHỈ khi chạy tương tác (có tty
+    # ở stdout), tránh làm rác log của auto-backup-*.sh chạy qua cron.
     case "$DB_CONNECTION" in
         mysql|mariadb)
             if command -v pv >/dev/null 2>&1 && [ "$DB_SIZE_BYTES" -gt 0 ]; then
                 ( set -o pipefail; mysqldump --defaults-extra-file="$MYSQL_CNF" --single-transaction --quick --routines --triggers \
                     "$DB_NAME" | pv -s "$DB_SIZE_BYTES" -p -t -e -r | gzip > "$OUT_FILE" )
             else
+                local HB_PID=""
+                [ -t 1 ] && { start_heartbeat "Database dump ($DB_CONNECTION)" "$OUT_FILE"; HB_PID=$HEARTBEAT_PID; }
                 ( set -o pipefail; mysqldump --defaults-extra-file="$MYSQL_CNF" --single-transaction --quick --routines --triggers \
                     "$DB_NAME" | gzip > "$OUT_FILE" )
+                local CMD_STATUS=$?
+                [ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
+                ( exit "$CMD_STATUS" )
             fi
             ;;
         pgsql|postgres|postgresql)
@@ -308,12 +362,17 @@ CNFEOF
                     --no-owner \
                     --no-privileges | pv -s "$DB_SIZE_BYTES" -p -t -e -r | gzip > "$OUT_FILE" )
             else
+                local HB_PID=""
+                [ -t 1 ] && { start_heartbeat "Database dump ($DB_CONNECTION)" "$OUT_FILE"; HB_PID=$HEARTBEAT_PID; }
                 ( set -o pipefail; PGPASSWORD="$DB_PASS" pg_dump \
                     -h 127.0.0.1 \
                     -U "$DB_USER" \
                     -d "$DB_NAME" \
                     --no-owner \
                     --no-privileges | gzip > "$OUT_FILE" )
+                local CMD_STATUS=$?
+                [ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
+                ( exit "$CMD_STATUS" )
             fi
             ;;
         *)
@@ -357,14 +416,24 @@ CNFEOF
             if command -v pv >/dev/null 2>&1 && [ "$FILE_SIZE" -gt 0 ]; then
                 pv -s "$FILE_SIZE" -p -t -e -r "$SQL_FILE" | mysql --defaults-extra-file="$MYSQL_CNF" "$DB_NAME"
             else
+                local HB_PID=""
+                [ -t 1 ] && { start_heartbeat "Database import ($DB_CONNECTION)" ""; HB_PID=$HEARTBEAT_PID; }
                 mysql --defaults-extra-file="$MYSQL_CNF" "$DB_NAME" < "$SQL_FILE"
+                local CMD_STATUS=$?
+                [ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
+                ( exit "$CMD_STATUS" )
             fi
             ;;
         pgsql|postgres|postgresql)
             if command -v pv >/dev/null 2>&1 && [ "$FILE_SIZE" -gt 0 ]; then
                 pv -s "$FILE_SIZE" -p -t -e -r "$SQL_FILE" | PGPASSWORD="$DB_PASS" psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME"
             else
+                local HB_PID=""
+                [ -t 1 ] && { start_heartbeat "Database import ($DB_CONNECTION)" ""; HB_PID=$HEARTBEAT_PID; }
                 PGPASSWORD="$DB_PASS" psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" < "$SQL_FILE"
+                local CMD_STATUS=$?
+                [ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
+                ( exit "$CMD_STATUS" )
             fi
             ;;
         *)
@@ -473,26 +542,43 @@ archive_source_to_file(){
 
     show_operation_eta "Archive files - $APP_TYPE (tar.gz)" "$SRC_SIZE_MB" "tar_gz"
 
+    # Không có `pv` thì nén thư mục lớn im lặng, dễ tưởng bị treo - bật
+    # heartbeat định kỳ, CHỈ khi chạy tương tác (có tty ở stdout).
     if [ "$BACKUP_TARGET" = "custom" ]; then
         # Custom paths: tar specific dirs
         if command -v pv >/dev/null 2>&1 && [ "$SRC_SIZE_BYTES" -gt 0 ]; then
-            tar -cf - $EXCLUDE_OPTS -C "$DOMAIN_PATH/public_html" $TARGETS | pv -s "$SRC_SIZE_BYTES" -p -t -e -r | gzip > "$OUT_FILE"
+            (set -o pipefail; tar -cf - $EXCLUDE_OPTS -C "$DOMAIN_PATH/public_html" $TARGETS | pv -s "$SRC_SIZE_BYTES" -p -t -e -r | gzip > "$OUT_FILE")
         else
+            local HB_PID=""
+            [ -t 1 ] && { start_heartbeat "Archiving files" "$OUT_FILE"; HB_PID=$HEARTBEAT_PID; }
             tar -czf "$OUT_FILE" $EXCLUDE_OPTS -C "$DOMAIN_PATH/public_html" $TARGETS
+            local CMD_STATUS=$?
+            [ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
+            ( exit "$CMD_STATUS" )
         fi
     elif [ "$BACKUP_TARGET" = "." ]; then
         # Laravel/Node.js: backup from inside public_html
         if command -v pv >/dev/null 2>&1 && [ "$SRC_SIZE_BYTES" -gt 0 ]; then
-            tar -cf - $EXCLUDE_OPTS -C "$DOMAIN_PATH/public_html" . | pv -s "$SRC_SIZE_BYTES" -p -t -e -r | gzip > "$OUT_FILE"
+            (set -o pipefail; tar -cf - $EXCLUDE_OPTS -C "$DOMAIN_PATH/public_html" . | pv -s "$SRC_SIZE_BYTES" -p -t -e -r | gzip > "$OUT_FILE")
         else
+            local HB_PID=""
+            [ -t 1 ] && { start_heartbeat "Archiving files" "$OUT_FILE"; HB_PID=$HEARTBEAT_PID; }
             tar -czf "$OUT_FILE" $EXCLUDE_OPTS -C "$DOMAIN_PATH/public_html" .
+            local CMD_STATUS=$?
+            [ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
+            ( exit "$CMD_STATUS" )
         fi
     else
         # WordPress/PHP: backup public_html directory
         if command -v pv >/dev/null 2>&1 && [ "$SRC_SIZE_BYTES" -gt 0 ]; then
-            tar -cf - $EXCLUDE_OPTS -C "$DOMAIN_PATH" public_html | pv -s "$SRC_SIZE_BYTES" -p -t -e -r | gzip > "$OUT_FILE"
+            (set -o pipefail; tar -cf - $EXCLUDE_OPTS -C "$DOMAIN_PATH" public_html | pv -s "$SRC_SIZE_BYTES" -p -t -e -r | gzip > "$OUT_FILE")
         else
+            local HB_PID=""
+            [ -t 1 ] && { start_heartbeat "Archiving files" "$OUT_FILE"; HB_PID=$HEARTBEAT_PID; }
             tar -czf "$OUT_FILE" $EXCLUDE_OPTS -C "$DOMAIN_PATH" public_html
+            local CMD_STATUS=$?
+            [ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
+            ( exit "$CMD_STATUS" )
         fi
     fi
 

@@ -253,6 +253,329 @@ patch_138_fix_webmail_smtp(){
 }
 
 # --------------------------------------------------
+# v1.3.31 — SELinux fcontext cho domain đã tồn tại.
+#           Trước bản vá này, chỉ domain TẠO MỚI mới
+#           được gán context; domain cũ (kể cả php-slow
+#           log dùng chung) vẫn bị denied trên máy
+#           SELinux Enforcing -> PHP-FPM crash cả server.
+# --------------------------------------------------
+patch_1331_selinux_domain_context(){
+    local ID="SP_1331_SELINUX_DOMAIN_CONTEXT"
+    local DESC="Apply SELinux fcontext to existing domains + shared php-slow log dir"
+
+    if patch_applied "$ID"; then
+        skip "$DESC"
+        return 0
+    fi
+
+    if ! command -v semanage >/dev/null 2>&1; then
+        skip "$DESC (SELinux/semanage not present)"
+        patch_mark_done "$ID"
+        return 0
+    fi
+
+    echo "  Applying: $DESC..."
+    local COUNT=0
+
+    semanage fcontext -a -t httpd_log_t "$LOG_DIR_PHP_SLOW(/.*)?" 2>/dev/null || \
+        semanage fcontext -m -t httpd_log_t "$LOG_DIR_PHP_SLOW(/.*)?" 2>/dev/null || true
+    restorecon -Rv "$LOG_DIR_PHP_SLOW" >/dev/null 2>&1 || true
+
+    for d in "$DOMAINS_ROOT"/*/; do
+        [ -d "$d" ] || continue
+        local DOMAIN_PATH="${d%/}"
+
+        semanage fcontext -a -t httpd_sys_content_t "$DOMAIN_PATH(/.*)?" 2>/dev/null || \
+            semanage fcontext -m -t httpd_sys_content_t "$DOMAIN_PATH(/.*)?" 2>/dev/null || true
+        semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/logs(/.*)?" 2>/dev/null || \
+            semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/logs(/.*)?" 2>/dev/null || true
+        semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/tmp(/.*)?" 2>/dev/null || \
+            semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/tmp(/.*)?" 2>/dev/null || true
+        semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/wp-content(/.*)?" 2>/dev/null || \
+            semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/wp-content(/.*)?" 2>/dev/null || true
+        semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/storage(/.*)?" 2>/dev/null || \
+            semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/storage(/.*)?" 2>/dev/null || true
+        semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/bootstrap/cache(/.*)?" 2>/dev/null || \
+            semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/bootstrap/cache(/.*)?" 2>/dev/null || true
+        restorecon -Rv "$DOMAIN_PATH" >/dev/null 2>&1 || true
+        COUNT=$((COUNT+1))
+    done
+
+    patch_mark_done "$ID"
+    ok "$DESC ($COUNT domains)"
+}
+
+# --------------------------------------------------
+# v1.3.31 — Bật SELinux boolean cho phép nginx proxy
+#           tới Node.js app (502) và php-fpm kết nối
+#           MySQL/PostgreSQL qua TCP (500) - trước bản
+#           vá này chỉ được set lúc cài PHP mặc định
+#           ban đầu, domain xin thêm PHP version khác
+#           không có, gây lỗi ngẫu nhiên tuỳ version.
+# --------------------------------------------------
+patch_1331_selinux_network_booleans(){
+    local ID="SP_1331_SELINUX_NETWORK_BOOLEANS"
+    local DESC="Enable httpd_can_network_connect(_db) SELinux booleans"
+
+    if patch_applied "$ID"; then
+        skip "$DESC"
+        return 0
+    fi
+
+    if ! command -v setsebool >/dev/null 2>&1; then
+        skip "$DESC (SELinux/setsebool not present)"
+        patch_mark_done "$ID"
+        return 0
+    fi
+
+    echo "  Applying: $DESC..."
+    setsebool -P httpd_can_network_connect 1 2>/dev/null || true
+    setsebool -P httpd_can_network_connect_db 1 2>/dev/null || true
+
+    patch_mark_done "$ID"
+    ok "$DESC"
+}
+
+# --------------------------------------------------
+# v1.3.31 — Retrofit Nginx Security Headers snippet vào
+#           domain đã tồn tại. Trước bản vá này, chỉ
+#           domain TẠO MỚI mới tự include snippet; domain
+#           cũ cần chạy lại "Fix Permissions"/tạo lại config
+#           - patch này làm việc đó tự động, an toàn (kiểm
+#           tra nginx -t trước khi reload, rollback file nào
+#           lỡ làm hỏng test).
+# --------------------------------------------------
+patch_1331_retrofit_security_headers(){
+    local ID="SP_1331_RETROFIT_SECURITY_HEADERS"
+    local DESC="Include security headers snippet in existing domain nginx configs"
+    local SNIPPET="/etc/nginx/snippets/shieldpress-security-headers.conf"
+
+    if patch_applied "$ID"; then
+        skip "$DESC"
+        return 0
+    fi
+
+    if ! command -v nginx >/dev/null 2>&1; then
+        skip "$DESC (nginx not present)"
+        patch_mark_done "$ID"
+        return 0
+    fi
+
+    echo "  Applying: $DESC..."
+    mkdir -p "$(dirname "$SNIPPET")"
+    [ -f "$SNIPPET" ] || cat > "$SNIPPET" <<'EOF'
+# Managed by ShieldPress VPS - Nginx > Security Headers menu.
+# Empty by default; populated when "Enable Security Headers" is run.
+EOF
+
+    local COUNT=0
+    local CONF
+    for CONF in /etc/nginx/conf.d/*.conf; do
+        [ -f "$CONF" ] || continue
+        case "$(basename "$CONF")" in
+            shieldpress-*|cache-zone-*|default.conf) continue ;;
+        esac
+        grep -q "include $SNIPPET;" "$CONF" && continue
+        grep -q "add_header" "$CONF" || continue
+
+        local BAK
+        BAK=$(mktemp "/tmp/spatch_$(basename "$CONF").XXXXXX")
+        cp -a "$CONF" "$BAK"
+
+        # Chèn include ngay sau dòng add_header CUỐI CÙNG trong file.
+        local LAST_LINE
+        LAST_LINE=$(grep -n "add_header" "$CONF" | tail -1 | cut -d: -f1)
+        if [ -n "$LAST_LINE" ]; then
+            sed -i "${LAST_LINE}a\\    include $SNIPPET;" "$CONF"
+            if nginx -t >/dev/null 2>&1; then
+                COUNT=$((COUNT+1))
+            else
+                fail "nginx -t failed after patching $(basename "$CONF") - reverted"
+                cp -a "$BAK" "$CONF"
+            fi
+        fi
+        rm -f "$BAK"
+    done
+
+    if [ "$COUNT" -gt 0 ]; then
+        systemctl reload nginx 2>/dev/null || true
+    fi
+
+    patch_mark_done "$ID"
+    ok "$DESC ($COUNT domain configs updated)"
+}
+
+# --------------------------------------------------
+# v1.3.31 — Cài logrotate cho log nội bộ ShieldPress
+#           (trước bản vá này log phình to vô hạn).
+# --------------------------------------------------
+patch_1331_install_logrotate(){
+    local ID="SP_1331_INSTALL_LOGROTATE"
+    local DESC="Install logrotate config for ShieldPress logs"
+
+    if patch_applied "$ID"; then
+        skip "$DESC"
+        return 0
+    fi
+
+    if ! command -v logrotate >/dev/null 2>&1; then
+        skip "$DESC (logrotate not present)"
+        patch_mark_done "$ID"
+        return 0
+    fi
+
+    echo "  Applying: $DESC..."
+    install_logrotate_config
+
+    patch_mark_done "$ID"
+    ok "$DESC"
+}
+
+# --------------------------------------------------
+# v1.3.31 — Cảnh báo (không tự restart) domain Node.js
+#           vẫn còn chạy PM2 dưới quyền root (trước bản
+#           vá này TẤT CẢ domain Node.js chạy chung 1 PM2
+#           daemon root - lỗ hổng RCE=root). Không tự động
+#           migrate ở đây vì cần dừng/khởi động lại app
+#           đang chạy (gây gián đoạn ngắn) - để admin chủ
+#           động chọn thời điểm qua Node.js Menu > Migrate.
+# --------------------------------------------------
+patch_1331_warn_node_root_pm2(){
+    local ID="SP_1331_WARN_NODE_ROOT_PM2"
+    local DESC="Warn about Node.js domains still running under root PM2"
+
+    if patch_applied "$ID"; then
+        skip "$DESC"
+        return 0
+    fi
+
+    if ! command -v pm2 >/dev/null 2>&1; then
+        patch_mark_done "$ID"
+        return 0
+    fi
+
+    local FOUND=""
+    local d env clean domain
+    for env in "$DOMAINS_ROOT"/*/config/domain.env; do
+        [ -f "$env" ] || continue
+        grep -q "^APP_TYPE=nodejs" "$env" || continue
+        d=$(dirname "$(dirname "$env")")
+        clean=$(basename "$d")
+        if pm2 jlist 2>/dev/null | grep -q "\"name\":\"$clean\""; then
+            domain=$(grep "^DOMAIN=" "$env" | cut -d= -f2 | tr -d '[:space:]')
+            FOUND="$FOUND $domain"
+        fi
+    done
+
+    if [ -n "$FOUND" ]; then
+        fail "Domain(s) still running Node.js as root:$FOUND"
+        info "Fix: Node.js Menu > Migrate to per-user PM2 (brief restart of that app)"
+    else
+        ok "$DESC (none found)"
+    fi
+
+    patch_mark_done "$ID"
+}
+
+# --------------------------------------------------
+# v1.3.31 — MariaDB/PostgreSQL/PHP-FPM không tự phục
+#           hồi sau khi bị OOM-killer giết (mặc định
+#           RHEL: mariadb Restart=on-abort không bắt
+#           SIGKILL, postgresql/php-fpm Restart=no) -
+#           server "hay down" kéo dài dù OOM chỉ xảy
+#           ra 1 lần. Ghi systemd drop-in override để
+#           tự restart (có giới hạn số lần/300s tránh
+#           restart loop che giấu lỗi thật).
+# --------------------------------------------------
+patch_1331_service_resilience(){
+    local ID="SP_1331_SERVICE_RESILIENCE"
+    local DESC="Auto-restart MariaDB/PostgreSQL/PHP-FPM after crash/OOM-kill"
+
+    if patch_applied "$ID"; then
+        skip "$DESC"
+        return 0
+    fi
+
+    echo "  Applying: $DESC..."
+    local COUNT=0
+
+    apply_systemd_resilience mariadb -500 && COUNT=$((COUNT+1))
+    apply_systemd_resilience postgresql && COUNT=$((COUNT+1))
+
+    for VER in 81 82 83 84; do
+        apply_systemd_resilience "php${VER}-php-fpm" && COUNT=$((COUNT+1))
+    done
+
+    patch_mark_done "$ID"
+    ok "$DESC ($COUNT service(s) covered)"
+}
+
+# --------------------------------------------------
+# v1.3.31 — Tính lại pm.max_children cho domain ĐÃ TỒN
+#           TẠI theo công thức mới (chia thêm cho số
+#           domain trên server). Công thức cũ tính độc
+#           lập từng domain là nguyên nhân chính gây
+#           overcommit RAM -> OOM-killer giết MariaDB/
+#           PostgreSQL/PHP-FPM. Domain tạo mới đã tự
+#           dùng công thức mới (domain/helpers.sh); patch
+#           này áp dụng ngược lại cho domain có từ trước.
+#           Chỉ sửa dòng pm.max_children, dùng `reload`
+#           (không `restart`) - không rớt request đang xử
+#           lý.
+# --------------------------------------------------
+patch_1331_resize_php_pools(){
+    local ID="SP_1331_RESIZE_PHP_POOLS"
+    local DESC="Recalculate pm.max_children for existing domains (prevent RAM overcommit)"
+
+    if patch_applied "$ID"; then
+        skip "$DESC"
+        return 0
+    fi
+
+    echo "  Applying: $DESC..."
+
+    local TOTAL_RAM DOMAIN_COUNT PHP_MAX
+    TOTAL_RAM=$(free -m | awk '/Mem:/ {print $2}')
+    DOMAIN_COUNT=$(find "$DOMAINS_ROOT" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+    [ "$DOMAIN_COUNT" -lt 1 ] && DOMAIN_COUNT=1
+    PHP_MAX=$((TOTAL_RAM / 50 / DOMAIN_COUNT))
+    [ "$PHP_MAX" -lt 5  ] && PHP_MAX=5
+    [ "$PHP_MAX" -gt 50 ] && PHP_MAX=50
+
+    local COUNT=0
+    local -A TOUCHED_VERSIONS=()
+    local d env sysuser php_ver php_short pool_file current
+
+    for env in "$DOMAINS_ROOT"/*/config/domain.env; do
+        [ -f "$env" ] || continue
+        sysuser=$(grep "^SYSTEM_USER=" "$env" | cut -d= -f2 | tr -d '[:space:]')
+        php_ver=$(grep "^PHP_VERSION=" "$env" | cut -d= -f2 | tr -d '[:space:]')
+        [ -z "$sysuser" ] || [ -z "$php_ver" ] && continue
+        [[ "$sysuser" =~ ^[a-zA-Z0-9_-]{1,32}$ ]] || continue
+
+        php_short=$(echo "$php_ver" | tr -d '.')
+        pool_file="/etc/opt/remi/php${php_short}/php-fpm.d/${sysuser}.conf"
+        [ -f "$pool_file" ] || continue
+
+        current=$(grep -oP 'pm\.max_children\s*=\s*\K[0-9]+' "$pool_file" 2>/dev/null)
+        [ -z "$current" ] && continue
+        [ "$current" = "$PHP_MAX" ] && continue
+
+        sed -i "s/pm\.max_children\s*=\s*[0-9]\+/pm.max_children         = ${PHP_MAX}/" "$pool_file"
+        TOUCHED_VERSIONS["$php_short"]=1
+        COUNT=$((COUNT+1))
+    done
+
+    local ver
+    for ver in "${!TOUCHED_VERSIONS[@]}"; do
+        systemctl reload "php${ver}-php-fpm" 2>/dev/null || true
+    done
+
+    patch_mark_done "$ID"
+    ok "$DESC ($COUNT pools resized to pm.max_children=$PHP_MAX for $DOMAIN_COUNT domains)"
+}
+
+# --------------------------------------------------
 # Add new patches above this line.
 # Template:
 #
@@ -283,6 +606,13 @@ apply_all_patches(){
     patch_134_fix_open_basedir_tmp
     patch_134_ensure_php_slow_dir
     patch_138_fix_webmail_smtp
+    patch_1331_selinux_domain_context
+    patch_1331_selinux_network_booleans
+    patch_1331_retrofit_security_headers
+    patch_1331_install_logrotate
+    patch_1331_warn_node_root_pm2
+    patch_1331_service_resilience
+    patch_1331_resize_php_pools
 
     # Add new patch calls here ↑
 
@@ -318,6 +648,13 @@ show_patch_status(){
     _status "SP_134_FIX_OPEN_BASEDIR_TMP"   "v1.3.4 Remove /tmp from open_basedir"
     _status "SP_134_ENSURE_PHP_SLOW_DIR"     "v1.3.4 Ensure PHP slow log directory exists"
     _status "SP_138_FIX_WEBMAIL_SMTP"        "v1.3.8 Fix Roundcube SMTP config error"
+    _status "SP_1331_SELINUX_DOMAIN_CONTEXT"      "v1.3.31 SELinux fcontext for existing domains"
+    _status "SP_1331_SELINUX_NETWORK_BOOLEANS"    "v1.3.31 SELinux network_connect(_db) booleans"
+    _status "SP_1331_RETROFIT_SECURITY_HEADERS"   "v1.3.31 Retrofit security headers into nginx configs"
+    _status "SP_1331_INSTALL_LOGROTATE"           "v1.3.31 Install logrotate for ShieldPress logs"
+    _status "SP_1331_WARN_NODE_ROOT_PM2"          "v1.3.31 Warn about Node.js domains running as root"
+    _status "SP_1331_SERVICE_RESILIENCE"          "v1.3.31 Auto-restart MariaDB/PostgreSQL/PHP-FPM after crash"
+    _status "SP_1331_RESIZE_PHP_POOLS"            "v1.3.31 Resize pm.max_children (prevent RAM overcommit)"
 
     echo ""
     echo "  Registry: $PATCH_REGISTRY"

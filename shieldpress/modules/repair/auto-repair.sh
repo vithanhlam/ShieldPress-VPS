@@ -179,6 +179,14 @@ done
 # ============================================
 
 if ! nginx -t 2>/dev/null; then
+    # Retry sau vài giây trước khi cô lập file - tránh race condition với 1
+    # lệnh khác đang giữa chừng ghi config hợp lệ (vd Install SSL) bị chạy
+    # aggressive-mode auto-repair (mỗi 2 phút) bắt gặp đúng lúc đang ghi dở.
+    sleep 3
+    if nginx -t 2>/dev/null; then
+        log "Nginx config OK on retry - bỏ qua, không cô lập file nào (false alarm/race)"
+        clear_alert "nginx_config"
+    else
     log "Nginx config BROKEN, attempting to identify bad config..."
 
     BROKEN_CONF=""
@@ -206,6 +214,7 @@ if ! nginx -t 2>/dev/null; then
         send_alert "nginx_config" "Nginx Config Broken" \
             "Cannot identify broken config. Manual intervention needed on $HOST" 1800
     fi
+    fi
 else
     clear_alert "nginx_config"
 fi
@@ -219,6 +228,15 @@ for v in 81 82 83 84; do
     [ -x "$FPM" ] || continue
 
     if ! $FPM -t 2>/dev/null; then
+        # Retry sau vài giây trước khi cô lập pool - tránh race condition với
+        # 1 lệnh khác đang giữa chừng ghi pool hợp lệ (vd Add Domain/Change PHP).
+        sleep 3
+        if $FPM -t 2>/dev/null; then
+            log "PHP ${v} FPM config OK on retry - bỏ qua, không cô lập pool nào (false alarm/race)"
+            clear_alert "php${v}_config"
+            continue
+        fi
+
         log "PHP ${v} FPM config broken, checking pools..."
 
         # Try to find broken pool
@@ -394,7 +412,8 @@ enable_daemon(){
 
     # Create initial snapshot
     echo ""
-    read -p "Create config snapshot now? (y/n): " snap_confirm
+    read -p "Create config snapshot now? [Y/n]: " snap_confirm
+    snap_confirm="${snap_confirm:-Y}"
     if [[ "$snap_confirm" =~ ^[yY]$ ]]; then
         bash "$SNAPSHOT_SCRIPT" auto "initial" 2>/dev/null
         ok "Initial snapshot created"

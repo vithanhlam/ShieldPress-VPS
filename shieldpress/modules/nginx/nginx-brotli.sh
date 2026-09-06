@@ -76,7 +76,8 @@ enable_brotli(){
 
     if ! check_brotli_module; then
         warn "Brotli module not found in Nginx"
-        read -p "Try to install Brotli module? (y/n): " install_confirm
+        read -p "Try to install Brotli module? [Y/n]: " install_confirm
+        install_confirm="${install_confirm:-Y}"
         if [[ "$install_confirm" =~ ^[yY]$ ]]; then
             install_brotli || { fail "Installation failed"; return; }
         else
@@ -145,7 +146,8 @@ disable_brotli(){
         return
     fi
 
-    read -p "Disable Brotli compression? (y/n): " confirm
+    read -p "Disable Brotli compression? [Y/n]: " confirm
+    confirm="${confirm:-Y}"
     [[ "$confirm" =~ ^[yY]$ ]] || { warn "Cancelled"; return; }
 
     cp "$CONF" "$BACKUP"

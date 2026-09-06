@@ -661,6 +661,7 @@ msg "Installing MariaDB..." "Cài MariaDB..."
 dnf install -y mariadb-server
 
 systemctl enable mariadb
+apply_systemd_resilience mariadb -500
 systemctl restart mariadb
 
 # MariaDB auto tuning - giới hạn buffer pool tối đa 70% RAM
@@ -860,6 +861,7 @@ install_php() {
     fi
 
     systemctl enable php${VERSION}-php-fpm
+    apply_systemd_resilience "php${VERSION}-php-fpm"
 
     # ----------------------------------------
     # FIX OPCACHE - bật đúng, enable JIT an toàn
@@ -938,6 +940,9 @@ POOL
     if command -v setsebool >/dev/null 2>&1; then
         setsebool -P httpd_unified 1 2>/dev/null || true
         setsebool -P httpd_can_network_connect 1 2>/dev/null || true
+        # Domain Laravel/PHP kết nối MySQL/PostgreSQL qua TCP (127.0.0.1) cần
+        # boolean riêng này, khác với network_connect chung ở trên.
+        setsebool -P httpd_can_network_connect_db 1 2>/dev/null || true
     fi
 
     # ----------------------------------------
@@ -1029,6 +1034,15 @@ open_ssh_firewall_port
 ok "Firewall configured (SSH port: $SSH_PORT)"
 
 # ------------------------------------------------
+# LOGROTATE - không có bước này thì log ShieldPress
+# (domain.log, backup.log, ram-auto-optimize.log...)
+# và log nginx theo domain phình to vô hạn theo thời gian.
+# ------------------------------------------------
+ensure_shieldpress_dirs 2>/dev/null || true
+install_logrotate_config 2>/dev/null || true
+ok "Logrotate configured (ShieldPress logs: 14 days, domain nginx logs: 30 days)"
+
+# ------------------------------------------------
 # FINAL CHECK
 # ------------------------------------------------
 
@@ -1118,6 +1132,20 @@ d /var/shieldpress/data 0755 root root -
 EOF
 systemd-tmpfiles --create /etc/tmpfiles.d/shieldpress.conf 2>/dev/null || true
 ok "tmpfiles.d: ShieldPress directories ensured at boot"
+
+# ------------------------------------------------
+# PACKAGE VERSIONLOCK - protect nginx/php/mariadb/postgresql/nodejs
+# from "Update Core Packages" (dnf update) from day one. Without this,
+# a fresh install has no versionlock until the first successful run of
+# Upgrade Manager, leaving a window where core packages can be bumped
+# outside the backup/rollback-protected upgrade flow.
+# ------------------------------------------------
+PACKAGE_LOCK_SCRIPT="/opt/shieldpress/modules/upgrade/package-lock.sh"
+if [ -f "$PACKAGE_LOCK_SCRIPT" ]; then
+    bash "$PACKAGE_LOCK_SCRIPT" lock >/dev/null 2>&1 && \
+        ok "Core packages version-locked (nginx/php/mariadb/postgresql/nodejs)" || \
+        warn "Could not apply package versionlock, continuing"
+fi
 
 # ------------------------------------------------
 # RUN INSTALL.SH - setup commands & login banner

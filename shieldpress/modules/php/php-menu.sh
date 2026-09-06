@@ -52,7 +52,8 @@ edit_php(){
     fi
 
     echo ""
-    read -p "Reload PHP-FPM now? (y/n): " confirm
+    read -p "Reload PHP-FPM now? [Y/n]: " confirm
+    confirm="${confirm:-Y}"
     if [[ "$confirm" =~ ^[yY]$ ]]; then
         systemctl restart php${PHP_SHORT}-php-fpm \
             && ok "PHP-FPM reloaded" \

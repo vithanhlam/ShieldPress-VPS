@@ -38,13 +38,15 @@ if valkey-cli ping >/dev/null 2>&1; then
     # Dùng WP-CLI redis flush thay vì FLUSHALL toàn bộ Valkey
     if [ -x "$PHP_BIN" ] && [ -f "$ROOT/wp-config.php" ]; then
         $WP_CMD redis flush --path="$ROOT" 2>/dev/null && echo "[OK] Valkey object cache flushed (per-domain)" || {
-            # Fallback nếu WP redis flush không hoạt động
-            valkey-cli FLUSHDB >/dev/null 2>&1
-            echo "[OK] Valkey cache flushed (FLUSHDB)"
+            # Fallback: mọi domain dùng chung 1 Valkey DB (phân biệt bằng
+            # WP_REDIS_PREFIX "$SELECTED_DOMAIN:") - FLUSHDB sẽ xoá luôn cache
+            # của domain khác, nên chỉ xoá theo prefix của domain này.
+            valkey-cli --scan --pattern "${SELECTED_DOMAIN}:*" 2>/dev/null | xargs -r valkey-cli del >/dev/null 2>&1
+            echo "[OK] Valkey cache flushed (by prefix, other domains unaffected)"
         }
     else
-        valkey-cli FLUSHDB >/dev/null 2>&1
-        echo "[OK] Valkey cache flushed (FLUSHDB)"
+        valkey-cli --scan --pattern "${SELECTED_DOMAIN}:*" 2>/dev/null | xargs -r valkey-cli del >/dev/null 2>&1
+        echo "[OK] Valkey cache flushed (by prefix, other domains unaffected)"
     fi
 fi
 

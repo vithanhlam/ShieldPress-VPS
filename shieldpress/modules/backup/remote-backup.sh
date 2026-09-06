@@ -52,7 +52,8 @@ ensure_rclone(){
     fi
     echo ""
     echo "rclone is not installed."
-    read -p "Install rclone automatically? (y/n): " ANS
+    read -p "Install rclone automatically? [Y/n]: " ANS
+    ANS="${ANS:-y}"
     [[ "$ANS" =~ ^[Yy]$ ]] || { echo "Cancelled."; return 1; }
     install_rclone
 }

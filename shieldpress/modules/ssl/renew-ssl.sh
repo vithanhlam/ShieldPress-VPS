@@ -25,7 +25,7 @@ echo ""
 # Nếu còn nhiều ngày thì hỏi xác nhận
 if [[ "$DAYS" =~ ^[0-9]+$ ]] && [ "$DAYS" -gt 30 ]; then
     warn "Certificate still valid for $DAYS days"
-    read -p "Force renew anyway? (y/n): " FORCE
+    read -p "Force renew anyway? [y/N]: " FORCE
     [ "$FORCE" != "y" ] && exit 0
 fi
 

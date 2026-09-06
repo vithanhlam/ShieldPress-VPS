@@ -1,5 +1,77 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.31 — 2026-09-06 — SELinux hardening, crash resilience and dozens of reliability fixes
+
+- Fixed adding a domain, or a domain requesting a new PHP version, leaving
+  `/home/domains/<domain>` and the shared PHP slow-log directory without a
+  proper SELinux file context; on SELinux-enforcing servers this made
+  nginx/PHP-FPM start failing for that PHP version, taking down every other
+  domain on the same version. Existing domains are retrofitted automatically
+  during this update.
+- Fixed PHP-FPM `pm.max_children` being sized independently per domain
+  (`RAM/50`) with no regard for how many other domains already exist on the
+  server, which could overcommit RAM by several times on a server with more
+  than a few domains and trigger the kernel OOM-killer to kill MariaDB,
+  PostgreSQL or PHP-FPM. Sizing now accounts for the number of domains on the
+  server; existing domains are resized during this update.
+- Added automatic recovery for MariaDB, PostgreSQL and PHP-FPM: they now
+  restart automatically within seconds if killed (e.g. by the OOM-killer),
+  instead of staying down until an admin notices and restarts them by hand.
+- Fixed the "Enable Security Headers" Nginx feature having no effect on any
+  domain, because the headers were added at the `http{}` level while every
+  domain already sets its own `add_header` directives, which silently
+  discards inherited ones in Nginx.
+- Fixed Node.js apps running under a single shared root PM2 daemon instead of
+  their own domain user, meaning a compromise of any Node.js app gave root
+  access to the whole server; each domain now runs its own PM2 process under
+  its own user.
+- Fixed Clone Domain wiping the destination domain's files and database with
+  no backup and no way to recover if the clone failed partway through; it now
+  backs up the destination first and restores it correctly on failure.
+- Fixed Clone Domain and WordPress Staging "Full Deploy" flushing the Valkey
+  cache for the entire server instead of just the affected domain.
+- Fixed Emergency Restore and System Integrity Check computing domain nginx
+  filenames differently from how they are actually created, causing them to
+  recreate a duplicate, conflicting vhost (dropping security headers and
+  IPv6) for domains that already had a perfectly working config.
+- Fixed closing a firewall port with no check for whether it is the port SSH
+  is currently running on, which could lock out the admin with no warning.
+- Fixed missing log rotation for ShieldPress's own logs (`domain.log`,
+  `backup.log`, etc.), which grew unbounded over time.
+- Fixed Email Server installation aborting silently partway through (Postfix/
+  Dovecot/Rspamd never started, no clear error shown) when `bind-utils` was
+  missing or when DNS for the mail hostname wasn't resolvable yet.
+- Fixed SSL renewal for mail and webmail reporting success and reusing an
+  expired certificate when `certbot` actually failed, because its exit code
+  was being read from `tee` instead of `certbot` itself.
+- Fixed several backup/restore/upgrade paths that could report success on a
+  failed `mysqldump`/`pg_dump`/`gzip` step because the exit code was read
+  from the wrong stage of a pipeline (upgrade pre-flight DB dump, DB import,
+  PostgreSQL migration restore).
+- Fixed the Upgrade Manager's MariaDB upgrade reporting success even when the
+  package upgrade itself failed, and closed a gap where "Update Core
+  Packages" could bump Nginx/MariaDB/PostgreSQL/PHP/Node.js outside of the
+  Upgrade Manager's backup and rollback safety net.
+- Long-running interactive backup/restore operations (archiving, DB dump/
+  import, extraction) now show periodic progress instead of appearing to
+  hang when `pv` isn't installed.
+- Updating ShieldPress now reloads straight into the new version on success
+  instead of asking you to exit and relaunch it manually.
+- Confirmation prompts across the whole product were reviewed: safe,
+  reversible actions (backups, enabling a feature, reloading a service) can
+  now be confirmed with just Enter, while destructive actions (delete,
+  overwrite, DROP, uninstall, SSH/firewall changes) still require an explicit
+  answer.
+- Fixed WordPress Auto-Recovery only detecting HTTP 500-504 responses, so a
+  broken page that WordPress itself renders with a 200 status (critical
+  error notice, lost database connection, a fatal PHP error) was never
+  detected or auto-fixed, leaving a stale cached error page live until an
+  admin logged in and cleared the cache by hand; it now also scans page
+  content for these common WordPress error messages.
+- Numerous smaller fixes: SFTP account deletion not locking the OS password,
+  firewall CIDR rules that could match and block the admin's own IP, RAM
+  swap creation not checking free disk space first, and others.
+
 ## v1.3.30 — 2026-09-06 — Backup, cron and Nginx auth reliability fixes
 
 - Fixed Laravel PostgreSQL Manager backups being reported as successful when

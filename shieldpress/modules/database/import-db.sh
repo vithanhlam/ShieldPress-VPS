@@ -154,11 +154,15 @@ mysql -e "SET GLOBAL max_allowed_packet=1073741824;" 2>/dev/null
 IMPORT_OK=0
 
 if [[ "$FILE" == *.gz ]]; then
+    # `set -o pipefail` trong subshell riêng: nếu không, `$?`/`wait` chỉ phản
+    # ánh exit code của mysql (lệnh cuối pipe) - file .gz hỏng/cắt cụt khiến
+    # gunzip fail nhưng mysql vẫn nhận được phần dữ liệu trước đó và exit 0,
+    # báo "Import Completed Successfully" dù dữ liệu import thiếu.
     if command -v pv >/dev/null 2>&1; then
-        pv -s "$FILE_SIZE_BYTES" -p -t -e -r "$FILE" | gunzip | mysql --max_allowed_packet=1G $DB_NAME
+        ( set -o pipefail; pv -s "$FILE_SIZE_BYTES" -p -t -e -r "$FILE" | gunzip | mysql --max_allowed_packet=1G $DB_NAME )
         IMPORT_OK=$?
     else
-        gunzip < "$FILE" | mysql --max_allowed_packet=1G $DB_NAME &
+        ( set -o pipefail; gunzip < "$FILE" | mysql --max_allowed_packet=1G $DB_NAME ) &
         IMPORT_PID=$!
         import_spinner $IMPORT_PID
         wait $IMPORT_PID

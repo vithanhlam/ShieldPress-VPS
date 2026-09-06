@@ -21,6 +21,18 @@ php_version_to_short(){
     echo "$1" | tr -d '.'
 }
 
+# Đảm bảo file snippet security headers tồn tại (dù rỗng) trước khi mọi
+# server{} của domain include nó - tránh nginx -t fail vì file không tồn tại.
+# Nội dung thật do modules/nginx/nginx-security-headers.sh ghi khi bật tính năng.
+SECURITY_HEADERS_SNIPPET="/etc/nginx/snippets/shieldpress-security-headers.conf"
+ensure_security_headers_snippet(){
+    mkdir -p "$(dirname "$SECURITY_HEADERS_SNIPPET")"
+    [ -f "$SECURITY_HEADERS_SNIPPET" ] || cat > "$SECURITY_HEADERS_SNIPPET" <<'EOF'
+# Managed by ShieldPress VPS - Nginx > Security Headers menu.
+# Empty by default; populated when "Enable Security Headers" is run.
+EOF
+}
+
 postgresql_ready(){
     command -v psql >/dev/null 2>&1 &&
         systemctl is-active --quiet postgresql &&
@@ -44,6 +56,7 @@ ensure_php_version_installed(){
 
     if rpm -q "$package_name" >/dev/null 2>&1 && [ -d "/etc/opt/remi/php${version_short}" ]; then
         systemctl enable "$service_name" >/dev/null 2>&1 || true
+        apply_systemd_resilience "$service_name" 2>/dev/null || true
         systemctl restart "$service_name" >/dev/null 2>&1 || true
         return 0
     fi
@@ -74,6 +87,7 @@ ensure_php_version_installed(){
     fi
 
     systemctl enable "$service_name" >/dev/null 2>&1 || return 1
+    apply_systemd_resilience "$service_name" 2>/dev/null || true
 
     opcache_ini="/etc/opt/remi/php${version_short}/php.d/10-opcache.ini"
     if [ -f "$opcache_ini" ]; then
@@ -123,6 +137,15 @@ EOF
 
     if command -v setsebool >/dev/null 2>&1; then
         setsebool -P httpd_execmem 1 2>/dev/null || true
+        # Thiếu 2 boolean này thì: (a) domain Node.js bị 502 vì nginx
+        # (httpd_t) bị denied kết nối tới cổng app Node qua proxy_pass,
+        # (b) domain Laravel dùng MySQL/PostgreSQL qua TCP (127.0.0.1) bị
+        # denied kết nối DB. install-stack.sh chỉ set network_connect cho
+        # PHP version cài lúc setup ban đầu - domain xin thêm PHP version
+        # khác (qua hàm này) trước đây không được set, gây lỗi 502/500 ngẫu
+        # nhiên tuỳ domain dùng version PHP nào.
+        setsebool -P httpd_can_network_connect 1 2>/dev/null || true
+        setsebool -P httpd_can_network_connect_db 1 2>/dev/null || true
     fi
 
     if command -v semanage >/dev/null 2>&1; then
@@ -203,11 +226,20 @@ select_domain(){
 
 find_free_node_port(){
     local port
+    # Chỉ soi cổng đang LISTEN là không đủ: nếu app Node.js của domain khác
+    # đang tạm thời không chạy (crash, đang restart, đang cài đặt dở), cổng
+    # của nó trông "rảnh" và bị cấp trùng cho domain mới - 2 domain cùng
+    # NODE_APP_PORT thì domain vào sau sẽ đè cổng, cả 2 đều lỗi 502. Soi
+    # thêm NODE_APP_PORT đã ghi trong domain.env của mọi domain hiện có.
+    local used_ports
+    used_ports=$(grep -h "^NODE_APP_PORT=" "$DOMAINS_ROOT"/*/config/domain.env 2>/dev/null \
+        | cut -d= -f2 | tr -d '[:space:]')
+
     for port in $(seq 3000 3999); do
-        ss -tuln 2>/dev/null | grep -q ":${port} " || {
-            echo "$port"
-            return 0
-        }
+        ss -tuln 2>/dev/null | grep -q ":${port} " && continue
+        echo "$used_ports" | grep -qxF "$port" && continue
+        echo "$port"
+        return 0
     done
 
     return 1
@@ -312,6 +344,29 @@ create_directory_structure(){
     # đảm bảo folder logs OK
     chown -R nginx:nginx "$LOG_DIR"
     chmod -R 755 "$LOG_DIR"
+
+    # ===== SELinux =====
+    # /home/domains không nằm trong policy mặc định của httpd (chỉ /var/www),
+    # nên phải gán context thủ công, nếu không nginx/php-fpm sẽ bị denied
+    # khi SELinux enforcing (AlmaLinux/CentOS/RHEL).
+    if command -v semanage >/dev/null 2>&1; then
+        semanage fcontext -a -t httpd_sys_content_t "$DOMAIN_PATH(/.*)?" 2>/dev/null || \
+            semanage fcontext -m -t httpd_sys_content_t "$DOMAIN_PATH(/.*)?" 2>/dev/null || true
+        semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/logs(/.*)?" 2>/dev/null || \
+            semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/logs(/.*)?" 2>/dev/null || true
+        semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/tmp(/.*)?" 2>/dev/null || \
+            semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/tmp(/.*)?" 2>/dev/null || true
+        # WordPress uploads/cache và Laravel storage/cache cần ghi được.
+        # Đăng ký sẵn ở đây dù thư mục chưa tồn tại - restorecon sau khi
+        # cài WordPress/Laravel (install-wp.sh, add-domain.sh) sẽ áp dụng.
+        semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/wp-content(/.*)?" 2>/dev/null || \
+            semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/wp-content(/.*)?" 2>/dev/null || true
+        semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/storage(/.*)?" 2>/dev/null || \
+            semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/storage(/.*)?" 2>/dev/null || true
+        semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/bootstrap/cache(/.*)?" 2>/dev/null || \
+            semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/bootstrap/cache(/.*)?" 2>/dev/null || true
+        restorecon -Rv "$DOMAIN_PATH" >/dev/null 2>&1 || true
+    fi
 }
 
 # ===============================
@@ -391,6 +446,7 @@ create_postgresql_database(){
     [ "${#DB_PASS}" -eq 24 ] || { fail "Unable to generate PostgreSQL password"; return 1; }
 
     systemctl enable postgresql >/dev/null 2>&1 || true
+    apply_systemd_resilience postgresql 2>/dev/null || true
     systemctl start postgresql >/dev/null 2>&1 || return 1
 
     if [ -f "$pg_hba" ] && ! grep -q "ShieldPress PostgreSQL auth" "$pg_hba"; then
@@ -471,9 +527,28 @@ create_php_pool(){
     mkdir -p "/var/opt/remi/php${PHP_SHORT}/run/php-fpm"
     mkdir -p "$SLOW_LOG_DIR"
 
-    local TOTAL_RAM PHP_MAX
+    # SELinux: $SLOW_LOG_DIR nằm ngoài $DOMAIN_PATH nên không được gán context
+    # ở create_directory_structure(). Không có rule này thì php-fpm (chạy trong
+    # domain httpd_t) bị denied mở slowlog -> service FAIL LÚC START -> sập
+    # toàn bộ site cùng version PHP trên server (không chỉ domain mới).
+    if command -v semanage >/dev/null 2>&1; then
+        semanage fcontext -a -t httpd_log_t "$SLOW_LOG_DIR(/.*)?" 2>/dev/null || \
+            semanage fcontext -m -t httpd_log_t "$SLOW_LOG_DIR(/.*)?" 2>/dev/null || true
+        restorecon -Rv "$SLOW_LOG_DIR" >/dev/null 2>&1 || true
+    fi
+
+    local TOTAL_RAM PHP_MAX DOMAIN_COUNT
     TOTAL_RAM=$(free -m | awk '/Mem:/ {print $2}')
-    PHP_MAX=$((TOTAL_RAM / 50))
+    # Chia thêm cho số domain hiện có - công thức cũ (TOTAL_RAM/50) tính độc
+    # lập cho MỖI domain, không co giãn theo số domain trên server. Với
+    # memory_limit=1024M/worker, chỉ cần vài domain cùng đạt pm.max_children
+    # tối đa là đủ overcommit RAM thật nhiều lần, dễ kích hoạt OOM-killer
+    # giết MariaDB/PostgreSQL/PHP-FPM. Domain cũ đã tạo trước fix này giữ
+    # nguyên số cũ (không tự retrofit ngược) - chỉ domain tạo mới hoặc đổi
+    # PHP version sau bản vá mới được tính lại.
+    DOMAIN_COUNT=$(find "$DOMAINS_ROOT" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+    [ "$DOMAIN_COUNT" -lt 1 ] && DOMAIN_COUNT=1
+    PHP_MAX=$((TOTAL_RAM / 50 / DOMAIN_COUNT))
     [ "$PHP_MAX" -lt 5  ] && PHP_MAX=5
     [ "$PHP_MAX" -gt 50 ] && PHP_MAX=50
 
@@ -572,6 +647,8 @@ create_nginx_config(){
 fastcgi_cache_path ${CACHE_DIR} levels=1:2 keys_zone=${CACHE_ZONE}:10m inactive=60m max_size=${CACHE_MAX}m;
 ZEOF
 
+    ensure_security_headers_snippet
+
 cat > "$NGINX_CONF" << NGEOF
 server {
     listen 80;
@@ -588,6 +665,7 @@ server {
     add_header X-Frame-Options SAMEORIGIN;
     add_header X-Content-Type-Options nosniff;
     add_header X-XSS-Protection "1; mode=block";
+    include $SECURITY_HEADERS_SNIPPET;
 
     client_max_body_size 1024M;
 
@@ -688,6 +766,8 @@ create_laravel_nginx_config(){
 
     mkdir -p "$LARAVEL_PUBLIC"
 
+    ensure_security_headers_snippet
+
 cat > "$NGINX_CONF" << NGEOF
 server {
     listen 80;
@@ -703,6 +783,7 @@ server {
     add_header X-Frame-Options SAMEORIGIN always;
     add_header X-Content-Type-Options nosniff always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
+    include $SECURITY_HEADERS_SNIPPET;
 
     client_max_body_size 1024M;
     client_body_timeout 300s;
@@ -796,6 +877,8 @@ create_nodejs_nginx_config(){
         return 1
     fi
 
+    ensure_security_headers_snippet
+
 cat > "$NGINX_CONF" << NGEOF
 server {
     listen 80;
@@ -808,6 +891,7 @@ server {
     add_header X-Frame-Options SAMEORIGIN always;
     add_header X-Content-Type-Options nosniff always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
+    include $SECURITY_HEADERS_SNIPPET;
 
     client_max_body_size 1024M;
     client_body_timeout 300s;
@@ -874,7 +958,6 @@ create_nodejs_service(){
     # Install PM2 if not present
     if ! command -v pm2 >/dev/null 2>&1; then
         npm install -g pm2 || { fail "Failed to install PM2"; return 1; }
-        pm2 startup 2>/dev/null || true
     fi
 
     mkdir -p "$DOMAIN_PATH/public_html"
@@ -894,12 +977,30 @@ EOF
 
     chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$DOMAIN_PATH/public_html"
 
+    # Chạy PM2 dưới đúng user của domain (không phải root) - mỗi domain có
+    # daemon PM2 riêng dưới $HOME của nó, cách ly với domain khác. Xem
+    # modules/nodejs/nodejs-menu.sh:run_pm2 cho cùng pattern/lý do.
     local pm2_name="$CLEAN_DOMAIN"
-    pm2 delete "$pm2_name" 2>/dev/null || true
+    runuser -u "$CLEAN_DOMAIN" -- pm2 delete "$pm2_name" 2>/dev/null || true
     cd "$DOMAIN_PATH/public_html" || return 1
-    PORT=${NODE_APP_PORT} pm2 start npm --name "$pm2_name" -- start 2>/dev/null || \
-    PORT=${NODE_APP_PORT} pm2 start "$NODE_ENTRY" --name "$pm2_name" || return 1
-    pm2 save || true
+    # `pm2 start npm -- start` "thành công" ngay cả khi không có package.json
+    # (pm2 chỉ báo lỗi khi tiến trình con crash SAU ĐÓ, không phải lúc start),
+    # nên fallback `||` không bao giờ kích hoạt được - domain mặc định chỉ có
+    # app.js (không có package.json) sẽ luôn kẹt ở trạng thái "errored". Kiểm
+    # tra package.json có script "start" thật trước khi chọn nhánh npm.
+    if [ -f "$DOMAIN_PATH/public_html/package.json" ] && grep -q '"start"' "$DOMAIN_PATH/public_html/package.json" 2>/dev/null; then
+        runuser -u "$CLEAN_DOMAIN" -- env PORT=${NODE_APP_PORT} pm2 start npm --name "$pm2_name" -- start || return 1
+    else
+        runuser -u "$CLEAN_DOMAIN" -- env PORT=${NODE_APP_PORT} pm2 start "$NODE_ENTRY" --name "$pm2_name" || return 1
+    fi
+
+    # Best-effort: tự khởi động lại app sau khi reboot server, dưới đúng user.
+    local pm2_boot_out
+    pm2_boot_out=$(mktemp "/tmp/.pm2-startup-${CLEAN_DOMAIN}.XXXXXX")
+    pm2 startup systemd -u "$CLEAN_DOMAIN" --hp "$DOMAIN_PATH" >"$pm2_boot_out" 2>&1
+    grep -E '^(sudo )?env PATH=.*pm2 .*systemd' "$pm2_boot_out" | tail -1 | bash >/dev/null 2>&1
+    rm -f "$pm2_boot_out"
+    runuser -u "$CLEAN_DOMAIN" -- pm2 save || true
 }
 
 # ===============================

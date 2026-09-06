@@ -1,7 +1,15 @@
 #!/bin/bash
 
-CONF="/etc/nginx/conf.d/shieldpress-security-headers.conf"
+# NOTE: dùng /etc/nginx/snippets/ (không phải conf.d/) vì file này được
+# `include` bên trong từng server{} của domain (domain/helpers.sh), không
+# phải ở cấp http{}. Mọi domain đã có add_header riêng trong server{} nên
+# add_header ở cấp http{} sẽ bị nginx bỏ qua hoàn toàn (không kế thừa) -
+# đặt trong server{} là cách duy nhất áp dụng được cho domain đã có add_header.
+CONF="/etc/nginx/snippets/shieldpress-security-headers.conf"
 BACKUP="${CONF}.bak.$(date +%s)"
+
+EMPTY_STUB="# Managed by ShieldPress VPS - Nginx > Security Headers menu.
+# Empty by default; populated when \"Enable Security Headers\" is run."
 
 GREEN="\e[32m"
 RED="\e[31m"
@@ -12,6 +20,12 @@ ok(){ echo -e "${GREEN}[OK]${RESET} $1"; }
 fail(){ echo -e "${RED}[FAIL]${RESET} $1"; }
 warn(){ echo -e "${YELLOW}[WARN]${RESET} $1"; }
 
+# File luôn tồn tại (domain/helpers.sh tạo stub rỗng khi tạo domain) -
+# "enabled" nghĩa là có add_header thật, không phải chỉ file tồn tại.
+headers_enabled(){
+    [ -f "$CONF" ] && grep -q '^add_header' "$CONF" 2>/dev/null
+}
+
 show_status(){
     echo ""
     echo "===================================================="
@@ -19,7 +33,7 @@ show_status(){
     echo "===================================================="
     echo ""
 
-    if [ ! -f "$CONF" ]; then
+    if ! headers_enabled; then
         warn "Security headers NOT configured"
         echo ""
         return
@@ -47,9 +61,11 @@ enable_headers(){
     echo "  - Content-Security-Policy (basic CSP)"
     echo ""
 
-    read -p "Enable all security headers? (y/n): " confirm
+    read -p "Enable all security headers? [Y/n]: " confirm
+    confirm="${confirm:-Y}"
     [[ "$confirm" =~ ^[yY]$ ]] || { warn "Cancelled"; return; }
 
+    mkdir -p "$(dirname "$CONF")"
     [ -f "$CONF" ] && cp "$CONF" "$BACKUP"
 
     cat > "$CONF" <<'EOF'
@@ -83,25 +99,33 @@ EOF
     if nginx -t 2>/dev/null; then
         systemctl reload nginx
         ok "Security headers enabled and Nginx reloaded"
+        echo ""
+        warn "Domain được TẠO TRƯỚC bản vá này chưa include file snippet trong server{}."
+        warn "Chạy lại 'Fix Permissions' hoặc tạo lại nginx config cho các domain đó"
+        warn "(vd: xoá /etc/nginx/conf.d/<domain>.conf rồi Add Domain lại, hoặc thêm thủ công"
+        warn "dòng: include $CONF;  vào trong từng server{} của domain cũ)."
     else
         fail "Nginx config error, rolling back..."
-        [ -f "$BACKUP" ] && mv "$BACKUP" "$CONF" || rm -f "$CONF"
+        [ -f "$BACKUP" ] && mv "$BACKUP" "$CONF" || echo "$EMPTY_STUB" > "$CONF"
         nginx -t && systemctl reload nginx
     fi
 }
 
 disable_headers(){
     echo ""
-    if [ ! -f "$CONF" ]; then
+    if ! headers_enabled; then
         warn "Security headers are not enabled"
         return
     fi
 
-    read -p "Disable all security headers? (y/n): " confirm
+    read -p "Disable all security headers? [Y/n]: " confirm
+    confirm="${confirm:-Y}"
     [[ "$confirm" =~ ^[yY]$ ]] || { warn "Cancelled"; return; }
 
     cp "$CONF" "$BACKUP"
-    rm -f "$CONF"
+    # Không rm -f: mọi domain include file này trong server{}, xoá hẳn sẽ
+    # làm `nginx -t` fail cho toàn bộ domain. Ghi lại thành stub rỗng thay thế.
+    echo "$EMPTY_STUB" > "$CONF"
 
     if nginx -t 2>/dev/null; then
         systemctl reload nginx
@@ -114,7 +138,7 @@ disable_headers(){
 }
 
 edit_headers(){
-    if [ ! -f "$CONF" ]; then
+    if ! headers_enabled; then
         warn "Security headers not configured. Enable them first."
         return
     fi
@@ -128,7 +152,8 @@ edit_headers(){
     fi
 
     echo ""
-    read -p "Test & reload Nginx? (y/n): " confirm
+    read -p "Test & reload Nginx? [Y/n]: " confirm
+    confirm="${confirm:-Y}"
     if [[ "$confirm" =~ ^[yY]$ ]]; then
         if nginx -t 2>/dev/null; then
             systemctl reload nginx && ok "Nginx reloaded"

@@ -295,6 +295,13 @@ fi
 
 chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$DOMAIN_PATH/public_html"
 
+# SELinux: storage/bootstrap/cache (Laravel) hoặc wp-content (nếu deploy sẵn)
+# chỉ tồn tại sau bước cài đặt ở trên, cần restorecon lại để nhận context rw
+# đã đăng ký trong create_directory_structure.
+if command -v restorecon >/dev/null 2>&1; then
+    restorecon -Rv "$DOMAIN_PATH/public_html" >/dev/null 2>&1 || true
+fi
+
 echo ""
 echo "================================"
 echo " DOMAIN CREATED SUCCESSFULLY"

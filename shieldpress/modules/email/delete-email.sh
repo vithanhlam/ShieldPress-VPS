@@ -92,6 +92,16 @@ if [ "$REMAINING" -eq 0 ]; then
     if [[ "$RM_DOMAIN" =~ ^[Yy]$ ]]; then
         sed -i "/^${DOMAIN}$/d" /etc/postfix/virtual_domains
         rmdir "$MAIL_DIR/$DOMAIN" 2>/dev/null || true
+
+        # Dọn cấu hình OpenDKIM của domain - nếu không sẽ để lại private key
+        # và dòng cấu hình rác vĩnh viễn (khoá DKIM không nên tồn tại sau khi
+        # domain đã bị xoá khỏi mail server).
+        rm -rf "/etc/opendkim/keys/${DOMAIN}"
+        sed -i "\|^mail\._domainkey\.${DOMAIN} |d" /etc/opendkim/KeyTable 2>/dev/null
+        sed -i "\|^\*@${DOMAIN} |d" /etc/opendkim/SigningTable 2>/dev/null
+        sed -i "/^${DOMAIN}$/d; /^\*\.${DOMAIN}$/d" /etc/opendkim/TrustedHosts 2>/dev/null
+        systemctl reload opendkim 2>/dev/null
+
         ok "Domain $DOMAIN removed from mail server"
     fi
 fi

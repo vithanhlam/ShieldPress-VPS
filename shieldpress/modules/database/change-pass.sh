@@ -124,9 +124,10 @@ echo ""
 echo "Suggested New Password: $NEW_PASS"
 echo ""
 
-read -p "Use suggested password? (y/n): " USE_AUTO
+read -p "Use suggested password? [Y/n]: " USE_AUTO
+USE_AUTO="${USE_AUTO:-y}"
 
-if [[ "$USE_AUTO" != "y" ]]; then
+if [[ ! "$USE_AUTO" =~ ^[Yy]$ ]]; then
     read -s -p "Enter New Password: " NEW_PASS
     echo ""
     [[ -z "$NEW_PASS" ]] && pause && exit 1

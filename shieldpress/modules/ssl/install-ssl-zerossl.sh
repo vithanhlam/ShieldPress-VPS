@@ -139,7 +139,7 @@ if [ -n "$A_RECORD" ] && [ "$A_RECORD" != "$SERVER_IPV4" ]; then
     warn "DNS A record ($A_RECORD) does not point to this server ($SERVER_IPV4)"
     warn "SSL issuance will likely fail!"
     echo ""
-    read -p "Continue anyway? (y/n): " DNS_CONFIRM
+    read -p "Continue anyway? [y/N]: " DNS_CONFIRM
     [[ ! "$DNS_CONFIRM" =~ ^[Yy]$ ]] && exit 0
 fi
 
@@ -149,7 +149,7 @@ if detect_cloudflare "$DOMAIN"; then
     warn "Switch to DNS Only (grey cloud) before issuing ZeroSSL,"
     warn "or use Cloudflare Origin SSL instead."
     echo ""
-    read -p "Continue anyway? (y/n): " CF_CONFIRM
+    read -p "Continue anyway? [y/N]: " CF_CONFIRM
     [[ ! "$CF_CONFIRM" =~ ^[Yy]$ ]] && exit 0
 fi
 

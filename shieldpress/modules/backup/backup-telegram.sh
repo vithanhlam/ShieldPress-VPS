@@ -369,8 +369,9 @@ list_telegram(){
 
     echo ""
     echo "Selected: $SELECTED_NAME"
-    read -p "Download now? (y/n): " confirm
-    [ "$confirm" != "y" ] && return 1
+    read -p "Download now? [Y/n]: " confirm
+    confirm="${confirm:-y}"
+    [[ "$confirm" =~ ^[Yy]$ ]] || return 1
 
     # =========================
     # LẤY PART TỪ LOG

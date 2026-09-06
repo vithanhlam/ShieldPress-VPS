@@ -206,7 +206,8 @@ enable_protection(){
     if read_auth_meta "$clean_d" && [ "$AUTH_STATUS" = "on" ]; then
         warn "Password protection is already ON for $SELECTED_DOMAIN"
         echo -e "  User: $AUTH_USER | Mode: $AUTH_MODE"
-        read -p "  Disable first to reconfigure. Continue? (y/n): " c
+        read -p "  Disable first to reconfigure. Continue? [Y/n]: " c
+        c="${c:-Y}"
         [[ "$c" =~ ^[yY]$ ]] || return
         disable_protection_for "$clean_d" "$domain_conf"
     fi
@@ -488,7 +489,8 @@ disable_protection(){
         return
     fi
 
-    read -p "Disable password protection for $SELECTED_DOMAIN? (y/n): " confirm
+    read -p "Disable password protection for $SELECTED_DOMAIN? [Y/n]: " confirm
+    confirm="${confirm:-Y}"
     [[ "$confirm" =~ ^[yY]$ ]] || { warn "Cancelled"; return; }
 
     disable_protection_for "$clean_d" "$domain_conf"
@@ -543,7 +545,8 @@ toggle_protection(){
 
     if [ "$AUTH_STATUS" = "on" ]; then
         echo "Current status: ON"
-        read -p "Turn OFF password protection? (y/n): " confirm
+        read -p "Turn OFF password protection? [Y/n]: " confirm
+        confirm="${confirm:-Y}"
         [[ "$confirm" =~ ^[yY]$ ]] || return
 
         # Backup
@@ -565,7 +568,8 @@ toggle_protection(){
         fi
     else
         echo "Current status: OFF"
-        read -p "Turn ON password protection? (y/n): " confirm
+        read -p "Turn ON password protection? [Y/n]: " confirm
+        confirm="${confirm:-Y}"
         [[ "$confirm" =~ ^[yY]$ ]] || return
 
         # Backup

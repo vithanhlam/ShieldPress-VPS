@@ -95,6 +95,7 @@ install_postgresql_stack(){
     dnf install -y postgresql-server postgresql-contrib || return 1
     configure_shieldpress_postgresql || return 1
     systemctl enable postgresql >/dev/null 2>&1
+    apply_systemd_resilience postgresql 2>/dev/null || true
     systemctl restart postgresql || return 1
     ok "PostgreSQL installed and configured with scram-sha-256"
 }
@@ -332,9 +333,10 @@ pg_change_pass(){
     NEW_PASS=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)
     echo ""
     echo "Suggested New Password: $NEW_PASS"
-    read -p "Use suggested password? (y/n): " USE_AUTO
+    read -p "Use suggested password? [Y/n]: " USE_AUTO
+    USE_AUTO="${USE_AUTO:-y}"
 
-    if [[ "$USE_AUTO" != "y" ]]; then
+    if [[ ! "$USE_AUTO" =~ ^[Yy]$ ]]; then
         read -s -p "Enter New Password: " NEW_PASS
         echo ""
         [ -n "$NEW_PASS" ] || { fail "Password required"; return 1; }

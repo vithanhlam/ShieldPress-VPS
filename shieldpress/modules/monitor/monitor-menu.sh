@@ -657,7 +657,8 @@ mysql_slow_log_viewer(){
     if [ "$SLOW_LOG_ENABLED" != "ON" ]; then
         echo "  [!] Slow query log is NOT enabled"
         echo ""
-        read -p "  Enable slow query log now? (y/n): " ENABLE_SLOW
+        read -p "  Enable slow query log now? [Y/n]: " ENABLE_SLOW
+        ENABLE_SLOW="${ENABLE_SLOW:-Y}"
         if [[ "$ENABLE_SLOW" =~ ^[Yy]$ ]]; then
             read -p "  Log queries slower than (seconds) [2]: " LQT
             LQT="${LQT:-2}"
@@ -861,19 +862,11 @@ php_slow_log_analyzer(){
 # ===============================
 
 rotate_logs(){
-    cat > /etc/logrotate.d/shieldpress-domains << 'EOF'
-/var/log/nginx/domains/*/*.log {
-    daily
-    rotate 30
-    compress
-    delaycompress
-    missingok
-    notifempty
-    copytruncate
-    dateext
-}
-EOF
-    echo "[OK] Log rotation configured (30 days, daily, compressed)"
+    # Dùng chung hàm ở core/paths.sh - cũng cover cả log nội bộ ShieldPress
+    # ($LOG_DIR/*.log), không chỉ log nginx theo domain như trước.
+    rm -f /etc/logrotate.d/shieldpress-domains 2>/dev/null
+    install_logrotate_config
+    echo "[OK] Log rotation configured (ShieldPress logs: 14 days, domain nginx logs: 30 days, daily, compressed)"
     pause
 }
 

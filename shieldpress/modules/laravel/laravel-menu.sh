@@ -134,6 +134,7 @@ install_postgresql_stack(){
     dnf install -y postgresql-server postgresql-contrib || return 1
     configure_shieldpress_postgresql || return 1
     systemctl enable postgresql >/dev/null 2>&1
+    apply_systemd_resilience postgresql 2>/dev/null || true
     systemctl restart postgresql || return 1
     ok "PostgreSQL installed and configured with scram-sha-256"
 }
@@ -600,6 +601,11 @@ run_laravel_command(){
         composer-install) COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader ;;
         *) warn "Unknown Laravel command" ;;
     esac
+
+    # Các lệnh trên chạy bằng root - trả lại quyền cho user domain, tránh
+    # file (vd. storage/logs/laravel.log) bị root chiếm làm queue worker
+    # (chạy bằng user domain) mất quyền ghi.
+    chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$DOMAIN_PATH/public_html" 2>/dev/null
 }
 
 install_laravel_components(){
@@ -620,6 +626,7 @@ install_laravel_components(){
     if [ -f composer.json ]; then
         COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader || {
             fail "Composer install failed"
+            chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$DOMAIN_PATH/public_html" 2>/dev/null
             return 1
         }
         ok "Composer packages installed"
@@ -630,6 +637,7 @@ install_laravel_components(){
     if [ -f package.json ]; then
         npm install --include=dev || {
             fail "npm install failed"
+            chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$DOMAIN_PATH/public_html" 2>/dev/null
             return 1
         }
         ok "npm packages installed"
@@ -637,6 +645,8 @@ install_laravel_components(){
         warn "package.json not found, skipping"
     fi
 
+    # Composer/npm chạy bằng root - trả lại quyền cho user domain.
+    chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$DOMAIN_PATH/public_html" 2>/dev/null
     ok "Components installed"
 }
 
@@ -656,14 +666,19 @@ npm_run_build(){
         echo "Vite is missing; installing frontend dependencies..."
         npm install --include=dev || {
             fail "npm install failed"
+            chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$DOMAIN_PATH/public_html" 2>/dev/null
             return 1
         }
     fi
 
     npm run build || {
         fail "npm run build failed"
+        chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$DOMAIN_PATH/public_html" 2>/dev/null
         return 1
     }
+
+    # npm chạy bằng root - trả lại quyền cho user domain.
+    chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$DOMAIN_PATH/public_html" 2>/dev/null
     ok "npm run build completed"
 }
 
@@ -686,12 +701,21 @@ deploy_laravel_production(){
     fi
 
     # 1. Composer install
-    COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader || return
+    COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader || {
+        chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$DOMAIN_PATH/public_html" 2>/dev/null
+        return 1
+    }
 
     # 2. npm install + build
     if [ -f package.json ]; then
-        npm install --include=dev || return
-        npm run build || return
+        npm install --include=dev || {
+            chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$DOMAIN_PATH/public_html" 2>/dev/null
+            return 1
+        }
+        npm run build || {
+            chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$DOMAIN_PATH/public_html" 2>/dev/null
+            return 1
+        }
     fi
 
     # 3. Migration
@@ -704,6 +728,11 @@ deploy_laravel_production(){
     php artisan config:cache
     php artisan route:cache
     php artisan view:cache
+
+    # Toàn bộ bước trên chạy bằng root - trả lại quyền cho user domain,
+    # tránh storage/logs/laravel.log bị root chiếm làm queue worker (chạy
+    # bằng user domain qua Supervisor) mất quyền ghi log.
+    chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$DOMAIN_PATH/public_html" 2>/dev/null
 
     ok "Laravel production deploy/build completed (composer + npm + migrate + cache)"
 }

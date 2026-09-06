@@ -84,7 +84,8 @@ echo ""
 echo "  Set Cloudflare SSL mode to: Full (Strict)"
 echo ""
 
-read -p "Continue? (y/n): " CONFIRM
+read -p "Continue? [Y/n]: " CONFIRM
+CONFIRM="${CONFIRM:-Y}"
 [[ ! "$CONFIRM" =~ ^[Yy]$ ]] && exit 0
 
 # ================================================

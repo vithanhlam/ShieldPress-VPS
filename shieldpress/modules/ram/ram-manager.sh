@@ -111,7 +111,7 @@ add_swap_file(){
         echo "Existing swap file: /swapfile ($CURRENT_SWAP)"
         echo ""
         read -p "Remove existing swap and create new? (y/n): " REMOVE_OLD
-        if [[ "$REMOVE_OLD" == "y" ]]; then
+        if [[ "$REMOVE_OLD" =~ ^[Yy]$ ]]; then
             swapoff /swapfile 2>/dev/null
             rm -f /swapfile
             sed -i '/\/swapfile/d' /etc/fstab
@@ -148,6 +148,19 @@ add_swap_file(){
     esac
 
     echo ""
+
+    # Chặn tạo swap file lớn hơn dung lượng đĩa trống, chừa đệm an toàn 2GB
+    # để tránh ENOSPC toàn hệ thống khi chọn size lớn trên đĩa gần đầy.
+    local SWAP_SIZE_MB=$((SWAP_SIZE * 1024))
+    local AVAIL_MB
+    AVAIL_MB=$(df -m --output=avail / 2>/dev/null | tail -1 | tr -d '[:space:]')
+    local SAFETY_MARGIN_MB=2048
+
+    if [ -n "$AVAIL_MB" ] && [ "$SWAP_SIZE_MB" -gt $((AVAIL_MB - SAFETY_MARGIN_MB)) ]; then
+        fail "Not enough free disk space: need ${SWAP_SIZE_MB}MB + ${SAFETY_MARGIN_MB}MB safety margin, only ${AVAIL_MB}MB available"
+        return 1
+    fi
+
     echo "Creating ${SWAP_SIZE}GB swap file..."
 
     dd if=/dev/zero of=/swapfile bs=1M count=$((SWAP_SIZE * 1024)) status=progress || {
@@ -182,7 +195,7 @@ remove_swap_file(){
     CURRENT_SWAP=$(ls -lh /swapfile | awk '{print $5}')
     echo "Current swap file: /swapfile ($CURRENT_SWAP)"
     read -p "Remove swap file? (y/n): " CONFIRM
-    if [[ "$CONFIRM" == "y" ]]; then
+    if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
         swapoff /swapfile 2>/dev/null
         rm -f /swapfile
         sed -i '/\/swapfile/d' /etc/fstab

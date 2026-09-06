@@ -167,6 +167,38 @@ fi
 
 
 # =========================================
+# WARN IF DB ALREADY USED BY ANOTHER DOMAIN
+# =========================================
+
+OTHER_DOMAIN=""
+for od in "$DOMAINS_ROOT"/*; do
+    [ -d "$od" ] || continue
+    OD_ENV="$od/config/domain.env"
+    [ -f "$OD_ENV" ] || continue
+    [ "$OD_ENV" = "$ENV_FILE" ] && continue
+
+    OD_DB_NAME=$(grep "^DB_NAME=" "$OD_ENV" | cut -d'=' -f2 | tr -d '[:space:]')
+    if [ -n "$OD_DB_NAME" ] && [ "$OD_DB_NAME" = "$DB_NAME" ]; then
+        OTHER_DOMAIN=$(grep "^DOMAIN=" "$OD_ENV" | cut -d'=' -f2 | tr -d '[:space:]')
+        break
+    fi
+done
+
+if [ -n "$OTHER_DOMAIN" ]; then
+    echo ""
+    echo "[WARNING] Database '$DB_NAME' is already in use by domain: $OTHER_DOMAIN"
+    echo "Both sites will share the same database/tables - this is usually a mistake"
+    echo "unless intentional (e.g. attaching a shared/existing database)."
+    read -p "Continue anyway? (y/N): " CONFIRM_SHARE
+    if [[ ! "$CONFIRM_SHARE" =~ ^[Yy]$ ]]; then
+        echo "Cancelled."
+        pause
+        exit
+    fi
+fi
+
+
+# =========================================
 # UPDATE WP-CONFIG
 # =========================================
 

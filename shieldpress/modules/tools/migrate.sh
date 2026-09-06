@@ -63,8 +63,9 @@ export_domain(){
     echo "  PHP Version : ${PHP_VERSION:-N/A}"
     echo ""
 
-    read -p "Continue? (y/n): " CONFIRM
-    [ "$CONFIRM" != "y" ] && { echo "Cancelled."; return; }
+    read -p "Continue? [Y/n]: " CONFIRM
+    CONFIRM="${CONFIRM:-Y}"
+    [[ "$CONFIRM" =~ ^[Yy]$ ]] || { echo "Cancelled."; return; }
 
     local DATE EXPORT_DIR EXPORT_FILE EXPORT_START
     DATE=$(date +%F_%H-%M-%S)
@@ -329,8 +330,9 @@ import_domain(){
         [ "$CONFIRM" != "yes" ] && { rm -rf "$IMPORT_DIR"; return; }
     fi
 
-    read -p "Start import? (y/n): " CONFIRM
-    [ "$CONFIRM" != "y" ] && { rm -rf "$IMPORT_DIR"; return; }
+    read -p "Start import? [Y/n]: " CONFIRM
+    CONFIRM="${CONFIRM:-Y}"
+    [[ "$CONFIRM" =~ ^[Yy]$ ]] || { rm -rf "$IMPORT_DIR"; return; }
 
     local IMPORT_START
     IMPORT_START=$(date +%s)
@@ -382,7 +384,7 @@ user=$I_DB_USER
 password=$I_DB_PASS
 CNFEOF
                     gzip -dc "$IMPORT_DIR/database.sql.gz" | mysql --defaults-extra-file="$MYCNF" "$I_DB_NAME"
-                    [ $? -eq 0 ] && ok "MariaDB database restored" || fail "MariaDB restore failed"
+                    { [ ${PIPESTATUS[0]} -eq 0 ] && [ ${PIPESTATUS[1]} -eq 0 ]; } && ok "MariaDB database restored" || fail "MariaDB restore failed"
                     rm -f "$MYCNF"
                 else
                     fail "MariaDB is not running!"
@@ -394,7 +396,7 @@ CNFEOF
                     runuser -u postgres -- createdb -O "$I_DB_USER" "$I_DB_NAME" 2>/dev/null || true
                     runuser -u postgres -- psql -c "ALTER USER \"$I_DB_USER\" PASSWORD '$I_DB_PASS';" 2>/dev/null
                     gzip -dc "$IMPORT_DIR/database.sql.gz" | PGPASSWORD="$I_DB_PASS" psql -h 127.0.0.1 -U "$I_DB_USER" -d "$I_DB_NAME" 2>/dev/null
-                    [ $? -eq 0 ] && ok "PostgreSQL database restored" || fail "PostgreSQL restore failed"
+                    { [ ${PIPESTATUS[0]} -eq 0 ] && [ ${PIPESTATUS[1]} -eq 0 ]; } && ok "PostgreSQL database restored" || fail "PostgreSQL restore failed"
                 else
                     fail "PostgreSQL is not running!"
                 fi
@@ -686,8 +688,9 @@ pull_from_remote(){
     fi
     ok "Domain found"
 
-    read -p "Start migration? (y/n): " CONFIRM
-    [ "$CONFIRM" != "y" ] && return
+    read -p "Start migration? [Y/n]: " CONFIRM
+    CONFIRM="${CONFIRM:-Y}"
+    [[ "$CONFIRM" =~ ^[Yy]$ ]] || return
 
     echo ""
     echo "Exporting on remote..."
@@ -824,7 +827,12 @@ while true; do
             done
             [ $pi -eq 1 ] && { echo "No packages."; read -p "Enter..."; continue; }
             read -p "Delete which? " dchoice
-            [ -n "${PKGS[$dchoice]}" ] && { rm -f "${PKGS[$dchoice]}"; echo "[OK] Deleted"; } || echo "Invalid"
+            if [ -n "${PKGS[$dchoice]}" ]; then
+                read -p "Delete ${PKGS[$dchoice]##*/}? Type yes to confirm: " DEL_CONFIRM
+                [ "$DEL_CONFIRM" = "yes" ] && { rm -f "${PKGS[$dchoice]}"; echo "[OK] Deleted"; } || echo "Cancelled"
+            else
+                echo "Invalid"
+            fi
             read -p "Enter..."
             ;;
         0) break ;;

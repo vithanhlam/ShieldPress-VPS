@@ -83,12 +83,16 @@ do_upgrade(){
         return 0
     fi
 
-    upgrade_service "mariadb" "$AVAILABLE" "
+    # Bọc trong subshell + exit \$DNF_STATUS: đảm bảo UPGRADE_EXIT phản ánh
+    # đúng kết quả của `dnf update` (lệnh upgrade thật), không phải lệnh cuối
+    # cùng (systemctl restart) - nếu không, dnf fail vẫn báo "upgrade OK".
+    upgrade_service "mariadb" "$AVAILABLE" "(
         # Stop MariaDB gracefully (wait for connections to drain)
         graceful_stop_service mariadb
 
         # Perform upgrade
         dnf update -y mariadb-server mariadb mariadb-common 2>&1
+        DNF_STATUS=\$?
 
         # Start MariaDB
         systemctl start mariadb 2>/dev/null
@@ -105,7 +109,9 @@ do_upgrade(){
 
         # Restart to apply any changes from upgrade
         systemctl restart mariadb 2>/dev/null
-    "
+
+        exit \$DNF_STATUS
+    )"
 }
 
 while true; do

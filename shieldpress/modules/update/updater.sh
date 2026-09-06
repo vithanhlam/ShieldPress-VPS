@@ -305,6 +305,10 @@ fi
 # =========================================
 # CLEANUP
 # =========================================
+# cwd hiện đang là $TMP_DIR (từ bước download) - phải rời khỏi đó TRƯỚC khi
+# xoá, nếu không mọi subshell sau (kể cả `bash patches-menu.sh`) sẽ báo lỗi
+# "getcwd: cannot access parent directories" vì thư mục hiện tại đã biến mất.
+cd "$BASE_DIR" 2>/dev/null || cd /
 rm -rf "$TMP_DIR" "$OLD_DIR"
 write_installed_version
 cleanup_update_lock

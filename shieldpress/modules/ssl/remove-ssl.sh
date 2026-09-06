@@ -26,7 +26,7 @@ echo ""
 echo "  Current SSL type: ${SSL_TYPE:-none}"
 echo ""
 echo -e "\e[31mWARNING: This will remove the SSL certificate for $DOMAIN!\e[0m"
-read -p "Continue? (y/n): " CONFIRM
+read -p "Continue? [y/N]: " CONFIRM
 [[ ! "$CONFIRM" =~ ^[Yy]$ ]] && { echo "Cancelled."; exit 0; }
 
 # Backup nginx config

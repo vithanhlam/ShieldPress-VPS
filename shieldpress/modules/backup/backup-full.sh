@@ -52,7 +52,10 @@ DATE=$(date +%F_%H-%M-%S)
 TMP=$(mktemp -d /tmp/${FOLDER}_fullbak_XXXXXX)
 FINAL="$DOMAIN_PATH/backup/full/full_${DATE}.tar.gz"
 
-trap 'rm -rf "$TMP"' EXIT INT TERM
+# Chỉ trap EXIT - bash tự chạy trap này cả khi bị INT/TERM chưa bắt (chuẩn
+# hành vi), trap thêm INT/TERM ở đây (handler không gọi `exit`) sẽ khiến
+# Ctrl+C/kill -TERM không dừng được script (bug thật đã tái hiện ở clone-menu.sh).
+trap 'rm -rf "$TMP"' EXIT
 
 DB_SIZE_MB=$(get_db_size_mb)
 TOTAL_MB=$((SOURCE_MB + DB_SIZE_MB))

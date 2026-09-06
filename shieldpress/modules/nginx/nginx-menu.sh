@@ -48,7 +48,8 @@ edit_nginx(){
     fi
 
     echo ""
-    read -p "Test & reload Nginx now? (y/n): " confirm
+    read -p "Test & reload Nginx now? [Y/n]: " confirm
+    confirm="${confirm:-Y}"
 
     if [[ "$confirm" =~ ^[yY]$ ]]; then
         if nginx -t 2>/dev/null; then

@@ -149,7 +149,7 @@ run_cron_now(){
         return 1
     fi
     echo "Running WP-Cron now..."
-    "$PHP_BIN" "$ROOT/wp-cron.php" 2>&1
+    sudo -u "$SYSTEM_USER" "$PHP_BIN" "$ROOT/wp-cron.php" 2>&1
     ok "WP-Cron executed"
 }
 

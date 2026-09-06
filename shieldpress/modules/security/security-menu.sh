@@ -365,6 +365,17 @@ close_port(){
         fail "Invalid port number"; return
     fi
 
+    # Chặn hẳn: đóng nhầm port SSH hiện tại (mặc định 22, hoặc port đã đổi
+    # qua SSH Hardening) sẽ khoá luôn SSH của chính admin, không có đường lùi
+    # nếu server không có console/KVM riêng.
+    local CURRENT_SSH_PORT
+    CURRENT_SSH_PORT=$(grep -E "^[[:space:]]*Port[[:space:]]" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1)
+    CURRENT_SSH_PORT="${CURRENT_SSH_PORT:-22}"
+    if [ "$PORT" = "$CURRENT_SSH_PORT" ]; then
+        fail "Refusing to close port $PORT - this is the current SSH port. Use 'SSH Hardening > Change SSH Port' if you really need to move SSH first."
+        return
+    fi
+
     ZONE=$(firewall-cmd --get-default-zone)
 
     if ! firewall-cmd --zone="$ZONE" --list-ports | grep -q "${PORT}/tcp"; then
@@ -446,21 +457,51 @@ is_protected_ip(){
         return 0
     fi
 
-    # Check if CIDR range contains our SSH IP
-    if [[ "$CHECK_IP" == *"/"* ]] && [ -n "$MY_SSH_IP" ]; then
+    # Check if CIDR range contains our SSH IP (or the server's own public IP)
+    if [[ "$CHECK_IP" == *"/"* ]]; then
         if command -v python3 >/dev/null 2>&1; then
-            python3 -c "
+            for _target_ip in "$MY_SSH_IP" "$SERVER_IP"; do
+                [ -n "$_target_ip" ] || continue
+                python3 -c "
 import ipaddress, sys
 try:
     net = ipaddress.ip_network('$CHECK_IP', strict=False)
-    ip = ipaddress.ip_address('$MY_SSH_IP')
+    ip = ipaddress.ip_address('$_target_ip')
     sys.exit(0 if ip in net else 1)
 except: sys.exit(1)
 " 2>/dev/null && return 0
+            done
+        else
+            # python3 không có sẵn: fallback tính toán bằng bash thay vì bỏ
+            # qua hoàn toàn (im lặng bỏ qua = mất bảo vệ khi block CIDR).
+            for _target_ip in "$MY_SSH_IP" "$SERVER_IP"; do
+                [ -n "$_target_ip" ] || continue
+                ip_in_cidr "$_target_ip" "$CHECK_IP" && return 0
+            done
         fi
     fi
 
     return 1
+}
+
+# Fallback thuần bash cho ip_in_cidr khi không có python3 (không nên dựa
+# vào đây làm chính - chỉ là lưới an toàn thứ hai).
+ip_in_cidr(){
+    local ip="$1" cidr="$2"
+    local net="${cidr%%/*}" prefix="${cidr##*/}"
+    [[ "$prefix" =~ ^[0-9]+$ ]] && [ "$prefix" -ge 0 ] && [ "$prefix" -le 32 ] || return 1
+
+    local IFS='.'
+    local -a ip_o net_o
+    read -r -a ip_o <<< "$ip"
+    read -r -a net_o <<< "$net"
+    [ "${#ip_o[@]}" -eq 4 ] && [ "${#net_o[@]}" -eq 4 ] || return 1
+
+    local ip_int=$(( (ip_o[0]<<24) + (ip_o[1]<<16) + (ip_o[2]<<8) + ip_o[3] ))
+    local net_int=$(( (net_o[0]<<24) + (net_o[1]<<16) + (net_o[2]<<8) + net_o[3] ))
+    local mask=$(( prefix == 0 ? 0 : (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF ))
+
+    [ $(( ip_int & mask )) -eq $(( net_int & mask )) ]
 }
 
 block_ip(){
@@ -483,6 +524,10 @@ block_ip(){
             echo -e "  ${RED}Blocking it would lock you out of the server!${RESET}"
         elif [[ "${IP%%/*}" == "127."* ]] || [[ "${IP%%/*}" == "10."* ]] || [[ "${IP%%/*}" == "192.168."* ]] || [[ "${IP%%/*}" =~ ^172\.(1[6-9]|2[0-9]|3[01])\. ]]; then
             echo -e "  ${RED}This is a localhost/private IP range${RESET}"
+        elif [[ "$IP" == *"/"* ]] && [ -n "$MY_SSH_IP" ] && command -v python3 >/dev/null 2>&1 && \
+             python3 -c "import ipaddress,sys; sys.exit(0 if ipaddress.ip_address('$MY_SSH_IP') in ipaddress.ip_network('$IP', strict=False) else 1)" 2>/dev/null; then
+            echo -e "  ${RED}Your current SSH IP ($MY_SSH_IP) falls inside this CIDR range${RESET}"
+            echo -e "  ${RED}Blocking it would lock you out of the server!${RESET}"
         else
             echo -e "  ${RED}This is the server's own public IP${RESET}"
         fi
@@ -1648,7 +1693,7 @@ disable_auto_guard(){
         return
     fi
 
-    read -p "Tắt Auto-Guard? (y/n): " CONFIRM
+    read -p "Tắt Auto-Guard? [y/N]: " CONFIRM
     [[ "$CONFIRM" =~ ^[Yy]$ ]] || { echo "Cancelled."; return; }
 
     systemctl disable --now sp-auto-guard.timer 2>/dev/null

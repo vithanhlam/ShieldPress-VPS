@@ -217,7 +217,12 @@ rebuild_nginx_vhosts(){
 
         [ -z "$DN" ] || [ -z "$SYSUSER" ] || [ -z "$PHP_VER" ] && continue
 
-        local CLEAN=$(echo "$DN" | sed 's/[^a-zA-Z0-9.-]/_/g')
+        # Tên file vhost thật được tạo bởi clean_domain_name() (domain/helpers.sh):
+        # sed 's/[^a-zA-Z0-9]/_/g' | cut -c1-30 - đổi CẢ dấu chấm thành "_".
+        # Dùng CLEAN_DOMAIN đã lưu sẵn trong domain.env để khỏi lệch công thức;
+        # fallback tự tính cho domain cũ chưa có field này.
+        local CLEAN=$(grep "^CLEAN_DOMAIN=" "$d" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')
+        [ -z "$CLEAN" ] && CLEAN=$(echo "$DN" | sed 's/[^a-zA-Z0-9]/_/g' | cut -c1-30)
         local NGINX_CONF="/etc/nginx/conf.d/${CLEAN}.conf"
 
         if [ -f "$NGINX_CONF" ]; then
@@ -423,7 +428,8 @@ full_emergency(){
     local LATEST_SNAP=$(ls -1t "$SNAPSHOT_DIR"/*.tar.gz 2>/dev/null | head -1)
     if [ -n "$LATEST_SNAP" ]; then
         echo "Latest snapshot: $(basename "$LATEST_SNAP")"
-        read -p "Restore from this snapshot first? (y/n): " snap_confirm
+        read -p "Restore from this snapshot first? [Y/n]: " snap_confirm
+        snap_confirm="${snap_confirm:-Y}"
         if [[ "$snap_confirm" =~ ^[yY]$ ]]; then
             bash "$BASE_DIR/modules/repair/config-snapshot.sh" auto "pre-emergency" 2>/dev/null
 

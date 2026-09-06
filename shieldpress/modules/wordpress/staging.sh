@@ -352,7 +352,9 @@ sync_menu(){
             --skip-columns=guid --path="$ROOT" --quiet
 
             $WP_CMD cache flush --path="$ROOT" --quiet
-            redis-cli -h 127.0.0.1 FLUSHALL >/dev/null 2>&1 || true
+            # Chỉ xoá cache đúng domain này (prefix "<domain>:") - domain khác
+            # dùng chung Valkey DB, FLUSHALL sẽ xoá luôn cache của họ.
+            valkey-cli --scan --pattern "${SELECTED_DOMAIN}:*" 2>/dev/null | xargs -r valkey-cli del >/dev/null 2>&1 || true
 
             echo "Deploy success."
             log "Full deploy success: $SELECTED_DOMAIN"
@@ -377,7 +379,9 @@ sync_menu(){
         mysqldump "$DB_NAME" > "$BACKUP"
         if mysqldump "$STAGING_DB" | mysql "$DB_NAME"; then
             $WP_CMD cache flush --path="$ROOT" --quiet
-            redis-cli -h 127.0.0.1 FLUSHALL >/dev/null 2>&1 || true
+            # Chỉ xoá cache đúng domain này (prefix "<domain>:") - domain khác
+            # dùng chung Valkey DB, FLUSHALL sẽ xoá luôn cache của họ.
+            valkey-cli --scan --pattern "${SELECTED_DOMAIN}:*" 2>/dev/null | xargs -r valkey-cli del >/dev/null 2>&1 || true
             echo "DB synced to live."
         else
             echo "Sync failed. Restoring live DB from backup..."
@@ -397,11 +401,13 @@ sync_menu(){
     3)
         rsync -a "$STAGING_PATH/wp-content/plugins/" "$ROOT/wp-content/plugins/"
         rsync -a "$STAGING_PATH/wp-content/themes/" "$ROOT/wp-content/themes/"
+        chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$ROOT/wp-content/plugins" "$ROOT/wp-content/themes"
         echo "Plugins + Themes synced."
         ;;
 
     4)
         rsync -a "$STAGING_PATH/wp-content/uploads/" "$ROOT/wp-content/uploads/"
+        chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$ROOT/wp-content/uploads"
         echo "Uploads synced."
         ;;
 
