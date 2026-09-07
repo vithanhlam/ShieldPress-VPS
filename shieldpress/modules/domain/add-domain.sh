@@ -302,6 +302,11 @@ if command -v restorecon >/dev/null 2>&1; then
     restorecon -Rv "$DOMAIN_PATH/public_html" >/dev/null 2>&1 || true
 fi
 
+if [ "$APP_TYPE" = "nodejs" ]; then
+    # Ownership, build and SELinux setup must finish before PM2 is created.
+    start_nodejs_service || exit 1
+fi
+
 echo ""
 echo "================================"
 echo " DOMAIN CREATED SUCCESSFULLY"

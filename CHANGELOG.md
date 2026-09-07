@@ -1,5 +1,20 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.34 — 2026-09-07 — Run Node.js build and PM2 under the domain user
+
+- Fixed Node.js dependency installation and production builds running as root
+  during deploy; `npm install`, Prisma commands and `npm run build` now run as
+  the domain account.
+- Fixed first-time Node.js setup starting PM2 before ownership, build and
+  SELinux setup complete. PM2 now starts only after the final permission pass.
+- Fixed PM2 falling back to `/root/.pm2` by explicitly setting the domain
+  account's `HOME` and `PM2_HOME`, and initializing `module_conf.json` with the
+  correct owner.
+- Added post-build ownership repair so generated files remain owned by the
+  domain account before the app is started or restarted.
+- Verified the flow on AlmaLinux 9.8 with a real user-owned build, PM2 process,
+  HTTP response and PM2 file ownership check.
+
 ## v1.3.33 — 2026-09-07 — Safe migration from root PM2 to per-domain users
 
 - Added Node.js Manager option 14 to migrate a selected root PM2 application to

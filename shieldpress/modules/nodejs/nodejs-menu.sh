@@ -74,7 +74,38 @@ ensure_pm2(){
 # runs as an unprivileged user instead of root.
 run_pm2(){
     local user="$1"; shift
-    runuser -u "$user" -- env "$@"
+    local home="/home/domains/$user"
+    local pm2_home="$home/.pm2"
+
+    # PM2 uses HOME/PM2_HOME for its daemon, sockets, logs and dump file.
+    # Prepare these paths before every invocation so a first run can never
+    # fall back to /root/.pm2.
+    mkdir -p "$pm2_home"
+    chown -R "$user:$user" "$pm2_home"
+    if [ ! -s "$pm2_home/module_conf.json" ]; then
+        printf '{}' > "$pm2_home/module_conf.json"
+        chown "$user:$user" "$pm2_home/module_conf.json"
+    fi
+    runuser -u "$user" -- env HOME="$home" PM2_HOME="$pm2_home" "$@"
+}
+
+fix_node_app_permissions(){
+    local user="$1"
+    local domain_path="$2"
+    local app_root="$domain_path/public_html"
+
+    chown -R "$user:$user" "$app_root"
+    find "$app_root" -path "$app_root/node_modules" -prune -o -path "$app_root/vendor" -prune -o -type d -exec chmod 755 {} \;
+    find "$app_root" -path "$app_root/node_modules" -prune -o -path "$app_root/vendor" -prune -o -type f -exec chmod 644 {} \;
+    [ -f "$app_root/.env" ] && chmod 600 "$app_root/.env"
+    [ -f "$app_root/package.json" ] && chmod 644 "$app_root/package.json"
+    [ -f "$app_root/package-lock.json" ] && chmod 644 "$app_root/package-lock.json"
+
+    if [ -d "$app_root/node_modules" ]; then
+        chown -R "$user:$user" "$app_root/node_modules"
+        find "$app_root/node_modules" -type d -exec chmod 755 {} \;
+        [ -d "$app_root/node_modules/.bin" ] && find -L "$app_root/node_modules/.bin" -type f -exec chmod 755 {} \;
+    fi
 }
 
 # Best-effort: make this user's PM2 daemon (and whatever it has saved via
@@ -84,7 +115,7 @@ pm2_persist_startup(){
     local user="$1"
     local home="/home/domains/$user"
     local out="/tmp/.pm2-startup-${user}.$$"
-    pm2 startup systemd -u "$user" --hp "$home" >"$out" 2>&1
+    env HOME="$home" PM2_HOME="$home/.pm2" pm2 startup systemd -u "$user" --hp "$home" >"$out" 2>&1
     grep -E '^(sudo )?env PATH=.*pm2 .*systemd' "$out" | tail -1 | bash >/dev/null 2>&1
     rm -f "$out"
     run_pm2 "$user" pm2 save >/dev/null 2>&1 || true
@@ -385,12 +416,26 @@ deploy_node_app(){
         warn "Source backup skipped"
     fi
 
+    # Repair ownership before npm can create node_modules or build output.
+    # PM2 is started only after the final ownership pass below.
+    local sysuser
+    sysuser=$(grep "^SYSTEM_USER=" "$ENV_FILE" | cut -d= -f2)
+    sysuser="${sysuser:-$CLEAN_DOMAIN}"
+    chown root:root "$DOMAIN_PATH"
+    chmod 755 "$DOMAIN_PATH"
+    [ -d "$DOMAIN_PATH/config" ] && chown -R "$sysuser:$sysuser" "$DOMAIN_PATH/config" && chmod 750 "$DOMAIN_PATH/config"
+    [ -f "$DOMAIN_PATH/config/domain.env" ] && chmod 640 "$DOMAIN_PATH/config/domain.env"
+    fix_node_app_permissions "$sysuser" "$DOMAIN_PATH"
+    [ -d "$DOMAIN_PATH/backup" ] && chown -R "$sysuser:$sysuser" "$DOMAIN_PATH/backup" && chmod 750 "$DOMAIN_PATH/backup"
+    [ -d "$DOMAIN_PATH/tmp" ] && chown -R "$sysuser:$sysuser" "$DOMAIN_PATH/tmp" && chmod 755 "$DOMAIN_PATH/tmp"
+    ok "Permissions fixed before build/start (owner: $sysuser)"
+
     echo ""
     local step=1
 
     if [ "$NODE_DEPLOY_MODE" = "2" ]; then
         echo "Step $step: Installing dependencies..."
-        npm install || { fail "npm install failed"; return 1; }
+        run_pm2 "$pm2_name" npm install || { fail "npm install failed"; return 1; }
         ok "Dependencies installed"
         ((step++))
 
@@ -398,25 +443,25 @@ deploy_node_app(){
         if grep -q '"prisma"' package.json 2>/dev/null; then
             echo ""
             echo "Step $step: Running Prisma DB push..."
-            npx prisma db push || { warn "Prisma db push failed (non-fatal)"; }
-            npx prisma generate || true
+            run_pm2 "$pm2_name" npx prisma db push || { warn "Prisma db push failed (non-fatal)"; }
+            run_pm2 "$pm2_name" npx prisma generate || true
             ok "Prisma schema synced"
             ((step++))
         fi
     fi
 
     # Build if build script exists
-    if npm run 2>/dev/null | grep -q " build"; then
+    if run_pm2 "$pm2_name" npm run 2>/dev/null | grep -q " build"; then
         echo ""
         echo "Step $step: Building for production..."
 
         # Clean .next cache for Next.js projects
         if [ -d ".next" ]; then
             echo "Cleaning .next cache..."
-            rm -rf .next
+            run_pm2 "$pm2_name" rm -rf .next
         fi
 
-        npm run build || { fail "Build failed"; return 1; }
+        run_pm2 "$pm2_name" npm run build || { fail "Build failed"; return 1; }
 
         # Next.js standalone: copy public + static into standalone
         if [ -d ".next/standalone" ]; then
@@ -428,6 +473,9 @@ deploy_node_app(){
 
         ok "Build completed"
     fi
+
+    # Build tools may have created new files; repair ownership before PM2.
+    fix_node_app_permissions "$sysuser" "$DOMAIN_PATH"
 
     # Restart via PM2
     echo ""
@@ -469,38 +517,6 @@ deploy_node_app(){
 
     echo ""
     run_pm2 "$pm2_name" pm2 status "$pm2_name"
-
-    # Fix permissions after deploy
-    echo ""
-    echo "Step 5: Fixing permissions..."
-    local sysuser
-    sysuser=$(grep "^SYSTEM_USER=" "$ENV_FILE" | cut -d= -f2)
-    sysuser="${sysuser:-$CLEAN_DOMAIN}"
-    local app_root="$DOMAIN_PATH/public_html"
-
-    chown root:root "$DOMAIN_PATH"
-    chmod 755 "$DOMAIN_PATH"
-    [ -d "$DOMAIN_PATH/config" ] && chown -R "$sysuser:$sysuser" "$DOMAIN_PATH/config" && chmod 750 "$DOMAIN_PATH/config"
-    [ -f "$DOMAIN_PATH/config/domain.env" ] && chmod 640 "$DOMAIN_PATH/config/domain.env"
-
-    chown -R "$sysuser:$sysuser" "$app_root"
-    find "$app_root" -path "$app_root/node_modules" -prune -o -path "$app_root/vendor" -prune -o -type d -exec chmod 755 {} \;
-    find "$app_root" -path "$app_root/node_modules" -prune -o -path "$app_root/vendor" -prune -o -type f -exec chmod 644 {} \;
-
-    [ -f "$app_root/.env" ] && chmod 600 "$app_root/.env"
-    [ -f "$app_root/package.json" ] && chmod 644 "$app_root/package.json"
-    [ -f "$app_root/package-lock.json" ] && chmod 644 "$app_root/package-lock.json"
-
-    if [ -d "$app_root/node_modules" ]; then
-        chown -R "$sysuser:$sysuser" "$app_root/node_modules"
-        find "$app_root/node_modules" -type d -exec chmod 755 {} \;
-        [ -d "$app_root/node_modules/.bin" ] && find -L "$app_root/node_modules/.bin" -type f -exec chmod 755 {} \;
-    fi
-
-    [ -d "$DOMAIN_PATH/backup" ] && chown -R "$sysuser:$sysuser" "$DOMAIN_PATH/backup" && chmod 750 "$DOMAIN_PATH/backup"
-    [ -d "$DOMAIN_PATH/tmp" ] && chown -R "$sysuser:$sysuser" "$DOMAIN_PATH/tmp" && chmod 755 "$DOMAIN_PATH/tmp"
-
-    ok "Permissions fixed (owner: $sysuser)"
 
 }
 

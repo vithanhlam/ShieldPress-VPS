@@ -977,30 +977,49 @@ EOF
 
     chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$DOMAIN_PATH/public_html"
 
-    # Chạy PM2 dưới đúng user của domain (không phải root) - mỗi domain có
-    # daemon PM2 riêng dưới $HOME của nó, cách ly với domain khác. Xem
-    # modules/nodejs/nodejs-menu.sh:run_pm2 cho cùng pattern/lý do.
+    # PM2 is started only after the caller has completed ownership setup and
+    # any npm install/build work. This prevents the first daemon from being
+    # created with root's HOME and prevents an app from starting mid-setup.
+}
+
+start_nodejs_service(){
     local pm2_name="$CLEAN_DOMAIN"
-    runuser -u "$CLEAN_DOMAIN" -- pm2 delete "$pm2_name" 2>/dev/null || true
-    cd "$DOMAIN_PATH/public_html" || return 1
-    # `pm2 start npm -- start` "thành công" ngay cả khi không có package.json
-    # (pm2 chỉ báo lỗi khi tiến trình con crash SAU ĐÓ, không phải lúc start),
-    # nên fallback `||` không bao giờ kích hoạt được - domain mặc định chỉ có
-    # app.js (không có package.json) sẽ luôn kẹt ở trạng thái "errored". Kiểm
-    # tra package.json có script "start" thật trước khi chọn nhánh npm.
-    if [ -f "$DOMAIN_PATH/public_html/package.json" ] && grep -q '"start"' "$DOMAIN_PATH/public_html/package.json" 2>/dev/null; then
-        runuser -u "$CLEAN_DOMAIN" -- env PORT=${NODE_APP_PORT} pm2 start npm --name "$pm2_name" -- start || return 1
+    local pm2_home="$DOMAIN_PATH/.pm2"
+    local app_root="$DOMAIN_PATH/public_html"
+
+    mkdir -p "$pm2_home"
+    chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$pm2_home"
+    if [ ! -s "$pm2_home/module_conf.json" ]; then
+        printf '{}' > "$pm2_home/module_conf.json"
+        chown "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$pm2_home/module_conf.json"
+    fi
+
+    chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$app_root"
+    cd "$app_root" || return 1
+
+    # Install/build as the domain account before PM2 is created or started.
+    if [ -f package.json ]; then
+        runuser -u "$CLEAN_DOMAIN" -- env HOME="$DOMAIN_PATH" PM2_HOME="$pm2_home" npm install || return 1
+        if npm run 2>/dev/null | grep -q " build"; then
+            runuser -u "$CLEAN_DOMAIN" -- env HOME="$DOMAIN_PATH" PM2_HOME="$pm2_home" npm run build || return 1
+        fi
+        chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$app_root"
+    fi
+
+    runuser -u "$CLEAN_DOMAIN" -- env HOME="$DOMAIN_PATH" PM2_HOME="$pm2_home" pm2 delete "$pm2_name" 2>/dev/null || true
+    if [ -f "$app_root/package.json" ] && grep -q '"start"' "$app_root/package.json" 2>/dev/null; then
+        runuser -u "$CLEAN_DOMAIN" -- env HOME="$DOMAIN_PATH" PM2_HOME="$pm2_home" PORT="$NODE_APP_PORT" pm2 start npm --name "$pm2_name" -- start || return 1
     else
-        runuser -u "$CLEAN_DOMAIN" -- env PORT=${NODE_APP_PORT} pm2 start "$NODE_ENTRY" --name "$pm2_name" || return 1
+        runuser -u "$CLEAN_DOMAIN" -- env HOME="$DOMAIN_PATH" PM2_HOME="$pm2_home" PORT="$NODE_APP_PORT" pm2 start "$NODE_ENTRY" --name "$pm2_name" || return 1
     fi
 
     # Best-effort: tự khởi động lại app sau khi reboot server, dưới đúng user.
     local pm2_boot_out
     pm2_boot_out=$(mktemp "/tmp/.pm2-startup-${CLEAN_DOMAIN}.XXXXXX")
-    pm2 startup systemd -u "$CLEAN_DOMAIN" --hp "$DOMAIN_PATH" >"$pm2_boot_out" 2>&1
+    env HOME="$DOMAIN_PATH" PM2_HOME="$pm2_home" pm2 startup systemd -u "$CLEAN_DOMAIN" --hp "$DOMAIN_PATH" >"$pm2_boot_out" 2>&1
     grep -E '^(sudo )?env PATH=.*pm2 .*systemd' "$pm2_boot_out" | tail -1 | bash >/dev/null 2>&1
     rm -f "$pm2_boot_out"
-    runuser -u "$CLEAN_DOMAIN" -- pm2 save || true
+    runuser -u "$CLEAN_DOMAIN" -- env HOME="$DOMAIN_PATH" PM2_HOME="$pm2_home" pm2 save || true
 }
 
 # ===============================
