@@ -47,3 +47,6 @@ temp/
 .agents/
 .vscode/
 .idea/
+
+# Local Codex release instructions; never publish
+GITHUB.MD
