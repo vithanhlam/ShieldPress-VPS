@@ -113,7 +113,7 @@ rollback(){
 # =========================================
 # CHECK DEPENDENCIES
 # =========================================
-for cmd in curl tar rsync sha256sum; do
+for cmd in curl tar rsync sha256sum md5sum; do
     command -v "$cmd" >/dev/null 2>&1 || dnf install -y "$cmd" >/dev/null 2>&1
 done
 
@@ -169,15 +169,34 @@ mkdir -p "$TMP_DIR" "$NEW_DIR" "$EXTRACT_DIR"
 cd "$TMP_DIR"
 
 CHECKSUM_URL=$(sp_checksum_url "$TARGET_VERSION")
+MD5_URL=$(sp_md5_url "$TARGET_VERSION")
 EXPECTED=""
-if [ -n "$CHECKSUM_URL" ]; then
-    curl -fsSL --connect-timeout 5 --max-time 20 "$CHECKSUM_URL" -o shieldpress.sha256 2>/dev/null \
-        && EXPECTED=$(awk '{print $1}' shieldpress.sha256 2>/dev/null) \
-        || EXPECTED=""
-fi
+CHECKSUM_ALGO=""
+for attempt in 1 2 3; do
+    if [ -n "$CHECKSUM_URL" ] && curl -fsSL --connect-timeout 5 --max-time 20 "$CHECKSUM_URL" -o shieldpress.sha256 2>/dev/null; then
+        candidate=$(awk '{print $1}' shieldpress.sha256 2>/dev/null || true)
+        if [[ "$candidate" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            EXPECTED="$candidate"
+            CHECKSUM_ALGO="sha256"
+            break
+        fi
+    fi
+
+    if [ -n "$MD5_URL" ] && curl -fsSL --connect-timeout 5 --max-time 20 "$MD5_URL" -o shieldpress.md5 2>/dev/null; then
+        candidate=$(awk '{print $1}' shieldpress.md5 2>/dev/null || true)
+        if [[ "$candidate" =~ ^[0-9a-fA-F]{32}$ ]]; then
+            EXPECTED="$candidate"
+            CHECKSUM_ALGO="md5"
+            break
+        fi
+    fi
+
+    [ "$attempt" -lt 3 ] && sleep 3
+done
 
 # Never install an update whose release artifact cannot be verified.
 [ -n "$EXPECTED" ] || fail "Release checksum unavailable; refusing unverified update"
+log "Release checksum: $CHECKSUM_ALGO"
 
 SOURCE_ROOT=""
 PACKAGE_USED=""
@@ -196,7 +215,11 @@ while IFS= read -r CANDIDATE_URL; do
     fi
 
     if [ -n "$EXPECTED" ]; then
-        ACTUAL=$(sha256sum shieldpress.tar.gz | awk '{print $1}')
+        if [ "$CHECKSUM_ALGO" = "md5" ]; then
+            ACTUAL=$(md5sum shieldpress.tar.gz | awk '{print $1}')
+        else
+            ACTUAL=$(sha256sum shieldpress.tar.gz | awk '{print $1}')
+        fi
         if [ "$EXPECTED" != "$ACTUAL" ]; then
             log "Checksum mismatch for this package, trying next source"
             continue

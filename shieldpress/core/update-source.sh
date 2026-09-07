@@ -54,6 +54,14 @@ sp_checksum_url(){
     echo "https://github.com/${SHIELDPRESS_GITHUB_REPO}/releases/download/v${version}/shieldpress.sha256"
 }
 
+# MD5 is kept as a compatibility fallback for release propagation failures or
+# older mirrors that expose the MD5 asset before the SHA256 asset.
+sp_md5_url(){
+    local version="${1:-}"
+    [ -n "$version" ] || return 0
+    echo "https://github.com/${SHIELDPRESS_GITHUB_REPO}/releases/download/v${version}/shieldpress.md5"
+}
+
 # Locate the directory holding the runtime source inside an extracted archive.
 # Handles both release payloads and GitHub repository tarballs.
 sp_find_source_root(){

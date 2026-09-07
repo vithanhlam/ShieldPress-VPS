@@ -1,5 +1,12 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.35 — 2026-09-07 — Make release checksum verification resilient
+
+- Fixed updates aborting when GitHub release assets were still propagating and
+  the SHA256 asset was temporarily unavailable.
+- The updater now retries checksum downloads, prefers SHA256 and falls back to
+  the published MD5 asset before refusing an unverified package.
+
 ## v1.3.34 — 2026-09-07 — Run Node.js build and PM2 under the domain user
 
 - Fixed Node.js dependency installation and production builds running as root
