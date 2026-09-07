@@ -27,6 +27,8 @@ find "$BASE_DIR" -type d -exec chmod 755 {} +
 find "$BASE_DIR" -type f -name '*.sh' -exec chmod 755 {} +
 find "$BASE_DIR" -type f ! -name '*.sh' -exec chmod 644 {} +
 
+chmod 755 "$BASE_DIR/bin/laravel-pg-backup"
+
 # Create global command
 ln -sf "$BASE_DIR/shieldpress.sh" /usr/bin/shieldpress
 

@@ -1,0 +1,58 @@
+#!/bin/bash
+# Shared runner for manual backups and existing PostgreSQL Manager cron jobs.
+set -euo pipefail
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$BASE_DIR/core/paths.sh"
+umask 077
+mkdir -p "$LOG_DIR"
+# Cron historically discards stderr. Keep diagnostics independently of its redirect.
+exec 2>>"$LOG_DIR/postgresql-backup.log"
+DB_NAME="${1:-}"
+[[ "$DB_NAME" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { echo 'Invalid or missing database name'; exit 1; }
+KEEP="${2:-}"
+if [ -z "$KEEP" ] && [ -f "$BASE_DIR/config/pg-backup-retention" ]; then
+    KEEP=$(cat "$BASE_DIR/config/pg-backup-retention")
+fi
+KEEP="${KEEP:-7}"
+[[ "$KEEP" =~ ^[0-9]+$ ]] && (( 10#$KEEP > 0 )) || { echo 'Invalid retention'; exit 1; }
+KEEP=$((10#$KEEP))
+DB_META="$DATA_DIR_LARAVEL_DB/${DB_NAME}.env"
+[ -f "$DB_META" ] || { echo "Database metadata not found: $DB_META"; exit 1; }
+BACKUP_DIR="$BACKUP_GLOBAL_DIR/laravel-postgresql/$DB_NAME"
+mkdir -p "$BACKUP_DIR"
+exec 9>"$BACKUP_DIR/.backup.lock"
+flock -n 9 || { echo "Backup already running: $DB_NAME" >&2; exit 1; }
+BACKUP_FILE="$BACKUP_DIR/${DB_NAME}_$(date '+%Y%m%d_%H%M%S').sql.gz"
+PARTIAL=$(mktemp "$BACKUP_DIR/.partial.XXXXXX")
+cleanup(){
+    status=$?
+    rm -f "$PARTIAL"
+    if [ "$status" -ne 0 ]; then
+        echo "$(date -Is) [FAIL] PostgreSQL backup: $DB_NAME (exit $status)" >&2
+    fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+cd /tmp
+# A failing pg_dump must never publish a compressed partial SQL file.
+runuser -u postgres -- pg_dump --no-owner --no-privileges --dbname="$DB_NAME" | gzip > "$PARTIAL"
+gzip -t "$PARTIAL"
+mv "$PARTIAL" "$BACKUP_FILE"
+# Delete old completed backups only after a successful dump.
+mapfile -t backups < <(find "$BACKUP_DIR" -maxdepth 1 -type f -name "${DB_NAME}_*.sql.gz" -printf '%f\n' | sort -r)
+for ((i=KEEP; i<${#backups[@]}; i++)); do
+    rm -f -- "$BACKUP_DIR/${backups[i]}"
+done
+if [ -f "$BASE_DIR/modules/backup/_backup_helper.sh" ]; then
+    DOMAIN="$DB_NAME"
+    # Legacy helpers were written without nounset/errexit; isolate their options.
+    (
+        set +eu
+        source "$BASE_DIR/modules/backup/_backup_helper.sh"
+        remote_upload_backup "$BACKUP_FILE" db
+    ) >>"$LOG_DIR/remote-backup.log" 2>&1 || echo "Remote upload failed: $DB_NAME" >&2
+fi
+echo "$(date -Is) [OK] PostgreSQL backup: $DB_NAME -> $BACKUP_FILE" >&2
+printf '%s\n' "$BACKUP_FILE"

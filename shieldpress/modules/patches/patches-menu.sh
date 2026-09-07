@@ -594,6 +594,22 @@ patch_1331_resize_php_pools(){
 # APPLY ALL — called by auto-apply and menu option 2
 # ==================================================
 
+# Also runs after an upgrade launched by the old updater, whose config copy
+# still nests files before this new source is installed.
+patch_recover_backup_config(){
+    local ID="SP_RECOVER_UPDATE_BACKUP_CONFIG" legacy_config
+    patch_applied "$ID" && return 0
+    mkdir -p "$BASE_DIR/config" || return 1
+    legacy_config="$BASE_DIR/config/config"
+    while [ -d "$legacy_config" ]; do
+        rsync -a --ignore-existing --exclude=/config "$legacy_config/" "$BASE_DIR/config/" || return 1
+        legacy_config="$legacy_config/config"
+    done
+    chmod +x "$BASE_DIR/bin/laravel-pg-backup" || return 1
+    patch_mark_done "$ID"
+    ok "Recovered nested backup settings and enabled PostgreSQL backup runner"
+}
+
 apply_all_patches(){
     echo ""
     echo "======================================"
@@ -601,6 +617,7 @@ apply_all_patches(){
     echo "======================================"
     echo ""
 
+    patch_recover_backup_config
     patch_134_fix_bin_perms
     patch_134_secure_config_dir
     patch_134_fix_open_basedir_tmp

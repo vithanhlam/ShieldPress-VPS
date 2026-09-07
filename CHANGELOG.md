@@ -1,5 +1,30 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.32 — 2026-09-07 — Preserve backup settings and repair PostgreSQL scheduled backups
+
+- Fixed updates nesting runtime configuration under `config/config`, making
+  Remote Backup settings appear unconfigured. Updates now preserve directory
+  contents and recover nested settings without overwriting active values.
+- Added an automatic migration to recover nested settings even when the upgrade
+  is launched by an older updater.
+- PostgreSQL Manager manual and scheduled backups now use a packaged runner, so
+  existing cron jobs receive fixes on update instead of depending on a generated
+  script that disappears when the runtime directory is replaced.
+- Failed PostgreSQL dumps now remove temporary output and never publish partial
+  `.sql.gz` backups. Added gzip validation, a per-database lock, restrictive file
+  permissions, and a predictable PATH for cron.
+- PostgreSQL backup errors are recorded in
+  `/var/shieldpress/logs/postgresql-backup.log`, including when cron redirects
+  output to `/dev/null`.
+- New schedules pass retention per job; manual backups no longer rewrite the
+  shared runner or change scheduled retention. Updated updaters preserve the
+  legacy runner's retention value for existing schedules.
+- Fixed executable permissions for the PostgreSQL backup runner on installation
+  and update.
+- Verified on AlmaLinux 9.8 with actual cron execution, a 100,000-row backup and
+  restore checksum comparison, failure/locking/retention tests, and repeated
+  update configuration recovery tests. See `tests/BACKUP-QA.md` for scope.
+
 ## v1.3.31 — 2026-09-06 — SELinux hardening, crash resilience and dozens of reliability fixes
 
 - Fixed adding a domain, or a domain requesting a new PHP version, leaving

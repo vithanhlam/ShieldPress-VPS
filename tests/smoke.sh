@@ -37,6 +37,7 @@ require_file "$ROOT/shieldpress/shieldpress.sh"
 require_file "$ROOT/shieldpress/install.sh"
 require_file "$ROOT/shieldpress/version.txt"
 require_file "$ROOT/shieldpress/core/update-source.sh"
+require_file "$ROOT/shieldpress/bin/laravel-pg-backup"
 require_dir  "$ROOT/shieldpress/core"
 require_dir  "$ROOT/shieldpress/modules"
 require_dir  "$ROOT/tests"
@@ -74,7 +75,7 @@ while IFS= read -r -d '' script; do
     else
         fail "syntax: ${script#$ROOT/}"
     fi
-done < <(find "$ROOT/shieldpress" "$ROOT/install.sh" "$ROOT/tests" -type f \( -name '*.sh' -o -name 'process-purge-signals' -o -name 'purge-fastcgi-cache' \) -print0 | sort -z)
+done < <(find "$ROOT/shieldpress" "$ROOT/install.sh" "$ROOT/tests" -type f \( -name '*.sh' -o -name 'process-purge-signals' -o -name 'purge-fastcgi-cache' -o -name 'laravel-pg-backup' \) -print0 | sort -z)
 
 echo
 if [ "$FAIL" -ne 0 ]; then

@@ -128,42 +128,10 @@ select_pg_database(){
 }
 
 ensure_pg_backup_script(){
-    local RETENTION="${1:-7}"
-    cat > "$PG_BACKUP_SCRIPT" <<BKEOF
-#!/bin/bash
-set -euo pipefail
-
-DB_NAME="\$1"
-KEEP=${RETENTION}
-BASE_DIR="/opt/shieldpress"
-source "\$BASE_DIR/core/paths.sh"
-DB_META="\$DATA_DIR_LARAVEL_DB/\${DB_NAME}.env"
-BACKUP_DIR="\$BACKUP_GLOBAL_DIR/laravel-postgresql/\${DB_NAME}"
-
-[ -n "\$DB_NAME" ] || { echo "Usage: laravel-pg-backup <db_name>"; exit 1; }
-[ -f "\$DB_META" ] || { echo "Database metadata not found: \$DB_META"; exit 1; }
-
-mkdir -p "\$BACKUP_DIR"
-BACKUP_FILE="\$BACKUP_DIR/\${DB_NAME}_\$(date '+%Y%m%d_%H%M%S').sql.gz"
-
-cd /tmp
-runuser -u postgres -- pg_dump --no-owner --no-privileges "\$DB_NAME" | gzip > "\$BACKUP_FILE"
-[ -s "\$BACKUP_FILE" ] || { echo "Backup file is empty: \$BACKUP_FILE" >&2; exit 1; }
-chmod 600 "\$BACKUP_FILE"
-
-cd "\$BACKUP_DIR" && ls -1t \${DB_NAME}_*.sql.gz 2>/dev/null | tail -n +\$((\$KEEP + 1)) | xargs -r rm -f
-
-# Upload PostgreSQL Manager backups using the shared Remote Backup settings.
-# Keep output out of stdout because callers capture the final backup path.
-if [ -f "\$BASE_DIR/modules/backup/_backup_helper.sh" ]; then
-    DOMAIN="\$DB_NAME"
-    source "\$BASE_DIR/modules/backup/_backup_helper.sh"
-    remote_upload_backup "\$BACKUP_FILE" "db" >> "\$LOG_DIR/remote-backup.log" 2>&1 || true
-fi
-
-echo "\$BACKUP_FILE"
-BKEOF
+    # The runner ships with the source so updates also fix existing cron jobs.
+    [ -f "$PG_BACKUP_SCRIPT" ] || { fail "PostgreSQL backup runner missing"; return 1; }
     chmod +x "$PG_BACKUP_SCRIPT"
+
 }
 
 # =============================================
@@ -390,7 +358,7 @@ pg_import_db(){
     BACKUP_CONFIRM="${BACKUP_CONFIRM:-y}"
     if [[ "$BACKUP_CONFIRM" =~ ^[Yy]$ ]]; then
         echo "Creating backup..."
-        ensure_pg_backup_script 7
+        ensure_pg_backup_script || return 1
         BACKUP_FILE=$("$PG_BACKUP_SCRIPT" "$DB_NAME") || {
             fail "Backup failed"
             return 1
@@ -446,7 +414,7 @@ pg_backup_db(){
     fi
 
     select_pg_database || return
-    ensure_pg_backup_script 7
+    ensure_pg_backup_script || return 1
     BACKUP_FILE=$("$PG_BACKUP_SCRIPT" "$DB_NAME") || {
         fail "Backup failed"
         return 1
@@ -508,8 +476,8 @@ pg_auto_backup(){
     fi
 
     CRON_TAG="SHIELDPRESS_LARAVEL_PG_BACKUP_${DB_NAME}"
-    ensure_pg_backup_script "$RETENTION"
-    CRON_CMD="$CRON_SCHEDULE $PG_BACKUP_SCRIPT '$DB_NAME' >/dev/null 2>&1 # $CRON_TAG"
+    ensure_pg_backup_script || return 1
+    CRON_CMD="$CRON_SCHEDULE $PG_BACKUP_SCRIPT '$DB_NAME' '$RETENTION' >/dev/null 2>&1 # $CRON_TAG"
 
     (crontab -l 2>/dev/null | grep -v "$CRON_TAG"; echo "$CRON_CMD") | crontab -
     ok "Auto backup: $DB_NAME | ${BACKUP_HOUR}h | $FREQ_LABEL | keep $RETENTION backups"

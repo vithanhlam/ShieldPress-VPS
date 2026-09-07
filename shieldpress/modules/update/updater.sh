@@ -229,10 +229,30 @@ rsync -a "$SOURCE_ROOT/" "$NEW_DIR/" || fail "Cannot stage new source"
 
 [ -f "$NEW_DIR/shieldpress.sh" ] || fail "shieldpress.sh not found after extraction"
 
-# preserve config files
-for item in config.env license.key license.status config; do
-    [ -e "$BASE_DIR/$item" ] && cp -a "$BASE_DIR/$item" "$NEW_DIR/$item" 2>/dev/null || true
+# Copy directory contents, not the directory itself (config/config loses settings).
+for item in config.env license.key license.status; do
+    if [ -e "$BASE_DIR/$item" ]; then
+        cp -a "$BASE_DIR/$item" "$NEW_DIR/$item" || fail "Cannot preserve $item"
+    fi
 done
+if [ -d "$BASE_DIR/config" ]; then
+    mkdir -p "$NEW_DIR/config"
+    rsync -a "$BASE_DIR/config/" "$NEW_DIR/config/" || fail "Cannot preserve config"
+    # Recover settings nested by older updaters; the active file always wins.
+    legacy_config="$BASE_DIR/config/config"
+    while [ -d "$legacy_config" ]; do
+        rsync -a --ignore-existing --exclude=/config "$legacy_config/" "$NEW_DIR/config/" || fail "Cannot recover nested config"
+        legacy_config="$legacy_config/config"
+    done
+fi
+# Keep the old global retention for existing cron jobs when replacing the generator.
+if [ -f "$BASE_DIR/bin/laravel-pg-backup" ]; then
+    legacy_keep=$(sed -n 's/^KEEP=\([0-9][0-9]*\)$/\1/p' "$BASE_DIR/bin/laravel-pg-backup" | head -1)
+    if [ -n "$legacy_keep" ] && [ ! -f "$NEW_DIR/config/pg-backup-retention" ]; then
+        mkdir -p "$NEW_DIR/config"
+        printf '%s\n' "$legacy_keep" > "$NEW_DIR/config/pg-backup-retention"
+    fi
+fi
 
 # preserve persistent directories (now outside /opt/shieldpress)
 # Migrate old locations if they exist as real dirs (not symlinks)
@@ -273,6 +293,7 @@ log "Fixing permissions..."
 write_installed_version
 chmod +x "$BASE_DIR/shieldpress.sh" || fail "Cannot chmod shieldpress.sh"
 find "$BASE_DIR/modules" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+chmod +x "$BASE_DIR/bin/laravel-pg-backup" || fail "Cannot chmod PostgreSQL backup runner"
 chmod +x "$BASE_DIR/core"/*.sh 2>/dev/null || true
 ln -sf "$BASE_DIR/shieldpress.sh" /usr/bin/shieldpress
 ln -sf "$BASE_DIR/shieldpress.sh" /usr/local/bin/shieldpress
