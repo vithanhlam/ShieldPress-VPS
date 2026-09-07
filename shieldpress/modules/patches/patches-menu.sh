@@ -469,7 +469,7 @@ patch_1331_warn_node_root_pm2(){
 
     if [ -n "$FOUND" ]; then
         fail "Domain(s) still running Node.js as root:$FOUND"
-        info "Fix: Node.js Menu > Migrate to per-user PM2 (brief restart of that app)"
+        info "Fix: Node.js Manager > 14) Migrate root PM2 to user (brief restart of that app)"
     else
         ok "$DESC (none found)"
     fi

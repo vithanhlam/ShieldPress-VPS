@@ -1,5 +1,22 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.33 — 2026-09-07 — Safe migration from root PM2 to per-domain users
+
+- Added Node.js Manager option 14 to migrate a selected root PM2 application to
+  its dedicated domain user with a brief, controlled restart.
+- Preserves the PM2 script, arguments, environment and restart settings while
+  moving application ownership to the domain account.
+- Verifies the target process UID, HTTP listener ownership, stable health and
+  systemd startup persistence before removing the root PM2 process.
+- Automatically rolls back the app, ownership and startup configuration when
+  migration fails; recovery data and command logs are saved under
+  `/var/shieldpress/data/pm2-migrations/`.
+- Rejects cluster/watch apps, mismatched working directories, unsafe external
+  symlinks and hardlinks before stopping the running application.
+- Added PM2 migration regression tests and live AlmaLinux verification for
+  direct Node apps, `npm start`, service restart, rollback and concurrency.
+- See `tests/PM2-MIGRATION-QA.md` for usage, preconditions and test scope.
+
 ## v1.3.32 — 2026-09-07 — Preserve backup settings and repair PostgreSQL scheduled backups
 
 - Fixed updates nesting runtime configuration under `config/config`, making

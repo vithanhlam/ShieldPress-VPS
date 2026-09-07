@@ -713,6 +713,13 @@ node_status(){
     list_node_domains
 }
 
+migrate_root_pm2(){
+    select_node_domain || return
+    command -v python3 >/dev/null 2>&1 || { fail "python3 is required"; return 1; }
+    python3 "$BASE_DIR/modules/nodejs/migrate-root-pm2.py" \
+        "$CLEAN_DOMAIN" "$NODE_APP_PORT" "$DOMAIN"
+}
+
 migrate_systemd_to_pm2(){
     echo ""
     echo "Migrating systemd Node.js services to PM2..."
@@ -817,6 +824,7 @@ while true; do
         "11|Runtime / Status|cyan" \
         "12|Fix Permissions|green" \
         "13|Advanced Tools|yellow" \
+        "14|Migrate root PM2 to user|cyan" \
         "0|Back|white"
     sp_prompt opt
 
@@ -834,6 +842,7 @@ while true; do
         11) node_status ;;
         12) fix_node_permissions ;;
         13) node_advanced_menu ;;
+        14) migrate_root_pm2 ;;
         0) break ;;
         *) sp_invalid ;;
     esac
