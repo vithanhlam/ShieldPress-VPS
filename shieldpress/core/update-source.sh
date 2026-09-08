@@ -17,6 +17,31 @@ SHIELDPRESS_RAW_BASE="https://raw.githubusercontent.com/${SHIELDPRESS_GITHUB_REP
 SHIELDPRESS_VERSION_URL="${SHIELDPRESS_VERSION_URL:-${SHIELDPRESS_RAW_BASE}/shieldpress/version.txt}"
 SHIELDPRESS_RELEASE_API="https://api.github.com/repos/${SHIELDPRESS_GITHUB_REPO}/releases/latest"
 
+# Fallback for the short window in which a separately uploaded checksum
+# asset has not propagated through GitHub's release download CDN.
+sp_release_asset_digest(){
+    local version="${1:-}" asset="${2:-}" api_url response
+    [ -n "$version" ] || return 0
+    [ -n "$asset" ] || return 0
+
+    api_url="https://api.github.com/repos/${SHIELDPRESS_GITHUB_REPO}/releases/tags/v${version}"
+    response=$(curl -fsSL --connect-timeout 5 --max-time 15 "$api_url" 2>/dev/null) || return 0
+
+    # GitHub returns each asset as an object whose name precedes its digest.
+    printf '%s\n' "$response" | awk -v asset="$asset" '
+        /"name"[[:space:]]*:/ {
+            current = index($0, "\"name\":\"" asset "\"") || \
+                      index($0, "\"name\": \"" asset "\"")
+        }
+        current && /"digest"[[:space:]]*:[[:space:]]*"sha256:/ {
+            sub(/^.*"digest"[[:space:]]*:[[:space:]]*"sha256:/, "")
+            sub(/".*$/, "")
+            if ($0 ~ /^[0-9a-fA-F]{64}$/) print $0
+            exit
+        }
+    '
+}
+
 # Latest version string, without a leading "v".
 # Falls back to the newest published release tag when version.txt is unreachable.
 sp_remote_version(){

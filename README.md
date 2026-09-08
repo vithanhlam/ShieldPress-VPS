@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.36`
+**Current version:** `1.3.37`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -358,6 +358,8 @@ Source: `modules/database/`
 MariaDB features:
 
 - Create database and user.
+- Create a user for an existing database with selectable read, view, edit and
+  delete permissions.
 - List databases.
 - Delete database and user.
 - Change database password.
@@ -366,11 +368,16 @@ MariaDB features:
 - Optimize database.
 - Enable/disable/remove Adminer.
 - Configure database settings.
+- Configure bind address, database port and restricted firewalld access.
+- Test a real TCP database login by selecting a database and account and
+  running `SELECT 1`.
 - Assign database to website.
 
 PostgreSQL features:
 
 - Create database and user.
+- Create a role for an existing database with selectable read, view, edit and
+  delete permissions.
 - List databases.
 - View database info.
 - Delete database and user.
@@ -378,6 +385,9 @@ PostgreSQL features:
 - Import SQL.
 - Backup database.
 - Configure auto backup (hour, daily/weekly/monthly, retention count).
+- Configure bind address, database port and restricted firewalld access.
+- Test a real TCP database login by selecting a database and account and
+  running `SELECT 1`.
 - Configure PostgreSQL WAL policy per domain. Domains created by ShieldPress use
   one PostgreSQL cluster, so pgBackRest archives WAL once at cluster level;
   the per-domain setting controls participation, storage policy and health

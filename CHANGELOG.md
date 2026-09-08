@@ -1,5 +1,17 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.37 — 2026-09-09 — Database users, permissions and connection tests
+
+- Added creation of separate MariaDB and PostgreSQL users for existing
+  databases with selectable read, view, edit and delete permissions.
+- Added database network configuration for bind address, port and restricted
+  firewalld source rules; remote binding requires an explicit IP/CIDR.
+- Added real TCP connection testing that selects a database and login account,
+  authenticates and runs `SELECT 1`; the port configuration flow can run it
+  immediately after opening a port.
+- Updated the release/update documentation and retained SHA-256 as the
+  authoritative checksum with MD5 generated as a compatibility asset.
+
 ## v1.3.36 — 2026-09-08 — Make WordPress recovery single-flight
 
 - Prevented concurrent manual and daemon recovery scans from issuing

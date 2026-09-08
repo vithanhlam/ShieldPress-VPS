@@ -10,6 +10,9 @@ while true; do
     sp_header "MariaDB Manager" "Create, import, manage"
     sp_menu_grid \
         "1|Create Database + User|green" \
+        "11|Create User for Existing DB|green" \
+        "12|Network / Port Configuration|yellow" \
+        "13|Test Database Connection|cyan" \
         "2|Database List|cyan" \
         "3|Delete Database + User|red" \
         "4|Change DB Password|yellow" \
@@ -33,6 +36,9 @@ while true; do
         8) bash $MODULE_DIR/adminer.sh ;;
         9) bash $MODULE_DIR/set-db-to-domain.sh ;;
         10) bash $MODULE_DIR/export-db.sh ;;
+        11) bash "$MODULE_DIR/manage-user.sh" mariadb ;;
+        12) bash "$MODULE_DIR/network-port.sh" ;;
+        13) bash "$MODULE_DIR/test-connection.sh" mariadb ;;
         0) break ;;
         *) sp_invalid ;;
     esac

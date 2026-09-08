@@ -109,6 +109,16 @@ process environment.
 
 `Database Manager` supports database/user creation, listing, information,
 password rotation, SQL import, deletion, tuning and Adminer where applicable.
+For an existing MariaDB or PostgreSQL database, `Create User for Existing DB`
+creates a separate login with selectable data permissions: read (`SELECT`),
+view (`SHOW VIEW`/table read), edit (`INSERT`/`UPDATE`) and delete (`DELETE`).
+Privileges are not granted unless selected. `Network / Port Configuration`
+can change the database bind address and port; remote binding requires an
+explicit source IP/CIDR and can add a restricted firewalld rule. Keep the
+default loopback bind unless remote database access is necessary.
+After changing the network settings, use `Test Database Connection` (or choose
+the immediate test prompt) to select a database and login account and verify a
+real TCP `SELECT 1` connection.
 Database ports should remain private unless a restricted firewall rule is
 intentional.
 

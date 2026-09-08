@@ -194,6 +194,17 @@ for attempt in 1 2 3; do
     [ "$attempt" -lt 3 ] && sleep 3
 done
 
+# If the checksum assets are still propagating, use GitHub's digest for the
+# exact release package. This never authorizes a branch/archive fallback.
+if [ -z "$EXPECTED" ]; then
+    release_digest=$(sp_release_asset_digest "$TARGET_VERSION" "shieldpress.tar.gz" || true)
+    if [[ "$release_digest" =~ ^[0-9a-fA-F]{64}$ ]]; then
+        EXPECTED="$release_digest"
+        CHECKSUM_ALGO="sha256"
+        log "Release checksum asset unavailable; using GitHub release digest"
+    fi
+fi
+
 # Never install an update whose release artifact cannot be verified.
 [ -n "$EXPECTED" ] || fail "Release checksum unavailable; refusing unverified update"
 log "Release checksum: $CHECKSUM_ALGO"

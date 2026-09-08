@@ -575,6 +575,9 @@ while true; do
 
     sp_menu_grid \
         "1|Create Database + User|green" \
+        "11|Create User for Existing DB|green" \
+        "12|Network / Port Configuration|yellow" \
+        "13|Test Database Connection|cyan" \
         "2|Database List|cyan" \
         "3|View Database Info|blue" \
         "4|Delete Database + User|red" \
@@ -598,6 +601,9 @@ while true; do
         8) pg_auto_backup_menu ;;
         9) pg_list_backups ;;
         10) bash "$MODULE_DIR/postgres-replication.sh" ;;
+        11) bash "$MODULE_DIR/manage-user.sh" postgresql ;;
+        12) bash "$MODULE_DIR/network-port.sh" ;;
+        13) bash "$MODULE_DIR/test-connection.sh" postgresql ;;
         0) break ;;
         *) sp_invalid ;;
     esac

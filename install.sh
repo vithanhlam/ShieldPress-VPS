@@ -49,11 +49,29 @@ if [ -z "$SOURCE_DIR" ]; then
     TARBALL="https://github.com/${SHIELDPRESS_GITHUB_REPO}/releases/download/v${SOURCE_VERSION}/shieldpress.tar.gz"
     CHECKSUM_URL="https://github.com/${SHIELDPRESS_GITHUB_REPO}/releases/download/v${SOURCE_VERSION}/shieldpress.sha256"
     curl -fsSL --connect-timeout 10 --max-time 30 "$CHECKSUM_URL" -o "$WORK_DIR/source.sha256" \
-        || { echo "[ERROR] Release checksum unavailable; refusing unverified install"; exit 1; }
+        || true
     curl -fsSL --connect-timeout 10 --max-time 300 "$TARBALL" -o "$WORK_DIR/source.tar.gz" \
         || { echo "[ERROR] Cannot download $TARBALL"; exit 1; }
 
-    EXPECTED_SHA=$(awk 'NF {print $1; exit}' "$WORK_DIR/source.sha256")
+    EXPECTED_SHA=$(awk 'NF {print $1; exit}' "$WORK_DIR/source.sha256" 2>/dev/null || true)
+    if ! [[ "$EXPECTED_SHA" =~ ^[0-9a-fA-F]{64}$ ]]; then
+        RELEASE_API="https://api.github.com/repos/${SHIELDPRESS_GITHUB_REPO}/releases/tags/v${SOURCE_VERSION}"
+        EXPECTED_SHA=$(curl -fsSL --connect-timeout 10 --max-time 30 "$RELEASE_API" 2>/dev/null \
+            | awk '
+                /"name"[[:space:]]*:/ {
+                    current = index($0, "\"name\":\"shieldpress.tar.gz\"") || \
+                              index($0, "\"name\": \"shieldpress.tar.gz\"")
+                }
+                current && /"digest"[[:space:]]*:[[:space:]]*"sha256:/ {
+                    sub(/^.*"digest"[[:space:]]*:[[:space:]]*"sha256:/, "")
+                    sub(/".*$/, "")
+                    print
+                    exit
+                }
+            ')
+    fi
+    [[ "$EXPECTED_SHA" =~ ^[0-9a-fA-F]{64}$ ]] \
+        || { echo "[ERROR] Release checksum unavailable; refusing unverified install"; exit 1; }
     ACTUAL_SHA=$(sha256sum "$WORK_DIR/source.tar.gz" | awk '{print $1}')
     [ -n "$EXPECTED_SHA" ] && [ "$EXPECTED_SHA" = "$ACTUAL_SHA" ] \
         || { echo "[ERROR] Source checksum mismatch; refusing install"; exit 1; }
