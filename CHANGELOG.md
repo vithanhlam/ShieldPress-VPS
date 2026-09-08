@@ -1,5 +1,13 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.36 — 2026-09-08 — Make WordPress recovery single-flight
+
+- Prevented concurrent manual and daemon recovery scans from issuing
+  overlapping PHP-FPM restarts.
+- Made recovery and cooldown directories self-healing with safe permissions.
+- Made cooldown marker writes atomic to avoid missing or partially written
+  markers during recovery.
+
 ## v1.3.35 — 2026-09-07 — Make release checksum verification resilient
 
 - Fixed updates aborting when GitHub release assets were still propagating and

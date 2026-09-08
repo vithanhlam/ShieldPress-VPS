@@ -19,6 +19,7 @@ COOLDOWN_DIR="/tmp/shieldpress_recovery"
 COOLDOWN_SECONDS=300   # 5 min between recovery per domain
 DAEMON_INTERVAL=60     # Check every 60 seconds in daemon mode
 SERVICE_FILE="/etc/systemd/system/shieldpress-wp-recovery.service"
+RECOVERY_LOCK="/run/lock/shieldpress-wp-recovery.lock"
 
 # Source safely - daemon mode may not have all files
 [ -f "$BASE_DIR/core/ui.sh" ] && source "$BASE_DIR/core/ui.sh" || {
@@ -33,13 +34,23 @@ SERVICE_FILE="/etc/systemd/system/shieldpress-wp-recovery.service"
     domain_to_clean(){ echo "$1" | sed 's/[^a-zA-Z0-9]/_/g' | cut -c1-30; }
 }
 
-mkdir -p "$COOLDOWN_DIR" "$LOG_DIR"
-
 # ─── Logging ───────────────────────────────────────────────
 
 log(){
     echo "$(date '+%F %T') | $1" >> "$LOG_FILE"
 }
+
+install -d -m 700 "$COOLDOWN_DIR" "$LOG_DIR" "$(dirname "$RECOVERY_LOCK")"
+
+# A manual scan and the daemon must never recover the same set of sites at the
+# same time. Without a lock, two scans can both observe a missing socket and
+# issue overlapping restarts, producing a longer outage and stale cooldown
+# markers.
+exec 9>"$RECOVERY_LOCK"
+if ! flock -n 9; then
+    log "Recovery scan skipped: another scan is already running"
+    exit 0
+fi
 
 # ─── PHP-FPM Detection ────────────────────────────────────
 
@@ -226,7 +237,10 @@ is_on_cooldown(){
 
 set_cooldown(){
     local domain="$1"
-    date +%s > "$COOLDOWN_DIR/$domain"
+    local file="$COOLDOWN_DIR/$domain"
+    install -d -m 700 "$COOLDOWN_DIR"
+    printf '%s\n' "$(date +%s)" > "${file}.tmp.$$"
+    mv -f "${file}.tmp.$$" "$file"
 }
 
 # ─── HTTP Health Check ────────────────────────────────────
