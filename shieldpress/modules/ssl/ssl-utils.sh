@@ -22,6 +22,44 @@ ensure_ssl_dependencies(){
     fi
 }
 
+# Certbot can wait indefinitely when an ACME HTTP-01 challenge cannot reach
+# the server (wrong DNS, broken IPv6, blocked port 80, or a proxy). Keep SSL
+# installation bounded and preserve the useful certbot error output.
+run_certbot(){
+    local timeout_seconds="${CERTBOT_TIMEOUT_SECONDS:-180}"
+    if command -v timeout >/dev/null 2>&1; then
+        timeout --foreground "${timeout_seconds}s" certbot "$@"
+        local status=$?
+        if [ "$status" -eq 124 ]; then
+            fail "Certbot timed out after ${timeout_seconds}s"
+            echo "Check DNS (including AAAA), Cloudflare proxy, and inbound port 80."
+        fi
+        return "$status"
+    fi
+    certbot "$@"
+}
+
+check_ssl_dns_targets(){
+    local host ipv4 ipv6
+    for host in "$@"; do
+        ipv4=$(dig +short A "$host" 2>/dev/null | tail -1)
+        ipv6=$(dig +short AAAA "$host" 2>/dev/null | tail -1)
+
+        if [ -z "$ipv4" ]; then
+            fail "DNS A record missing for $host"
+            return 1
+        fi
+        if [ -n "$SERVER_IPV4" ] && [ "$ipv4" != "$SERVER_IPV4" ]; then
+            fail "DNS A for $host is $ipv4, expected $SERVER_IPV4"
+            return 1
+        fi
+        if [ -n "$ipv6" ]; then
+            warn "DNS AAAA exists for $host ($ipv6); ACME may use IPv6, ensure port 80 works over IPv6"
+        fi
+    done
+    return 0
+}
+
 get_server_ips(){
     SERVER_IPV4=$(curl -s --connect-timeout 3 https://ipv4.icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}')
     SERVER_IPV6=$(ip -6 addr show scope global 2>/dev/null | grep inet6 | awk '{print $2}' | cut -d/ -f1 | head -1)

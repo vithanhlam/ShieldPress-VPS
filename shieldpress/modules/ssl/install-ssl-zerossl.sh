@@ -88,7 +88,7 @@ fi
 if [ -z "$EAB_KID" ] || [ -z "$EAB_HMAC" ]; then
     echo "Generating EAB credentials..."
 
-    EAB_RESPONSE=$(curl -s -X POST "https://api.zerossl.com/acme/eab-credentials-email" \
+    EAB_RESPONSE=$(curl -s --connect-timeout 10 --max-time 30 -X POST "https://api.zerossl.com/acme/eab-credentials-email" \
         --data-urlencode "email=$ADMIN_EMAIL" \
         2>/dev/null)
 
@@ -169,6 +169,11 @@ echo "  2) No  - SSL for $DOMAIN only"
 echo ""
 read -p "Select [1]: " WWW_OPT
 WWW_OPT="${WWW_OPT:-1}"
+SSL_HOSTS=("$DOMAIN")
+if [ "$WWW_OPT" = "1" ]; then
+    SSL_HOSTS+=("www.$DOMAIN")
+fi
+check_ssl_dns_targets "${SSL_HOSTS[@]}" || exit 1
 
 # ================================================
 # CLEANUP OLD SSL + ISSUE
@@ -183,7 +188,7 @@ echo "(This may take 1-2 minutes while verifying domain ownership)"
 echo ""
 
 # Register ACME account (idempotent)
-certbot register \
+run_certbot register \
     --non-interactive \
     --agree-tos \
     -m "$ADMIN_EMAIL" \
@@ -194,7 +199,7 @@ certbot register \
 
 # Issue certificate
 if [ "$WWW_OPT" = "2" ]; then
-    certbot --nginx \
+    run_certbot --nginx \
         --non-interactive \
         --agree-tos \
         -m "$ADMIN_EMAIL" \
@@ -202,7 +207,7 @@ if [ "$WWW_OPT" = "2" ]; then
         -d "$DOMAIN" \
         --redirect
 else
-    certbot --nginx \
+    run_certbot --nginx \
         --non-interactive \
         --agree-tos \
         -m "$ADMIN_EMAIL" \

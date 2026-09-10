@@ -76,6 +76,7 @@ run_pm2(){
     local user="$1"; shift
     local home="/home/domains/$user"
     local pm2_home="$home/.pm2"
+    local npm_cache="$home/.npm"
 
     # PM2 uses HOME/PM2_HOME for its daemon, sockets, logs and dump file.
     # Prepare these paths before every invocation so a first run can never
@@ -86,7 +87,36 @@ run_pm2(){
         printf '{}' > "$pm2_home/module_conf.json"
         chown "$user:$user" "$pm2_home/module_conf.json"
     fi
-    runuser -u "$user" -- env HOME="$home" PM2_HOME="$pm2_home" "$@"
+    # Keep npm's cache explicit as well. Without this, npm can discover a
+    # root-owned cache left by an older root PM2/npm deployment and fail with
+    # EACCES before it can even write its log.
+    runuser -u "$user" -- env HOME="$home" PM2_HOME="$pm2_home" \
+        NPM_CONFIG_CACHE="$npm_cache" "$@"
+}
+
+prepare_node_dependency_install(){
+    local user="$1"
+    local domain_path="$2"
+    local home="/home/domains/$user"
+    local app_root="$domain_path/public_html"
+    local npm_cache="$home/.npm"
+
+    # npm writes cache/log files below HOME. Repair this separately from the
+    # application tree because fix_node_app_permissions cannot reach it.
+    mkdir -p "$npm_cache"
+    chown -R "$user:$user" "$npm_cache"
+    chmod 700 "$npm_cache"
+
+    # A copied or interrupted node_modules tree can contain missing entries
+    # and make npm emit TAR_ENTRY_ERROR/ENOTEMPTY during reconciliation. It is
+    # generated state, so rebuild it from the lockfile/package manifest.
+    if [ -d "$app_root/node_modules" ] || [ -L "$app_root/node_modules" ]; then
+        rm -rf "${app_root:?}/node_modules"
+    fi
+
+    # Verify is best-effort: npm can still download a clean cache entry when
+    # the cache contains an old/incomplete package.
+    run_pm2 "$user" npm cache verify >/dev/null 2>&1 || true
 }
 
 fix_node_app_permissions(){
@@ -106,6 +136,16 @@ fix_node_app_permissions(){
         find "$app_root/node_modules" -type d -exec chmod 755 {} \;
         [ -d "$app_root/node_modules/.bin" ] && find -L "$app_root/node_modules/.bin" -type f -exec chmod 755 {} \;
     fi
+
+    return 0
+}
+
+repair_selected_node_permissions(){
+    local sysuser
+    sysuser=$(grep "^SYSTEM_USER=" "$ENV_FILE" | cut -d= -f2 | tr -d '[:space:]')
+    sysuser="${sysuser:-$CLEAN_DOMAIN}"
+    fix_node_app_permissions "$sysuser" "$DOMAIN_PATH"
+    ok "Permissions fixed before PM2 start/restart (owner: $sysuser)"
 }
 
 # Best-effort: make this user's PM2 daemon (and whatever it has saved via
@@ -294,6 +334,7 @@ start_node_app(){
     select_node_domain || return
     ensure_pm2 || return
     cd "$DOMAIN_PATH/public_html" || return
+    repair_selected_node_permissions || return
 
     local pm2_name="$CLEAN_DOMAIN"
 
@@ -384,6 +425,7 @@ restart_node_app(){
     select_node_domain || return
     ensure_pm2 || return
     cd "$DOMAIN_PATH/public_html" || return
+    repair_selected_node_permissions || return
 
     local pm2_name="$CLEAN_DOMAIN"
     restart_pm2_app_with_config "$pm2_name" && \
@@ -435,7 +477,12 @@ deploy_node_app(){
 
     if [ "$NODE_DEPLOY_MODE" = "2" ]; then
         echo "Step $step: Installing dependencies..."
-        run_pm2 "$pm2_name" npm install || { fail "npm install failed"; return 1; }
+        prepare_node_dependency_install "$sysuser" "$DOMAIN_PATH"
+        if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            run_pm2 "$pm2_name" npm ci --include=dev || { fail "npm ci failed"; return 1; }
+        else
+            run_pm2 "$pm2_name" npm install --include=dev || { fail "npm install failed"; return 1; }
+        fi
         ok "Dependencies installed"
         ((step++))
 

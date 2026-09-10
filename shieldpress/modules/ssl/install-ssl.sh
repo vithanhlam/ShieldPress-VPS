@@ -105,6 +105,11 @@ echo "  2) No  - SSL for $DOMAIN only"
 echo ""
 read -p "Select [1]: " WWW_OPT
 WWW_OPT="${WWW_OPT:-1}"
+SSL_HOSTS=("$DOMAIN")
+if [ "$WWW_OPT" = "1" ]; then
+    SSL_HOSTS+=("www.$DOMAIN")
+fi
+check_ssl_dns_targets "${SSL_HOSTS[@]}" || exit 1
 
 # Clean up old SSL if switching type
 cleanup_old_ssl "$DOMAIN" "$CLEAN" "$CONF"
@@ -116,14 +121,14 @@ echo "(This may take 1-2 minutes while verifying domain ownership)"
 echo ""
 
 if [ "$WWW_OPT" = "2" ]; then
-    certbot --nginx \
+    run_certbot --nginx \
         --non-interactive \
         --agree-tos \
         -m "$ADMIN_EMAIL" \
         -d "$DOMAIN" \
         --redirect
 else
-    certbot --nginx \
+    run_certbot --nginx \
         --non-interactive \
         --agree-tos \
         -m "$ADMIN_EMAIL" \

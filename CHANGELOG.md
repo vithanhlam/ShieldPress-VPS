@@ -1,5 +1,16 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.38 — 2026-09-10 — Node.js and SSL deployment reliability
+
+- Fixed Node.js deploys failing with `EACCES` when `/home/domains/<domain>/.npm`
+  was left owned by root after an older deployment.
+- Full deploys now use `npm ci` when a lockfile is present and rebuild stale or
+  incomplete `node_modules` before installing dependencies.
+- SSL issuance now validates every requested hostname, warns about IPv6 DNS,
+  and stops Certbot after a bounded timeout instead of appearing hung forever.
+- Release artifacts include both SHA-256 and MD5 checksums; SHA-256 remains the
+  authoritative integrity check.
+
 ## v1.3.37 — 2026-09-09 — Database users, permissions and connection tests
 
 - Added creation of separate MariaDB and PostgreSQL users for existing
