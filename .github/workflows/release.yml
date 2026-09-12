@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Build release package and checksum
         run: |
@@ -25,9 +25,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            /tmp/shieldpress.tar.gz \
-            /tmp/shieldpress.sha256 \
-            /tmp/shieldpress.md5 \
-            --title "ShieldPress VPS ${GITHUB_REF_NAME#v}" \
-            --generate-notes
+          release_tag="${GITHUB_REF_NAME}"
+          release_assets=(
+            /tmp/shieldpress.tar.gz
+            /tmp/shieldpress.sha256
+            /tmp/shieldpress.md5
+          )
+
+          if gh release view "${release_tag}" >/dev/null 2>&1; then
+            # A retry or a re-pushed tag can target an existing release.
+            # Replace its assets instead of failing on `gh release create`.
+            gh release upload "${release_tag}" "${release_assets[@]}" --clobber
+          else
+            gh release create "${release_tag}" \
+              "${release_assets[@]}" \
+              --title "ShieldPress VPS ${release_tag#v}" \
+              --generate-notes
+          fi
