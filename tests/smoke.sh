@@ -56,6 +56,31 @@ else
     pass "docs contain no co-author attribution"
 fi
 
+if grep -q 'previous_next="\.next.deploy-backup\.\$\$"' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh" \
+    && grep -q 'Previous \.next build restored' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh"; then
+    pass "Node.js deploy restores previous Next.js build on failure"
+else
+    fail "Node.js deploy rollback protection is missing"
+fi
+
+if grep -q 'proxy_hide_header Cache-Control' "$ROOT/shieldpress/modules/domain/helpers.sh" \
+    && grep -q 'location \^~ /_next/static/' "$ROOT/shieldpress/modules/domain/helpers.sh"; then
+    pass "Node.js Nginx cache policy protects Next.js deployments"
+else
+    fail "Node.js Nginx cache policy is missing"
+fi
+
+PACKAGE_TEST_DIR=$(mktemp -d)
+trap 'rm -rf "$PACKAGE_TEST_DIR"' EXIT
+tar -czf "$PACKAGE_TEST_DIR/shieldpress.tar.gz" -C "$ROOT" .
+tar -tzf "$PACKAGE_TEST_DIR/shieldpress.tar.gz" > "$PACKAGE_TEST_DIR/package.list"
+if grep -qE '(^|/)shieldpress/modules/nodejs/nodejs-menu\.sh$' "$PACKAGE_TEST_DIR/package.list" \
+    && grep -qE '(^|/)shieldpress/modules/domain/helpers\.sh$' "$PACKAGE_TEST_DIR/package.list"; then
+    pass "release package contains Node.js deploy fixes"
+else
+    fail "release package does not contain Node.js deploy fixes"
+fi
+
 if (
     # shellcheck disable=SC1091
     source "$ROOT/shieldpress/core/update-source.sh" 2>/dev/null \

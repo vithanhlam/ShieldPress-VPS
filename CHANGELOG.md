@@ -1,5 +1,15 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.39 — 2026-09-12 — Next.js deployment and cache reliability
+
+- Failed Next.js builds now restore the previous `.next` build instead of
+  leaving the running application without a production build.
+- Node.js Nginx configuration prevents caching HTML while allowing immutable
+  caching for `/_next/static/*` assets.
+- Added regression checks for Node.js deploy rollback, Nginx cache policy and
+  release package contents.
+- Release generation now publishes both SHA-256 and MD5 checksum files.
+
 ## v1.3.38 — 2026-09-10 — Node.js and SSL deployment reliability
 
 - Fixed Node.js deploys failing with `EACCES` when `/home/domains/<domain>/.npm`

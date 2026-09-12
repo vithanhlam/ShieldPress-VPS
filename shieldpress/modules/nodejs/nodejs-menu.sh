@@ -502,13 +502,31 @@ deploy_node_app(){
         echo ""
         echo "Step $step: Building for production..."
 
-        # Clean .next cache for Next.js projects
+        # Keep the previous production build until the new build succeeds.
+        # Removing .next first can take a healthy app offline permanently when
+        # `next build` fails halfway through (missing env/dependency, OOM,
+        # TypeScript error, etc.).
+        local previous_next=""
         if [ -d ".next" ]; then
-            echo "Cleaning .next cache..."
-            run_pm2 "$pm2_name" rm -rf .next
+            previous_next=".next.deploy-backup.$$"
+            echo "Saving previous .next build..."
+            mv .next "$previous_next" || { fail "Could not save previous .next build"; return 1; }
         fi
 
-        run_pm2 "$pm2_name" npm run build || { fail "Build failed"; return 1; }
+        if ! run_pm2 "$pm2_name" npm run build; then
+            fail "Build failed"
+            # A failed Next build may leave a partial .next directory behind.
+            rm -rf .next
+            if [ -n "$previous_next" ] && [ -d "$previous_next" ]; then
+                mv "$previous_next" .next
+                fix_node_app_permissions "$sysuser" "$DOMAIN_PATH"
+                warn "Previous .next build restored; the running app was left untouched."
+            fi
+            return 1
+        fi
+
+        # The new build is valid; the old one is no longer needed.
+        [ -n "$previous_next" ] && rm -rf "$previous_next"
 
         # Next.js standalone: copy public + static into standalone
         if [ -d ".next/standalone" ]; then

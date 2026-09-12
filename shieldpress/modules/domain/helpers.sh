@@ -899,9 +899,13 @@ server {
     send_timeout 300s;
     keepalive_timeout 65s;
 
+    # Next.js document responses must not be cached across deployments. A
+    # cached HTML document can reference a chunk from an older .next build.
     location / {
         proxy_pass http://127.0.0.1:${NODE_APP_PORT};
         proxy_http_version 1.1;
+        proxy_hide_header Cache-Control;
+        add_header Cache-Control "no-store, max-age=0" always;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host \$host;
@@ -920,6 +924,18 @@ server {
         proxy_request_buffering off;
         proxy_redirect off;
         proxy_max_temp_file_size 0;
+    }
+
+    # Build-hashed Next.js assets are safe to cache for a long time.
+    location ^~ /_next/static/ {
+        proxy_pass http://127.0.0.1:${NODE_APP_PORT};
+        proxy_http_version 1.1;
+        proxy_hide_header Cache-Control;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     location ~ /\.(?!well-known).* {
