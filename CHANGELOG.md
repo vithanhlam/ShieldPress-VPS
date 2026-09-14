@@ -1,5 +1,16 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.41 — 2026-09-14 — WordPress recovery and cache health checks
+
+- Recovery probes now bypass FastCGI cache, so cached 200/500 responses cannot
+  hide a broken WordPress request.
+- Recent PHP fatal and memory exhaustion errors now trigger a cooldown-protected
+  PHP-FPM restart after service/socket diagnostics.
+- Incomplete Wordfence updates are detected and the broken plugin is safely
+  deactivated so the site can recover without deleting its files.
+- Generated and repaired PHP-FPM pools allow access to their own Nginx cache
+  directory, preventing false `open_basedir` warnings during cache purges.
+
 ## v1.3.39 — 2026-09-12 — Next.js deployment and cache reliability
 
 - Failed Next.js builds now restore the previous `.next` build instead of

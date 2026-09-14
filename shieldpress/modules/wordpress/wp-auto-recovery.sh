@@ -247,16 +247,18 @@ set_cooldown(){
 
 check_site_http(){
     local domain="$1"
+    # Always bypass FastCGI cache. A cached 200/500 is not a health signal.
+    local probe="shieldpress_health=$(date +%s%N)"
     local code=$(curl -s -o /dev/null -w "%{http_code}" \
         --connect-timeout 5 --max-time 10 \
         -H "User-Agent: ShieldPress-Recovery/1.0" \
-        "https://${domain}/" 2>/dev/null)
+        "https://${domain}/?${probe}" 2>/dev/null)
 
     # Fallback HTTP if HTTPS connection fails entirely
     [ "$code" = "000" ] && code=$(curl -s -o /dev/null -w "%{http_code}" \
         --connect-timeout 5 --max-time 10 \
         -H "User-Agent: ShieldPress-Recovery/1.0" \
-        "http://${domain}/" 2>/dev/null)
+        "http://${domain}/?${probe}" 2>/dev/null)
 
     echo "$code"
 }
@@ -269,13 +271,14 @@ check_site_http(){
 # thêm ~20KB đầu nội dung trang để bắt các dấu hiệu lỗi phổ biến.
 check_site_body_error(){
     local domain="$1"
+    local probe="shieldpress_health=$(date +%s%N)"
     local body
     body=$(curl -s --connect-timeout 5 --max-time 10 -r 0-20000 \
         -H "User-Agent: ShieldPress-Recovery/1.0" \
-        "https://${domain}/" 2>/dev/null)
+        "https://${domain}/?${probe}" 2>/dev/null)
     [ -z "$body" ] && body=$(curl -s --connect-timeout 5 --max-time 10 -r 0-20000 \
         -H "User-Agent: ShieldPress-Recovery/1.0" \
-        "http://${domain}/" 2>/dev/null)
+        "http://${domain}/?${probe}" 2>/dev/null)
 
     echo "$body" | grep -qiE \
         'There has been a critical error on this website|Error establishing a database connection|This site is experiencing technical difficulties|<b>Fatal error</b>:|<b>Parse error</b>:|Fatal error:.*on line|Parse error:.*on line'
@@ -287,6 +290,49 @@ is_server_error(){
 
 is_healthy(){
     [[ "$1" =~ ^(200|301|302|304)$ ]]
+}
+
+# A healthy PHP-FPM socket does not mean the worker can serve WordPress. In
+# particular, a fatal error or a poisoned OPcache can survive while the socket
+# remains present. Restart only when the domain log confirms a recent PHP
+# fatal, and keep the normal per-domain cooldown as a safety brake.
+has_recent_php_fatal(){
+    local domain="$1"
+    local log_file="$DOMAINS_ROOT/$(domain_to_clean "$domain")/logs/error.log"
+    local since
+    [ -f "$log_file" ] || return 1
+    since=$(date -d '10 minutes ago' '+%Y/%m/%d %H:%M:%S')
+    awk -v since="$since" 'substr($0, 1, 19) >= since' "$log_file" 2>/dev/null | grep -qE \
+        'PHP Fatal error:|Allowed memory size .* exhausted|Failed opening required|Parse error:'
+}
+
+# An interrupted Wordfence update can leave wordfence.php present while its
+# WAF vendor files are missing. WordPress then fatals before WP-CLI can load
+# normally. Deactivate only this broken plugin so the site can recover; the
+# plugin remains on disk for a clean reinstall/repair instead of deleting data.
+disable_broken_wordfence(){
+    local docroot="$1"
+    local domain="$2"
+    local wf="$docroot/wp-content/plugins/wordfence"
+    local php_ver="$3"
+    local php_short=$(echo "$php_ver" | tr -d '.')
+    local php_bin="/opt/remi/php${php_short}/root/usr/bin/php"
+    local clean=$(domain_to_clean "$domain")
+    local sys_user=$(grep "^SYSTEM_USER=" "$DOMAINS_ROOT/$clean/config/domain.env" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]')
+    [ -z "$sys_user" ] && sys_user="$clean"
+
+    [ -f "$wf/wordfence.php" ] || return 0
+    [ -f "$wf/vendor/wordfence/wf-waf/src/init.php" ] && \
+    [ -f "$wf/vendor/wordfence/wf-waf/src/lib/waf.php" ] && \
+    [ -f "$wf/vendor/wordfence/wf-waf/src/lib/storage/file.php" ] && return 0
+    {
+        log "[$domain] Wordfence installation incomplete; deactivating broken plugin"
+        if [ -x "$php_bin" ] && [ -f /usr/local/bin/wp ]; then
+            sudo -u "$sys_user" "$php_bin" /usr/local/bin/wp plugin deactivate wordfence \
+                --skip-plugins=wordfence --skip-themes --path="$docroot" --quiet 2>/dev/null && \
+                log "[$domain] Wordfence deactivated safely; reinstall required"
+        fi
+    }
 }
 
 # ─── Telegram Notification ────────────────────────────────
@@ -317,6 +363,8 @@ recover_domain(){
 
     log "[$domain] HTTP $http_code detected — starting recovery (PHP $php_ver)"
 
+    disable_broken_wordfence "$docroot" "$domain" "$php_ver"
+
     # Step 1: Diagnose PHP-FPM and this domain's socket. Restarting this shared
     # service interrupts requests for every site using the same PHP version.
     if [ -z "$service" ]; then
@@ -329,6 +377,9 @@ recover_domain(){
         elif [ ! -S "$socket" ]; then
             log "[$domain] PHP-FPM domain socket is missing; restart is required: $socket"
             restart_php_fpm "$php_ver" && fpm_restarted="yes(socket-missing)"
+        elif has_recent_php_fatal "$domain"; then
+            log "[$domain] Recent PHP fatal confirmed; restarting PHP-FPM to clear stuck workers/opcache"
+            restart_php_fpm "$php_ver" && fpm_restarted="yes(recent-fatal)"
         else
             log "[$domain] PHP-FPM and domain socket are healthy; shared service restart skipped"
         fi

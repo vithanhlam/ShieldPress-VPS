@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.39`
+**Current version:** `1.3.41`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -129,6 +129,13 @@ Each GitHub release publishes `shieldpress.tar.gz`, `shieldpress.sha256`, and
 before installing it; they refuse to continue when the checksum is missing or
 does not match. The MD5 file is included for compatibility and quick manual
 checks; SHA-256 remains the authoritative integrity check.
+
+WordPress sites with ShieldPress recovery enabled are checked approximately
+every 60 seconds with a cache-bypassing probe. If a recent PHP fatal error,
+memory exhaustion, or incomplete Wordfence update is detected, ShieldPress
+purges that domain's cache and can restart its PHP-FPM service within the
+cooldown policy. This keeps a stale cached 200 response from hiding a broken
+request after an SFTP code change.
 
 To publish the install command on your own domain, serve this repository's
 root `install.sh` at that URL. The script downloads everything else from GitHub:

@@ -117,6 +117,7 @@ apply_open_basedir_all(){
         fi
 
         PHP_SHORT=$(echo "$PHP_VER" | tr -d '.')
+        CLEAN_DOMAIN=$(basename "$d")
 
         # Pool file tên theo SYSTEM_USER (domain-specific pool)
         POOL_FILE="/etc/opt/remi/php${PHP_SHORT}/php-fpm.d/${SYSUSER}.conf"
@@ -128,8 +129,8 @@ apply_open_basedir_all(){
 
         if grep -q "open_basedir" "$POOL_FILE"; then
             # Nếu đang dùng /tmp chung (cũ) → cập nhật sang per-domain tmp
-            if grep -q "open_basedir.*:/tmp" "$POOL_FILE" || grep -q "open_basedir.* /tmp" "$POOL_FILE"; then
-                sed -i "s|php_admin_value\[open_basedir\].*|php_admin_value[open_basedir] = $d:$d/tmp:/usr/share/php|" "$POOL_FILE"
+            if grep -q "open_basedir.*:/tmp" "$POOL_FILE" || grep -q "open_basedir.* /tmp" "$POOL_FILE" || ! grep -q "/var/cache/nginx/$CLEAN_DOMAIN" "$POOL_FILE"; then
+                sed -i "s|php_admin_value\[open_basedir\].*|php_admin_value[open_basedir] = $d:$d/tmp:/usr/share/php:/var/cache/nginx/$CLEAN_DOMAIN|" "$POOL_FILE"
                 systemctl restart php${PHP_SHORT}-php-fpm 2>/dev/null && \
                     ok "$DOMAIN: open_basedir updated (removed shared /tmp)" || \
                     warn "$DOMAIN: PHP-FPM restart failed"
@@ -147,7 +148,7 @@ apply_open_basedir_all(){
         cat >> "$POOL_FILE" <<EOF
 
 ; Isolation - added by ShieldPress
-php_admin_value[open_basedir] = $d:$d/tmp:/usr/share/php
+php_admin_value[open_basedir] = $d:$d/tmp:/usr/share/php:/var/cache/nginx/$CLEAN_DOMAIN
 php_admin_value[disable_functions] = exec,passthru,shell_exec,system,proc_open,popen,pcntl_exec
 EOF
 

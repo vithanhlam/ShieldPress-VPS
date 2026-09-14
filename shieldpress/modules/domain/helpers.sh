@@ -588,7 +588,7 @@ php_admin_value[max_input_time]      = 300
 php_admin_value[realpath_cache_size] = 4096K
 php_admin_value[realpath_cache_ttl]  = 600
 
-php_admin_value[open_basedir]        = $DOMAIN_PATH:$DOMAIN_PATH/tmp:/usr/share/php
+php_admin_value[open_basedir]        = $DOMAIN_PATH:$DOMAIN_PATH/tmp:/usr/share/php:/var/cache/nginx/${CLEAN_DOMAIN}
 php_admin_value[upload_tmp_dir]      = $DOMAIN_PATH/tmp
 php_admin_value[sys_temp_dir]        = $DOMAIN_PATH/tmp
 php_admin_value[temp_dir]            = $DOMAIN_PATH/tmp
