@@ -1,5 +1,16 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.42 — 2026-09-15 — Node.js build permission reliability
+
+- Node.js Deploy / Build now runs npm, Prisma and Next.js with the configured
+  `SYSTEM_USER` instead of using the PM2 process name as a Linux user.
+- Fresh `.next` output directories are created and recursively assigned to the
+  website user before Turbopack builds, preventing stale root-owned routes and
+  `.next/trace` files from causing `EACCES` failures.
+- PM2 build environments now set `HOME`, `USER` and `LOGNAME` consistently for
+  the website user, while release updates continue to publish SHA-256 and MD5
+  checksum assets.
+
 ## v1.3.41 — 2026-09-14 — WordPress recovery and cache health checks
 
 - Recovery probes now bypass FastCGI cache, so cached 200/500 responses cannot

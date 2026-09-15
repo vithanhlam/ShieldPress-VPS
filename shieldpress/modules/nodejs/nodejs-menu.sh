@@ -90,7 +90,7 @@ run_pm2(){
     # Keep npm's cache explicit as well. Without this, npm can discover a
     # root-owned cache left by an older root PM2/npm deployment and fail with
     # EACCES before it can even write its log.
-    runuser -u "$user" -- env HOME="$home" PM2_HOME="$pm2_home" \
+    runuser -u "$user" -- env HOME="$home" USER="$user" LOGNAME="$user" PM2_HOME="$pm2_home" \
         NPM_CONFIG_CACHE="$npm_cache" "$@"
 }
 
@@ -447,8 +447,6 @@ deploy_node_app(){
         return
     fi
 
-    local pm2_name="$CLEAN_DOMAIN"
-
     select_node_deploy_mode || return
     confirm_action "This will deploy $DOMAIN." || return
 
@@ -463,6 +461,7 @@ deploy_node_app(){
     local sysuser
     sysuser=$(grep "^SYSTEM_USER=" "$ENV_FILE" | cut -d= -f2)
     sysuser="${sysuser:-$CLEAN_DOMAIN}"
+    local pm2_name="$CLEAN_DOMAIN"
     chown root:root "$DOMAIN_PATH"
     chmod 755 "$DOMAIN_PATH"
     [ -d "$DOMAIN_PATH/config" ] && chown -R "$sysuser:$sysuser" "$DOMAIN_PATH/config" && chmod 750 "$DOMAIN_PATH/config"
@@ -479,9 +478,9 @@ deploy_node_app(){
         echo "Step $step: Installing dependencies..."
         prepare_node_dependency_install "$sysuser" "$DOMAIN_PATH"
         if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
-            run_pm2 "$pm2_name" npm ci --include=dev || { fail "npm ci failed"; return 1; }
+            run_pm2 "$sysuser" npm ci --include=dev || { fail "npm ci failed"; return 1; }
         else
-            run_pm2 "$pm2_name" npm install --include=dev || { fail "npm install failed"; return 1; }
+            run_pm2 "$sysuser" npm install --include=dev || { fail "npm install failed"; return 1; }
         fi
         ok "Dependencies installed"
         ((step++))
@@ -490,15 +489,15 @@ deploy_node_app(){
         if grep -q '"prisma"' package.json 2>/dev/null; then
             echo ""
             echo "Step $step: Running Prisma DB push..."
-            run_pm2 "$pm2_name" npx prisma db push || { warn "Prisma db push failed (non-fatal)"; }
-            run_pm2 "$pm2_name" npx prisma generate || true
+            run_pm2 "$sysuser" npx prisma db push || { warn "Prisma db push failed (non-fatal)"; }
+            run_pm2 "$sysuser" npx prisma generate || true
             ok "Prisma schema synced"
             ((step++))
         fi
     fi
 
     # Build if build script exists
-    if run_pm2 "$pm2_name" npm run 2>/dev/null | grep -q " build"; then
+    if run_pm2 "$sysuser" npm run 2>/dev/null | grep -q " build"; then
         echo ""
         echo "Step $step: Building for production..."
 
@@ -513,7 +512,20 @@ deploy_node_app(){
             mv .next "$previous_next" || { fail "Could not save previous .next build"; return 1; }
         fi
 
-        if ! run_pm2 "$pm2_name" npm run build; then
+        # Always give Turbopack a fresh, user-owned output root. A stale
+        # `.next/server/app` created by an earlier root build can survive
+        # partial cleanup and make Turbopack fail with EACCES on one route.
+        mkdir -p .next/server/app || {
+            fail "Could not prepare .next for $sysuser"
+            return 1
+        }
+        chown -R "$sysuser:$sysuser" .next || {
+            fail "Could not assign .next to $sysuser"
+            return 1
+        }
+
+        echo "Running build as Linux user: $sysuser"
+        if ! run_pm2 "$sysuser" npm run build; then
             fail "Build failed"
             # A failed Next build may leave a partial .next directory behind.
             rm -rf .next
