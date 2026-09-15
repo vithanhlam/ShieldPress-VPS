@@ -1,5 +1,17 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.43 — 2026-09-15 — Reliable Next.js production builds
+
+- Next.js builds now use Webpack on Node.js deployments for predictable
+  production compilation on small VPSes.
+- Added a 15-minute build timeout with graceful termination and a 30-second
+  forced cleanup window.
+- Stale `.next/lock` files are removed only when no live Next.js build is
+  detected, preventing repeated `Another next build process is already
+  running` failures after interrupted deploys.
+- Full deploy and first-time Node.js domain setup use the same protected build
+  flow while preserving rollback to the previous `.next` output on failure.
+
 ## v1.3.42 — 2026-09-15 — Node.js build permission reliability
 
 - Node.js Deploy / Build now runs npm, Prisma and Next.js with the configured

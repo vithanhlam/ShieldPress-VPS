@@ -94,6 +94,37 @@ run_pm2(){
         NPM_CONFIG_CACHE="$npm_cache" "$@"
 }
 
+# Next 16 defaults to Turbopack for production builds. On small VPSes a
+# Turbopack build can stall while compiling, and an interrupted SSH/menu
+# session can leave .next/lock behind. Keep the build bounded and use the
+# more predictable webpack backend for Next applications.
+run_node_build(){
+    local user="$1"
+    local app_root="$2"
+    local timeout_value="${SHIELDPRESS_BUILD_TIMEOUT:-15m}"
+    local -a build_cmd=(npm run build)
+
+    if grep -Eq '"next"[[:space:]]*:' "$app_root/package.json"; then
+        if ! grep -Eq '"build"[[:space:]]*:[^,}]*webpack' "$app_root/package.json"; then
+            build_cmd+=(-- --webpack)
+        fi
+    fi
+
+    run_pm2 "$user" timeout --signal=TERM --kill-after=30s "$timeout_value" \
+        "${build_cmd[@]}"
+}
+
+cleanup_stale_next_lock(){
+    local app_root="$1"
+    [ -f "$app_root/.next/lock" ] || return 0
+
+    # Never remove a lock belonging to a live Next build.
+    if ! pgrep -af "$app_root/.next/build" >/dev/null 2>&1; then
+        rm -f "$app_root/.next/lock"
+        warn "Removed stale Next.js build lock"
+    fi
+}
+
 prepare_node_dependency_install(){
     local user="$1"
     local domain_path="$2"
@@ -501,6 +532,8 @@ deploy_node_app(){
         echo ""
         echo "Step $step: Building for production..."
 
+        cleanup_stale_next_lock "$DOMAIN_PATH/public_html"
+
         # Keep the previous production build until the new build succeeds.
         # Removing .next first can take a healthy app offline permanently when
         # `next build` fails halfway through (missing env/dependency, OOM,
@@ -525,7 +558,7 @@ deploy_node_app(){
         }
 
         echo "Running build as Linux user: $sysuser"
-        if ! run_pm2 "$sysuser" npm run build; then
+        if ! run_node_build "$sysuser" "$DOMAIN_PATH/public_html"; then
             fail "Build failed"
             # A failed Next build may leave a partial .next directory behind.
             rm -rf .next

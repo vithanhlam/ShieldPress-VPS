@@ -1017,7 +1017,15 @@ start_nodejs_service(){
     if [ -f package.json ]; then
         runuser -u "$CLEAN_DOMAIN" -- env HOME="$DOMAIN_PATH" PM2_HOME="$pm2_home" npm install || return 1
         if npm run 2>/dev/null | grep -q " build"; then
-            runuser -u "$CLEAN_DOMAIN" -- env HOME="$DOMAIN_PATH" PM2_HOME="$pm2_home" npm run build || return 1
+            local -a build_cmd=(npm run build)
+            if grep -Eq '"next"[[:space:]]*:' "$app_root/package.json" && \
+               ! grep -Eq '"build"[[:space:]]*:[^,}]*webpack' "$app_root/package.json"; then
+                build_cmd+=(-- --webpack)
+            fi
+            timeout --signal=TERM --kill-after=30s \
+                "${SHIELDPRESS_BUILD_TIMEOUT:-15m}" \
+                runuser -u "$CLEAN_DOMAIN" -- env HOME="$DOMAIN_PATH" \
+                PM2_HOME="$pm2_home" "${build_cmd[@]}" || return 1
         fi
         chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$app_root"
     fi
