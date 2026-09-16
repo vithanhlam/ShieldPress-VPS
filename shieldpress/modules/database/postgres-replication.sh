@@ -62,8 +62,34 @@ WantedBy=timers.target
 EOF
     systemctl daemon-reload; systemctl enable --now "${HEALTH_SERVICE}.timer" >/dev/null 2>&1
 }
+configure_s3(){
+    local s3_endpoint s3_bucket s3_region s3_key s3_secret s3_path config escaped_path
+    cd /tmp || { echo "Cannot change to /tmp."; return 1; }
+    config=/etc/pgbackrest/pgbackrest.conf
+    echo "Configure pgBackRest S3 repository for off-site WAL/PITR."
+    read -r -p "S3 endpoint (without https://): " s3_endpoint
+    read -r -p "S3 bucket: " s3_bucket
+    read -r -p "S3 region [us-east-1]: " s3_region; s3_region="${s3_region:-us-east-1}"
+    read -r -p "S3 key: " s3_key
+    read -r -s -p "S3 secret: " s3_secret; echo
+    read -r -p "pgBackRest S3 path [shieldpress/postgresql]: " s3_path; s3_path="${s3_path:-shieldpress/postgresql}"
+    for value in "$s3_endpoint" "$s3_bucket" "$s3_region" "$s3_key" "$s3_path"; do
+        valid_token "$value" || { echo "Invalid S3 value."; return 1; }
+    done
+    mkdir -p /etc/pgbackrest
+    touch "$config"
+    if ! grep -q '^\[global\]$' "$config"; then printf '\n[global]\n' >> "$config"; fi
+    if grep -q '^repo2-type=s3$' "$config"; then
+        echo "An S3 repository is already configured in $config."
+        return 0
+    fi
+    escaped_path=${s3_path//\//\\/}
+    sed -i "/^\[global\]$/a repo2-type=s3\nrepo2-path=\/$escaped_path\nrepo2-s3-bucket=$s3_bucket\nrepo2-s3-endpoint=$s3_endpoint\nrepo2-s3-region=$s3_region\nrepo2-s3-key=$s3_key\nrepo2-s3-key-secret=$s3_secret\nrepo2-retention-full=7" "$config"
+    chmod 600 "$config"; chown postgres:postgres "$config"
+    echo "pgBackRest S3 repository configured."
+}
 configure_primary(){
-    local standby_host repl_user repl_pass slot bind_ip port hba s3_endpoint s3_bucket s3_region s3_key s3_secret s3_path confirm
+    local standby_host repl_user repl_pass slot bind_ip port hba
     [ -f "$PGDATA/PG_VERSION" ] || { echo "PostgreSQL data directory not found: $PGDATA"; return 1; }
     cd /tmp || { echo "Cannot change to /tmp."; return 1; }
     show_context
@@ -75,14 +101,10 @@ configure_primary(){
     read -r -s -p "Replication role password: " repl_pass; echo; [ -n "$repl_pass" ] || return 1
     read -r -p "Replication slot [shieldpress_standby]: " slot; slot="${slot:-shieldpress_standby}"; valid_token "$slot" || return 1
     read -r -p "Primary bind address [0.0.0.0]: " bind_ip; bind_ip="${bind_ip:-0.0.0.0}"; read -r -p "PostgreSQL port [5432]: " port; port="${port:-5432}"; [[ "$port" =~ ^[0-9]+$ ]] || return 1
-    echo "Configure pgBackRest S3 repository (required for off-site WAL/PITR)."; read -r -p "S3 endpoint (without https://): " s3_endpoint; read -r -p "S3 bucket: " s3_bucket; read -r -p "S3 region [us-east-1]: " s3_region; s3_region="${s3_region:-us-east-1}"; read -r -p "S3 key: " s3_key; read -r -s -p "S3 secret: " s3_secret; echo; read -r -p "pgBackRest S3 path [shieldpress/postgresql]: " s3_path; s3_path="${s3_path:-shieldpress/postgresql}"
-    for value in "$s3_endpoint" "$s3_bucket" "$s3_region" "$s3_key" "$s3_path"; do valid_token "$value" || { echo "Invalid S3 value."; return 1; }; done
     runuser -u postgres -- psql -v ON_ERROR_STOP=1 --set=role="$(sql_lit "$repl_user")" --set=pw="$(sql_lit "$repl_pass")" -c "DO \$\$BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'role') THEN CREATE ROLE \"$(sql_ident "$repl_user")\" LOGIN REPLICATION PASSWORD :'pw'; ELSE ALTER ROLE \"$(sql_ident "$repl_user")\" WITH LOGIN REPLICATION PASSWORD :'pw'; END IF; END\$\$;" || return 1
     runuser -u postgres -- psql -v ON_ERROR_STOP=1 -c "SELECT pg_create_physical_replication_slot('$(sql_lit "$slot")') WHERE NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name='$(sql_lit "$slot")');" >/dev/null || return 1
     write_pg_setting wal_level "'replica'"; write_pg_setting max_wal_senders 10; write_pg_setting max_replication_slots 10; write_pg_setting hot_standby on; write_pg_setting listen_addresses "'$bind_ip'"
     hba="$PGDATA/pg_hba.conf"; if ! grep -Fq "SHIELDPRESS REPLICATION $slot" "$hba"; then printf '\n# SHIELDPRESS REPLICATION %s\nhost replication %s %s/32 scram-sha-256\n' "$slot" "$repl_user" "$standby_host" >> "$hba"; fi; if command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld; then firewall-cmd --permanent --add-rich-rule="rule family=ipv4 source address=${standby_host}/32 port port=${port} protocol=tcp accept" >/dev/null 2>&1 || true; firewall-cmd --reload >/dev/null 2>&1 || true; fi; chown postgres:postgres "$PGDATA/postgresql.conf" "$hba"; restorecon "$PGDATA/postgresql.conf" "$hba" >/dev/null 2>&1 || true
-    mkdir -p /etc/pgbackrest; if ! grep -q '^repo2-type=s3' /etc/pgbackrest/pgbackrest.conf 2>/dev/null; then sed -i "/^\[global\]$/a repo2-type=s3\nrepo2-path=\/$s3_path\nrepo2-s3-bucket=$s3_bucket\nrepo2-s3-endpoint=$s3_endpoint\nrepo2-s3-region=$s3_region\nrepo2-s3-key=$s3_key\nrepo2-s3-key-secret=$s3_secret\nrepo2-retention-full=7" /etc/pgbackrest/pgbackrest.conf
-        chmod 600 /etc/pgbackrest/pgbackrest.conf; chown postgres:postgres /etc/pgbackrest/pgbackrest.conf; fi
     printf 'role=primary\nprimary_address=%s\nprimary_port=%s\nstandby_address=%s\nreplication_user=%s\nreplication_slot=%s\npgdata=%s\n' "$bind_ip" "$port" "$standby_host" "$repl_user" "$slot" "$PGDATA" > "$CONF"; chmod 600 "$CONF"; systemctl restart postgresql || return 1; install_health_timer; echo "Primary configured. Run pgBackRest full backup before initializing Standby."; echo "sudo -u postgres pgbackrest --stanza=<stanza> backup --type=full"
 }
 configure_standby(){
@@ -158,6 +180,7 @@ interactive_menu(){
         echo "  4) Promote Standby to Primary [DANGER]"
         echo "  5) Run pgBackRest full backup"
         echo "  6) Test isolated restore"
+        echo "  7) Configure pgBackRest S3 [optional]"
         echo "  0) Back"
         echo "------------------------------------------------------------"
         read -r -p "Select: " c
@@ -168,6 +191,7 @@ interactive_menu(){
             4) promote ;;
             5) backup_full ;;
             6) restore_check ;;
+            7) configure_s3 ;;
             0) break ;;
             *) echo "Invalid selection." ;;
         esac
@@ -182,5 +206,6 @@ case "${1:-}" in
     --promote) promote ;;
     --backup-full) backup_full ;;
     --restore-check) restore_check ;;
+    --configure-s3) configure_s3 ;;
     *) interactive_menu ;;
 esac

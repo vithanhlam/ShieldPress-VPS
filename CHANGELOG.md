@@ -1,5 +1,12 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.45 — 2026-09-16 — Separate optional pgBackRest S3 setup
+
+- PostgreSQL Primary setup no longer requires S3 credentials; streaming
+  replication can now be configured independently.
+- Added a separate `Configure pgBackRest S3` menu action and
+  `--configure-s3` command for optional off-site WAL/PITR configuration.
+
 ## v1.3.44 — 2026-09-16 — PostgreSQL standby setup warning
 
 - Fixed the PostgreSQL streaming replication wizard warning caused by

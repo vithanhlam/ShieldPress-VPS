@@ -34,10 +34,9 @@ Chỉ mở cổng PostgreSQL từ IP của Standby đến Primary. Không dùng 
 | Replication role | `shieldpress_repl` |
 | Replication slot | `shieldpress_standby` |
 | Primary bind address | `0.0.0.0` hoặc IP private Primary |
-| S3 path | `shieldpress/postgresql` |
 | WAL retention | `7` full backups |
 
-Chỉ nhập thủ công IP hai máy, mật khẩu replication và thông tin S3/remote. Các mục có giá trị mặc định thì nhấn Enter.
+Chỉ nhập thủ công IP hai máy và mật khẩu replication. Các mục có giá trị mặc định thì nhấn Enter.
 
 ## 3. Cấu hình Server chính (Primary)
 
@@ -60,12 +59,25 @@ Wizard hiển thị hostname, role và `PGDATA`. Kiểm tra đúng máy rồi:
 5. Replication slot: nhấn Enter để dùng `shieldpress_standby`.
 6. Bind address: dùng `0.0.0.0` hoặc IP private Primary.
 7. Port: nhấn Enter để dùng `5432`.
-8. Nhập thông tin S3 theo nhà cung cấp.
-9. S3 path: nhấn Enter để dùng `shieldpress/postgresql`.
+8. Chờ thông báo `Primary configured`.
+
+Streaming replication không yêu cầu S3. Nếu cần WAL off-site/PITR, vào menu
+`Configure pgBackRest S3` sau khi Primary đã cấu hình xong.
 
 ShieldPress tạo role, replication slot, cấu hình `pg_hba.conf`, `wal_level=replica` và health check mỗi phút.
 
-## 4. Cấu hình Server phụ (Standby)
+## 4. Cấu hình pgBackRest S3 (tùy chọn)
+
+Trên Primary, trong menu Streaming Replication chọn:
+
+```text
+7) Configure pgBackRest S3 [optional]
+```
+
+Chỉ nhập các thông tin S3 khi cần lưu WAL/backup off-site và PITR. Cấu hình
+này độc lập với streaming replication; bỏ qua mục này không ngăn Standby đồng bộ.
+
+## 5. Cấu hình Server phụ (Standby)
 
 Trên Server phụ:
 
@@ -89,7 +101,7 @@ Nhập:
 
 ShieldPress dùng `pg_basebackup -R -X stream` để lấy bản sao ban đầu từ Primary.
 
-## 5. Bảo vệ dữ liệu
+## 6. Bảo vệ dữ liệu
 
 Trên Server phụ, ShieldPress đổi tên data directory cũ thành:
 
@@ -101,7 +113,7 @@ Nếu kết nối hoặc `pg_basebackup` thất bại, dữ liệu cũ được 
 
 Không chạy `Initialize Standby` trên Server chính. Không gõ `REPLACE` nếu chưa kiểm tra hostname và role trên màn hình.
 
-## 6. Kiểm tra sau khi cấu hình
+## 7. Kiểm tra sau khi cấu hình
 
 ### Trên Primary
 
@@ -140,7 +152,7 @@ sudo systemctl status shieldpress-postgresql-replication-health.timer
 sudo tail -50 /var/log/shieldpress/postgresql-replication-health.log
 ```
 
-## 7. Các mục trong menu [10]
+## 8. Các mục trong menu [10]
 
 | Mục | Chức năng |
 |---|---|
@@ -151,7 +163,7 @@ sudo tail -50 /var/log/shieldpress/postgresql-replication-health.log
 
 Không chọn Promote trong tình huống bình thường. Trước khi promote, phải cô lập hoặc dừng Primary cũ để tránh split-brain.
 
-## 8. Khi Primary bị lỗi
+## 9. Khi Primary bị lỗi
 
 1. Xác nhận Primary đã dừng hoặc bị cô lập mạng.
 2. Trên Standby, kiểm tra `pg_is_in_recovery()` trả về `t`.
@@ -161,7 +173,7 @@ Không chọn Promote trong tình huống bình thường. Trước khi promote,
 
 Không kết nối lại Primary cũ cho đến khi đã xử lý vai trò để tránh hai máy cùng nhận ghi.
 
-## 9. Backup và bảo trì
+## 10. Backup và bảo trì
 
 - Giữ backup database tự động lúc 23h.
 - Standby không phải bản backup duy nhất.
@@ -169,4 +181,3 @@ Không kết nối lại Primary cũ cho đến khi đã xử lý vai trò để
 - Không xóa replication slot khi Standby còn sử dụng.
 - Nếu Standby tắt lâu, WAL có thể tích tụ trên Primary.
 - Định kỳ chạy pgBackRest full backup và isolated restore test.
-

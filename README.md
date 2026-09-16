@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.44`
+**Current version:** `1.3.45`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -413,8 +413,9 @@ PostgreSQL features:
 - PostgreSQL streaming replication is physical, asynchronous and slot-backed.
   Configure it from `Database → PostgreSQL Manager → Streaming Replication`.
   The Primary setup adds a restricted replication `pg_hba.conf` rule, creates a
-  physical slot, configures pgBackRest S3 repository settings and installs a
-  one-minute health timer. Standby setup uses `pg_basebackup -R -X stream` and
+  physical slot and installs a one-minute health timer. Optional pgBackRest S3
+  settings are configured separately from the Streaming Replication menu.
+  Standby setup uses `pg_basebackup -R -X stream` and
   refuses to replace the data directory without an explicit `REPLACE` answer.
   Promotion requires an explicit confirmation; fence the old Primary before
   reconnecting applications and move DNS/endpoint manually. Laravel is never
