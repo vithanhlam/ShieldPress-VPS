@@ -23,6 +23,7 @@ RESET="\e[0m"
 ok(){ echo -e "${GREEN}[OK]${RESET} $1"; }
 warn(){ echo -e "${YELLOW}[WARN]${RESET} $1"; }
 fail(){ echo -e "${RED}[FAIL]${RESET} $1"; }
+sql_lit(){ printf '%s' "$1" | sed "s/'/''/g"; }
 
 postgresql_ready(){
     command -v psql >/dev/null 2>&1 &&
@@ -102,29 +103,50 @@ install_postgresql_stack(){
 
 select_pg_database(){
     DB_CHOICES=()
-    local i=1
+    DB_OWNER_CHOICES=()
+    local i=1 db_rows db_name db_owner choice
 
     echo ""
     echo "PostgreSQL Databases:"
     echo "--------------------------------"
-    for meta in "$PG_DB_DIR"/*.env; do
-        [ -f "$meta" ] || continue
-        DB_NAME=$(grep "^DB_DATABASE=" "$meta" | cut -d= -f2)
-        echo "$i) $DB_NAME"
-        DB_CHOICES[$i]="$meta"
+    db_rows=$(cd /tmp && runuser -u postgres -- psql -F $'\t' -Atqc \
+        "SELECT datname, pg_get_userbyid(datdba)
+         FROM pg_database
+         WHERE NOT datistemplate
+         ORDER BY datname;" 2>/dev/null) || {
+        warn "Unable to read PostgreSQL databases"
+        return 1
+    }
+    [ -n "$db_rows" ] || { warn "No PostgreSQL database found"; return 1; }
+    while IFS=$'\t' read -r db_name db_owner; do
+        [ -n "$db_name" ] || continue
+        echo "$i) $db_name"
+        DB_CHOICES[$i]="$db_name"
+        DB_OWNER_CHOICES[$i]="$db_owner"
         ((i++))
-    done
-
-    [ $i -eq 1 ] && { warn "No tracked PostgreSQL DB found"; return 1; }
+    done <<< "$db_rows"
 
     read -p "Select: " choice
-    DB_META="${DB_CHOICES[$choice]}"
-    [ -n "$DB_META" ] || { fail "Invalid selection"; return 1; }
-
-    DB_NAME=$(grep "^DB_DATABASE=" "$DB_META" | cut -d= -f2)
-    DB_USER=$(grep "^DB_USERNAME=" "$DB_META" | cut -d= -f2)
-    DB_PASS=$(grep "^DB_PASSWORD=" "$DB_META" | cut -d= -f2)
+    DB_NAME="${DB_CHOICES[$choice]}"
+    [ -n "$DB_NAME" ] || { fail "Invalid selection"; return 1; }
+    DB_META="$PG_DB_DIR/${DB_NAME}.env"
+    if [ -f "$DB_META" ]; then
+        DB_TRACKED=1
+        DB_USER=$(grep "^DB_USERNAME=" "$DB_META" | cut -d= -f2)
+        DB_PASS=$(grep "^DB_PASSWORD=" "$DB_META" | cut -d= -f2)
+    else
+        DB_TRACKED=0
+        DB_USER="${DB_OWNER_CHOICES[$choice]}"
+        DB_PASS=""
+    fi
     return 0
+}
+
+require_tracked_database(){
+    [ "${DB_TRACKED:-0}" = 1 ] || {
+        fail "This database has no local ShieldPress metadata; this action requires a tracked database."
+        return 1
+    }
 }
 
 ensure_pg_backup_script(){
@@ -270,7 +292,46 @@ pg_view_db(){
     echo ""
     echo "Database info:"
     echo "--------------------------------"
-    cat "$DB_META"
+    local db_lit info
+    db_lit=$(sql_lit "$DB_NAME")
+    info=$(cd /tmp && runuser -u postgres -- psql -F $'\t' -Atqc \
+        "SELECT d.datname,
+                pg_get_userbyid(d.datdba),
+                pg_size_pretty(pg_database_size(d.datname)),
+                pg_encoding_to_char(d.encoding),
+                d.datcollate,
+                d.datctype,
+                d.datconnlimit,
+                d.datallowconn,
+                current_setting('server_version'),
+                current_setting('data_directory'),
+                pg_is_in_recovery()
+         FROM pg_database d
+         WHERE d.datname='$db_lit';" 2>/dev/null) || {
+        fail "Unable to read database information"
+        return 1
+    }
+    IFS=$'\t' read -r db_name db_owner db_size db_encoding db_collate db_ctype db_connlimit db_allowconn db_version db_data_dir db_recovery <<< "$info"
+    echo "Database        : $db_name"
+    echo "Owner           : $db_owner"
+    echo "Size            : $db_size"
+    echo "Encoding        : $db_encoding"
+    echo "Collation       : $db_collate"
+    echo "Character type  : $db_ctype"
+    echo "Connection limit: $db_connlimit"
+    echo "Allow connect   : $db_allowconn"
+    echo "Server version  : $db_version"
+    echo "Data directory  : $db_data_dir"
+    echo "Recovery mode   : $db_recovery"
+    if [ "${DB_TRACKED:-0}" = 1 ]; then
+        echo "Metadata        : tracked by ShieldPress"
+        echo "Username        : $DB_USER"
+        echo "Password        : available in local metadata"
+    else
+        echo "Metadata        : not tracked locally (replica database)"
+        echo "Username        : $db_owner (database owner)"
+        echo "Password        : cannot be read from PostgreSQL (only a hash is stored)"
+    fi
 }
 
 # =============================================
@@ -278,6 +339,7 @@ pg_view_db(){
 # =============================================
 pg_delete_db(){
     select_pg_database || return
+    require_tracked_database || return
     echo ""
     echo -e "\e[31mWARNING: This will permanently drop database '$DB_NAME' and user '$DB_USER'!\e[0m"
     read -p "Continue? (y/n): " CONFIRM
@@ -306,6 +368,7 @@ pg_change_pass(){
     fi
 
     select_pg_database || return
+    require_tracked_database || return
 
     NEW_PASS=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)
     echo ""
@@ -348,6 +411,7 @@ pg_import_db(){
     fi
 
     select_pg_database || return
+    require_tracked_database || return
 
     echo ""
     echo "Import SQL into PostgreSQL database: $DB_NAME"

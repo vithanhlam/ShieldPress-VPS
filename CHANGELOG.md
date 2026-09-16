@@ -1,5 +1,16 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.51 — 2026-09-16 — Direct database actions on replicas
+
+- PostgreSQL Manager database selection now reads directly from `pg_database`
+  for View, Backup and Auto Backup, including untracked physical-replica DBs.
+- View Database Info now shows database size, owner, encoding, collation,
+  connection limit, server version, data directory and recovery mode.
+- PostgreSQL plaintext passwords are never inferred from the server; local
+  metadata passwords are shown only when available.
+- Destructive or write-oriented actions still require local ShieldPress metadata
+  and should be performed on the Primary.
+
 ## v1.3.50 — 2026-09-16 — Direct PostgreSQL database listing
 
 - PostgreSQL Manager → Database List now reads directly from `pg_database`.

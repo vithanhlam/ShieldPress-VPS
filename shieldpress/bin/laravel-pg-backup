@@ -18,7 +18,9 @@ KEEP="${KEEP:-7}"
 [[ "$KEEP" =~ ^[0-9]+$ ]] && (( 10#$KEEP > 0 )) || { echo 'Invalid retention'; exit 1; }
 KEEP=$((10#$KEEP))
 DB_META="$DATA_DIR_LARAVEL_DB/${DB_NAME}.env"
-[ -f "$DB_META" ] || { echo "Database metadata not found: $DB_META"; exit 1; }
+# Metadata is optional for physical replicas: pg_dump runs as postgres and can
+# back up any database visible in pg_database. Tracked databases still retain
+# their normal metadata-backed behavior in PostgreSQL Manager.
 BACKUP_DIR="$BACKUP_GLOBAL_DIR/laravel-postgresql/$DB_NAME"
 mkdir -p "$BACKUP_DIR"
 exec 9>"$BACKUP_DIR/.backup.lock"
