@@ -1,5 +1,12 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.46 — 2026-09-16 — PostgreSQL replication role setup
+
+- Fixed Primary setup failing with a PostgreSQL syntax error while creating or
+  updating the replication role.
+- Role creation and password updates now use explicit `CREATE ROLE`/
+  `ALTER ROLE` paths instead of psql variables inside a dollar-quoted block.
+
 ## v1.3.45 — 2026-09-16 — Separate optional pgBackRest S3 setup
 
 - PostgreSQL Primary setup no longer requires S3 credentials; streaming

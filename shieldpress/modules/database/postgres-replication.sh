@@ -101,7 +101,11 @@ configure_primary(){
     read -r -s -p "Replication role password: " repl_pass; echo; [ -n "$repl_pass" ] || return 1
     read -r -p "Replication slot [shieldpress_standby]: " slot; slot="${slot:-shieldpress_standby}"; valid_token "$slot" || return 1
     read -r -p "Primary bind address [0.0.0.0]: " bind_ip; bind_ip="${bind_ip:-0.0.0.0}"; read -r -p "PostgreSQL port [5432]: " port; port="${port:-5432}"; [[ "$port" =~ ^[0-9]+$ ]] || return 1
-    runuser -u postgres -- psql -v ON_ERROR_STOP=1 --set=role="$(sql_lit "$repl_user")" --set=pw="$(sql_lit "$repl_pass")" -c "DO \$\$BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'role') THEN CREATE ROLE \"$(sql_ident "$repl_user")\" LOGIN REPLICATION PASSWORD :'pw'; ELSE ALTER ROLE \"$(sql_ident "$repl_user")\" WITH LOGIN REPLICATION PASSWORD :'pw'; END IF; END\$\$;" || return 1
+    if runuser -u postgres -- psql -Atqc "SELECT 1 FROM pg_roles WHERE rolname='$(sql_lit "$repl_user")';" | grep -qx 1; then
+        runuser -u postgres -- psql -v ON_ERROR_STOP=1 --set=pw="$repl_pass" -c "ALTER ROLE \"$(sql_ident "$repl_user")\" WITH LOGIN REPLICATION PASSWORD :'pw';" || return 1
+    else
+        runuser -u postgres -- psql -v ON_ERROR_STOP=1 --set=pw="$repl_pass" -c "CREATE ROLE \"$(sql_ident "$repl_user")\" LOGIN REPLICATION PASSWORD :'pw';" || return 1
+    fi
     runuser -u postgres -- psql -v ON_ERROR_STOP=1 -c "SELECT pg_create_physical_replication_slot('$(sql_lit "$slot")') WHERE NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name='$(sql_lit "$slot")');" >/dev/null || return 1
     write_pg_setting wal_level "'replica'"; write_pg_setting max_wal_senders 10; write_pg_setting max_replication_slots 10; write_pg_setting hot_standby on; write_pg_setting listen_addresses "'$bind_ip'"
     hba="$PGDATA/pg_hba.conf"; if ! grep -Fq "SHIELDPRESS REPLICATION $slot" "$hba"; then printf '\n# SHIELDPRESS REPLICATION %s\nhost replication %s %s/32 scram-sha-256\n' "$slot" "$repl_user" "$standby_host" >> "$hba"; fi; if command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld; then firewall-cmd --permanent --add-rich-rule="rule family=ipv4 source address=${standby_host}/32 port port=${port} protocol=tcp accept" >/dev/null 2>&1 || true; firewall-cmd --reload >/dev/null 2>&1 || true; fi; chown postgres:postgres "$PGDATA/postgresql.conf" "$hba"; restorecon "$PGDATA/postgresql.conf" "$hba" >/dev/null 2>&1 || true
