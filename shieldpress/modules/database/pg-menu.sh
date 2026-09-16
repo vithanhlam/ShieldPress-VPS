@@ -239,18 +239,27 @@ pg_list_db(){
     echo ""
     echo "PostgreSQL Databases:"
     echo "--------------------------------"
-    local found=0
-    for meta in "$PG_DB_DIR"/*.env; do
-        [ -f "$meta" ] || continue
-        found=1
-        DB_NAME=$(grep "^DB_DATABASE=" "$meta" | cut -d= -f2)
-        DB_USER=$(grep "^DB_USERNAME=" "$meta" | cut -d= -f2)
-        CREATED=$(grep "^CREATED=" "$meta" | cut -d= -f2-)
-        DB_SIZE=$(cd /tmp && runuser -u postgres -- psql -tAc "SELECT pg_size_pretty(pg_database_size('${DB_NAME}'));" 2>/dev/null || echo "N/A")
-        echo "$DB_NAME | $DB_SIZE | user $DB_USER | created $CREATED"
-    done
-
-    [ "$found" = "0" ] && warn "No tracked PostgreSQL DB found"
+    local db_rows db_name db_size meta db_user created
+    db_rows=$(cd /tmp && runuser -u postgres -- psql -F $'\t' -Atqc \
+        "SELECT datname, pg_size_pretty(pg_database_size(datname))
+         FROM pg_database
+         WHERE NOT datistemplate
+         ORDER BY datname;" 2>/dev/null) || {
+        warn "Unable to read PostgreSQL databases"
+        return 1
+    }
+    [ -n "$db_rows" ] || { warn "No PostgreSQL database found"; return 0; }
+    while IFS=$'\t' read -r db_name db_size; do
+        [ -n "$db_name" ] || continue
+        meta="$PG_DB_DIR/${db_name}.env"
+        if [ -f "$meta" ]; then
+            db_user=$(grep "^DB_USERNAME=" "$meta" | cut -d= -f2)
+            created=$(grep "^CREATED=" "$meta" | cut -d= -f2-)
+            echo "$db_name | $db_size | user $db_user | created $created"
+        else
+            echo "$db_name | $db_size | untracked database (read-only view)"
+        fi
+    done <<< "$db_rows"
 }
 
 # =============================================

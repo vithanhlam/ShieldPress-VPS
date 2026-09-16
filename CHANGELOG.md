@@ -1,5 +1,13 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.50 — 2026-09-16 — Direct PostgreSQL database listing
+
+- PostgreSQL Manager → Database List now reads directly from `pg_database`.
+- Standby servers now show replicated databases even when local ShieldPress
+  metadata files were not copied with the PostgreSQL data directory.
+- Locally tracked databases still show their configured user and creation time;
+  untracked databases are clearly marked read-only in the list.
+
 ## v1.3.49 — 2026-09-16 — Persistent Standby replication password
 
 - Standby setup now keeps a protected replication password file inside the
