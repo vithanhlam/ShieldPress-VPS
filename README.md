@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.51`
+**Current version:** `1.3.54`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -351,6 +351,8 @@ Source: `modules/nodejs/`
 - Backup Node.js apps.
 - Deploy Node.js apps with a build-only mode (including PM2 environment refresh) or a full mode with dependency and database commands.
 - Optionally create a source backup before deploy; backups exclude `uploads/`, `public/`, and `node_modules/`.
+- Automatically replaces a stale root-owned PM2 daemon for a domain before build/start, keeping Next.js processes and `.next` artifacts owned by the domain user.
+- SELinux migration checks cache existing file-context rules and avoid repeated add/modify warnings when updating servers with many domains.
 - Start/restart apps.
 - PM2 management: start, stop, status, logs.
 - View app logs.

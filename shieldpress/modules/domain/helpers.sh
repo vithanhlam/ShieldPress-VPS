@@ -1005,6 +1005,22 @@ start_nodejs_service(){
 
     mkdir -p "$pm2_home"
     chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$pm2_home"
+
+    # PM2 keeps a daemon per PM2_HOME. If an older install created this
+    # domain daemon as root, runuser below would still connect to it and the
+    # Next.js process would recreate root-owned .next files. Replace only the
+    # stale daemon for this domain before installing/building/starting.
+    local daemon_pid daemon_owner
+    daemon_pid=$(cat "$pm2_home/pm2.pid" 2>/dev/null || true)
+    if [[ "$daemon_pid" =~ ^[0-9]+$ ]] && kill -0 "$daemon_pid" 2>/dev/null; then
+        daemon_owner=$(ps -o user= -p "$daemon_pid" 2>/dev/null | tr -d '[:space:]')
+        if [ -n "$daemon_owner" ] && [ "$daemon_owner" != "$CLEAN_DOMAIN" ]; then
+            warn "Replacing PM2 daemon owned by $daemon_owner for $CLEAN_DOMAIN"
+            HOME="$DOMAIN_PATH" PM2_HOME="$pm2_home" pm2 kill >/dev/null 2>&1 || kill "$daemon_pid" 2>/dev/null || true
+            sleep 1
+        fi
+    fi
+
     if [ ! -s "$pm2_home/module_conf.json" ]; then
         printf '{}' > "$pm2_home/module_conf.json"
         chown "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$pm2_home/module_conf.json"

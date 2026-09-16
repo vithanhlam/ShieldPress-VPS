@@ -1,5 +1,30 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.54 — 2026-09-16 — Default confirmation for updates
+
+- The main dashboard and `shieldpress update` flow now show `Update now?
+  [Y/n]` and proceed when Enter is pressed without requiring `y`.
+- Explicit `n`/`N` still cancels the update.
+
+## v1.3.53 — 2026-09-16 — Faster idempotent SELinux migration
+
+- SELinux migration patches now read file-context rules once and only add or
+  modify rules when needed.
+- Removed repeated `already defined, modifying instead` warnings for existing
+  domain paths such as `wp-content`, `storage` and `bootstrap/cache`.
+- Reduced update time on VPS hosts with many websites by avoiding redundant
+  `semanage` operations; patch state is now stored outside the replaceable
+  `/opt/shieldpress` source tree so completed migrations are not rerun.
+
+## v1.3.52 — 2026-09-16 — Safe PM2 ownership during Node.js deploys
+
+- Node.js deploys now detect and replace a PM2 daemon for the selected domain
+  that was previously created by `root`.
+- Prevented root-owned Next.js processes from writing `.next` artifacts and
+  causing `EACCES` build failures for the domain user.
+- Applied the same PM2 ownership guard to first-time Node.js domain setup and
+  verified the repaired flow on the AlmaLinux 9.8 VPS test host.
+
 ## v1.3.51 — 2026-09-16 — Direct database actions on replicas
 
 - PostgreSQL Manager database selection now reads directly from `pg_database`

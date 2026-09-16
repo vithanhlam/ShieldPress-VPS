@@ -78,6 +78,22 @@ run_pm2(){
     local pm2_home="$home/.pm2"
     local npm_cache="$home/.npm"
 
+    # A PM2 daemon is not re-owned by `runuser`: if an older deployment
+    # created this PM2_HOME as root, every later PM2 command silently talks to
+    # that root daemon and starts the app as root.  Tear down only this
+    # domain's stale daemon so the next invocation creates it as the domain
+    # account.  This also prevents root Next.js processes from writing .next.
+    local daemon_pid daemon_owner
+    daemon_pid=$(cat "$pm2_home/pm2.pid" 2>/dev/null || true)
+    if [[ "$daemon_pid" =~ ^[0-9]+$ ]] && kill -0 "$daemon_pid" 2>/dev/null; then
+        daemon_owner=$(ps -o user= -p "$daemon_pid" 2>/dev/null | tr -d '[:space:]')
+        if [ -n "$daemon_owner" ] && [ "$daemon_owner" != "$user" ]; then
+            warn "Replacing PM2 daemon owned by $daemon_owner for $user"
+            HOME="$home" PM2_HOME="$pm2_home" pm2 kill >/dev/null 2>&1 || kill "$daemon_pid" 2>/dev/null || true
+            sleep 1
+        fi
+    fi
+
     # PM2 uses HOME/PM2_HOME for its daemon, sockets, logs and dump file.
     # Prepare these paths before every invocation so a first run can never
     # fall back to /root/.pm2.

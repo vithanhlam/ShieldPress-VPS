@@ -133,7 +133,8 @@ run_shieldpress_update(){
     echo "Installed : $SHIELDPRESS_VERSION"
     echo "Latest    : $REMOTE_SHIELDPRESS_VERSION"
     echo ""
-    read -p "Update now? (y/n): " CONFIRM
+    read -p "Update now? [Y/n]: " CONFIRM
+    CONFIRM="${CONFIRM:-Y}"
 
     if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
         echo "Update cancelled."

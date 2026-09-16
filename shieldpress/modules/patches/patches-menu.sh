@@ -15,7 +15,10 @@ BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
 source "$BASE_DIR/core/ui.sh" 2>/dev/null
 
-PATCH_REGISTRY="$BASE_DIR/data/patches-applied.txt"
+# Keep patch state in the persistent runtime data directory. The updater
+# atomically replaces /opt/shieldpress, so a registry stored in the source
+# tree can otherwise disappear and cause every update to rescan all domains.
+PATCH_REGISTRY="${DATA_DIR:-/var/shieldpress/data}/patches-applied.txt"
 DOMAINS_ROOT="/home/domains"
 
 mkdir -p "$(dirname "$PATCH_REGISTRY")"
@@ -35,6 +38,31 @@ patch_applied(){
 patch_mark_done(){
     echo "$1" >> "$PATCH_REGISTRY"
     sort -u "$PATCH_REGISTRY" -o "$PATCH_REGISTRY"
+}
+
+# Ensure one persistent SELinux fcontext rule without making semanage try to
+# add an existing rule first.  The old add-then-modify pattern prints a noisy
+# "already defined, modifying instead" warning for every domain on every
+# migration run.  Cache the rule list once because semanage is comparatively
+# expensive on servers with many domains.
+SELINUX_FCONTEXT_LIST=""
+selinux_fcontext_ensure(){
+    local type="$1"
+    local pattern="$2"
+    local current
+
+    if [ -z "$SELINUX_FCONTEXT_LIST" ]; then
+        SELINUX_FCONTEXT_LIST=$(semanage fcontext -l 2>/dev/null || true)
+    fi
+
+    current=$(printf '%s\n' "$SELINUX_FCONTEXT_LIST" | awk -v pattern="$pattern" '$1 == pattern {print $NF; exit}')
+    if [ "$current" = "$type" ]; then
+        return 0
+    elif [ -n "$current" ]; then
+        semanage fcontext -m -t "$type" "$pattern" >/dev/null 2>&1 || true
+    else
+        semanage fcontext -a -t "$type" "$pattern" >/dev/null 2>&1 || true
+    fi
 }
 
 # ==================================================
@@ -277,26 +305,19 @@ patch_1331_selinux_domain_context(){
     echo "  Applying: $DESC..."
     local COUNT=0
 
-    semanage fcontext -a -t httpd_log_t "$LOG_DIR_PHP_SLOW(/.*)?" 2>/dev/null || \
-        semanage fcontext -m -t httpd_log_t "$LOG_DIR_PHP_SLOW(/.*)?" 2>/dev/null || true
+    selinux_fcontext_ensure httpd_log_t "$LOG_DIR_PHP_SLOW(/.*)?"
     restorecon -Rv "$LOG_DIR_PHP_SLOW" >/dev/null 2>&1 || true
 
     for d in "$DOMAINS_ROOT"/*/; do
         [ -d "$d" ] || continue
         local DOMAIN_PATH="${d%/}"
 
-        semanage fcontext -a -t httpd_sys_content_t "$DOMAIN_PATH(/.*)?" 2>/dev/null || \
-            semanage fcontext -m -t httpd_sys_content_t "$DOMAIN_PATH(/.*)?" 2>/dev/null || true
-        semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/logs(/.*)?" 2>/dev/null || \
-            semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/logs(/.*)?" 2>/dev/null || true
-        semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/tmp(/.*)?" 2>/dev/null || \
-            semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/tmp(/.*)?" 2>/dev/null || true
-        semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/wp-content(/.*)?" 2>/dev/null || \
-            semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/wp-content(/.*)?" 2>/dev/null || true
-        semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/storage(/.*)?" 2>/dev/null || \
-            semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/storage(/.*)?" 2>/dev/null || true
-        semanage fcontext -a -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/bootstrap/cache(/.*)?" 2>/dev/null || \
-            semanage fcontext -m -t httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/bootstrap/cache(/.*)?" 2>/dev/null || true
+        selinux_fcontext_ensure httpd_sys_content_t "$DOMAIN_PATH(/.*)?"
+        selinux_fcontext_ensure httpd_sys_rw_content_t "$DOMAIN_PATH/logs(/.*)?"
+        selinux_fcontext_ensure httpd_sys_rw_content_t "$DOMAIN_PATH/tmp(/.*)?"
+        selinux_fcontext_ensure httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/wp-content(/.*)?"
+        selinux_fcontext_ensure httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/storage(/.*)?"
+        selinux_fcontext_ensure httpd_sys_rw_content_t "$DOMAIN_PATH/public_html/bootstrap/cache(/.*)?"
         restorecon -Rv "$DOMAIN_PATH" >/dev/null 2>&1 || true
         COUNT=$((COUNT+1))
     done
