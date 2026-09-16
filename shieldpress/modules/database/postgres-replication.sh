@@ -114,7 +114,7 @@ configure_primary(){
     printf 'role=primary\nprimary_address=%s\nprimary_port=%s\nstandby_address=%s\nreplication_user=%s\nreplication_slot=%s\npgdata=%s\n' "$bind_ip" "$port" "$standby_host" "$repl_user" "$slot" "$PGDATA" > "$CONF"; chmod 600 "$CONF"; systemctl restart postgresql || return 1; install_health_timer; echo "Primary configured. Run pgBackRest full backup before initializing Standby."; echo "sudo -u postgres pgbackrest --stanza=<stanza> backup --type=full"
 }
 configure_standby(){
-    local primary repl_user repl_pass repl_pass_confirm slot port pgpass confirm previous_pgdata
+    local primary repl_user repl_pass repl_pass_confirm slot port pgpass standby_pgpass confirm previous_pgdata
     [ -f "$PGDATA/PG_VERSION" ] || { echo "PostgreSQL data directory not found: $PGDATA"; return 1; }
     # runuser inherits the caller's working directory.  When the wizard is
     # launched from /root, postgres cannot enter that directory and emits a
@@ -158,6 +158,19 @@ configure_standby(){
         rm -rf "$PGDATA"; mv "$previous_pgdata" "$PGDATA"
         rm -f "$pgpass"; systemctl start postgresql || true
         echo "Standby initialization failed; previous data was restored."
+        return 1
+    fi
+    standby_pgpass="$PGDATA/.shieldpress-pgpass"
+    if ! install -m 600 -o postgres -g postgres "$pgpass" "$standby_pgpass"; then
+        rm -rf "$PGDATA"; mv "$previous_pgdata" "$PGDATA"
+        rm -f "$pgpass"; systemctl start postgresql || true
+        echo "Cannot install the standby replication password file; previous data was restored."
+        return 1
+    fi
+    if ! sed -i -E "s#passfile=''[^']*''#passfile=''$standby_pgpass''#" "$PGDATA/postgresql.auto.conf" || ! grep -Fq "passfile=''$standby_pgpass''" "$PGDATA/postgresql.auto.conf"; then
+        rm -rf "$PGDATA"; mv "$previous_pgdata" "$PGDATA"
+        rm -f "$pgpass"; systemctl start postgresql || true
+        echo "Cannot configure the standby replication password path; previous data was restored."
         return 1
     fi
     rm -f "$pgpass"

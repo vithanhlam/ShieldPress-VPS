@@ -1,5 +1,12 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.49 — 2026-09-16 — Persistent Standby replication password
+
+- Standby setup now keeps a protected replication password file inside the
+  new data directory and updates `primary_conninfo` to use it.
+- Fixed Standby recovery repeatedly failing with `fe_sendauth: no password
+  supplied` after the temporary `pg_basebackup` password file was removed.
+
 ## v1.3.48 — 2026-09-16 — Standby data directory permissions
 
 - Standby initialization now sets the new PostgreSQL data directory to mode
