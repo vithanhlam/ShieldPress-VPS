@@ -89,7 +89,7 @@ configure_s3(){
     echo "pgBackRest S3 repository configured."
 }
 configure_primary(){
-    local standby_host repl_user repl_pass slot bind_ip port hba
+    local standby_host repl_user repl_pass repl_pass_confirm slot bind_ip port hba
     [ -f "$PGDATA/PG_VERSION" ] || { echo "PostgreSQL data directory not found: $PGDATA"; return 1; }
     cd /tmp || { echo "Cannot change to /tmp."; return 1; }
     show_context
@@ -98,13 +98,15 @@ configure_primary(){
     confirm_text "PRIMARY" || { echo "Cancelled; no data was changed."; return 1; }
     read -r -p "Standby IPv4 address: " standby_host; valid_ipv4 "$standby_host" || { echo "A valid standby IPv4 address is required."; return 1; }
     read -r -p "Replication role [shieldpress_repl]: " repl_user; repl_user="${repl_user:-shieldpress_repl}"; valid_token "$repl_user" || return 1
-    read -r -s -p "Replication role password: " repl_pass; echo; [ -n "$repl_pass" ] || return 1
+    read -r -s -p "Replication role password: " repl_pass; echo
+    read -r -s -p "Confirm replication role password: " repl_pass_confirm; echo
+    [ -n "$repl_pass" ] && [ "$repl_pass" = "$repl_pass_confirm" ] || { echo "Replication passwords do not match."; return 1; }
     read -r -p "Replication slot [shieldpress_standby]: " slot; slot="${slot:-shieldpress_standby}"; valid_token "$slot" || return 1
     read -r -p "Primary bind address [0.0.0.0]: " bind_ip; bind_ip="${bind_ip:-0.0.0.0}"; read -r -p "PostgreSQL port [5432]: " port; port="${port:-5432}"; [[ "$port" =~ ^[0-9]+$ ]] || return 1
     if runuser -u postgres -- psql -Atqc "SELECT 1 FROM pg_roles WHERE rolname='$(sql_lit "$repl_user")';" | grep -qx 1; then
-        runuser -u postgres -- psql -v ON_ERROR_STOP=1 --set=pw="$repl_pass" -c "ALTER ROLE \"$(sql_ident "$repl_user")\" WITH LOGIN REPLICATION PASSWORD :'pw';" || return 1
+        runuser -u postgres -- psql -v ON_ERROR_STOP=1 -c "ALTER ROLE \"$(sql_ident "$repl_user")\" WITH LOGIN REPLICATION PASSWORD '$(sql_lit "$repl_pass")';" || return 1
     else
-        runuser -u postgres -- psql -v ON_ERROR_STOP=1 --set=pw="$repl_pass" -c "CREATE ROLE \"$(sql_ident "$repl_user")\" LOGIN REPLICATION PASSWORD :'pw';" || return 1
+        runuser -u postgres -- psql -v ON_ERROR_STOP=1 -c "CREATE ROLE \"$(sql_ident "$repl_user")\" LOGIN REPLICATION PASSWORD '$(sql_lit "$repl_pass")';" || return 1
     fi
     runuser -u postgres -- psql -v ON_ERROR_STOP=1 -c "SELECT pg_create_physical_replication_slot('$(sql_lit "$slot")') WHERE NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name='$(sql_lit "$slot")');" >/dev/null || return 1
     write_pg_setting wal_level "'replica'"; write_pg_setting max_wal_senders 10; write_pg_setting max_replication_slots 10; write_pg_setting hot_standby on; write_pg_setting listen_addresses "'$bind_ip'"
@@ -112,7 +114,7 @@ configure_primary(){
     printf 'role=primary\nprimary_address=%s\nprimary_port=%s\nstandby_address=%s\nreplication_user=%s\nreplication_slot=%s\npgdata=%s\n' "$bind_ip" "$port" "$standby_host" "$repl_user" "$slot" "$PGDATA" > "$CONF"; chmod 600 "$CONF"; systemctl restart postgresql || return 1; install_health_timer; echo "Primary configured. Run pgBackRest full backup before initializing Standby."; echo "sudo -u postgres pgbackrest --stanza=<stanza> backup --type=full"
 }
 configure_standby(){
-    local primary repl_user repl_pass slot port pgpass confirm previous_pgdata
+    local primary repl_user repl_pass repl_pass_confirm slot port pgpass confirm previous_pgdata
     [ -f "$PGDATA/PG_VERSION" ] || { echo "PostgreSQL data directory not found: $PGDATA"; return 1; }
     # runuser inherits the caller's working directory.  When the wizard is
     # launched from /root, postgres cannot enter that directory and emits a
@@ -127,6 +129,8 @@ configure_standby(){
     read -r -p "Primary port [5432]: " port; port="${port:-5432}"
     read -r -p "Replication role [shieldpress_repl]: " repl_user; repl_user="${repl_user:-shieldpress_repl}"
     read -r -s -p "Replication role password: " repl_pass; echo
+    read -r -s -p "Confirm replication role password: " repl_pass_confirm; echo
+    [ -n "$repl_pass" ] && [ "$repl_pass" = "$repl_pass_confirm" ] || { echo "Replication passwords do not match."; return 1; }
     read -r -p "Replication slot [shieldpress_standby]: " slot; slot="${slot:-shieldpress_standby}"
     valid_token "$primary" && valid_token "$repl_user" && valid_token "$slot" || { echo "Invalid primary, role or slot."; return 1; }
     read -r -p "This will REPLACE $PGDATA. Type REPLACE to confirm: " confirm

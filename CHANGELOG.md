@@ -1,5 +1,14 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.47 — 2026-09-16 — Confirm replication password
+
+- Replication role passwords are now entered twice during both Primary and
+  Standby setup, with an immediate mismatch check.
+- Fixed replication role SQL to use safely escaped SQL literals instead of
+  unsupported psql variable syntax.
+- Verified create and update paths on the AlmaLinux 9.8 VPS test host,
+  including a password containing special characters.
+
 ## v1.3.46 — 2026-09-16 — PostgreSQL replication role setup
 
 - Fixed Primary setup failing with a PostgreSQL syntax error while creating or
