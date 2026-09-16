@@ -148,7 +148,7 @@ configure_standby(){
         echo "Cannot safely move the existing PostgreSQL data directory; no data was changed."
         return 1
     fi
-    if ! mkdir -p "$PGDATA" || ! chown postgres:postgres "$PGDATA"; then
+    if ! mkdir -p "$PGDATA" || ! chown postgres:postgres "$PGDATA" || ! chmod 700 "$PGDATA"; then
         rmdir "$PGDATA" 2>/dev/null || true; mv "$previous_pgdata" "$PGDATA"
         rm -f "$pgpass"; systemctl start postgresql || true
         echo "Cannot prepare the new standby directory; previous data was restored."

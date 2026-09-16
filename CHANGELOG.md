@@ -1,5 +1,11 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.48 — 2026-09-16 — Standby data directory permissions
+
+- Standby initialization now sets the new PostgreSQL data directory to mode
+  `0700` before `pg_basebackup`, preventing PostgreSQL startup failures caused
+  by an insecure `0755` directory mode.
+
 ## v1.3.47 — 2026-09-16 — Confirm replication password
 
 - Replication role passwords are now entered twice during both Primary and
