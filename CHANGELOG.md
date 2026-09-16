@@ -1,5 +1,14 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.44 — 2026-09-16 — PostgreSQL standby setup warning
+
+- Fixed the PostgreSQL streaming replication wizard warning caused by
+  `runuser -u postgres` inheriting an inaccessible `/root` working directory.
+- Primary and Standby setup now switch to `/tmp` before PostgreSQL commands,
+  keeping the setup output clean and making real `pg_basebackup` errors visible.
+- Release workflow continues to publish both SHA-256 and MD5 checksums for the
+  release archive.
+
 ## v1.3.43 — 2026-09-15 — Reliable Next.js production builds
 
 - Next.js builds now use Webpack on Node.js deployments for predictable

@@ -65,6 +65,7 @@ EOF
 configure_primary(){
     local standby_host repl_user repl_pass slot bind_ip port hba s3_endpoint s3_bucket s3_region s3_key s3_secret s3_path confirm
     [ -f "$PGDATA/PG_VERSION" ] || { echo "PostgreSQL data directory not found: $PGDATA"; return 1; }
+    cd /tmp || { echo "Cannot change to /tmp."; return 1; }
     show_context
     echo "SETUP MODE: THIS SERVER = PRIMARY (MAIN SERVER)"
     echo "The Primary accepts application writes. The Standby will copy its data."
@@ -87,6 +88,11 @@ configure_primary(){
 configure_standby(){
     local primary repl_user repl_pass slot port pgpass confirm previous_pgdata
     [ -f "$PGDATA/PG_VERSION" ] || { echo "PostgreSQL data directory not found: $PGDATA"; return 1; }
+    # runuser inherits the caller's working directory.  When the wizard is
+    # launched from /root, postgres cannot enter that directory and emits a
+    # harmless but confusing warning.  Use a world-accessible directory for
+    # the whole standby setup instead.
+    cd /tmp || { echo "Cannot change to /tmp."; return 1; }
     show_context
     echo "SETUP MODE: THIS SERVER = STANDBY (SECONDARY SERVER)"
     echo "WARNING: initialization replaces the PostgreSQL data directory on THIS server."
