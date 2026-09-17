@@ -45,14 +45,11 @@ is_nextjs_app(){
 
 restart_pm2_app_with_config(){
     local pm2_name="$1"
-    if is_nextjs_app; then
-        # A PM2 restart cannot change an old npm command that hard-codes
-        # port 3000. Recreate the process with the domain port explicitly.
-        run_pm2 "$pm2_name" pm2 delete "$pm2_name" 2>/dev/null || true
-        start_pm2_next_app "$pm2_name" || return 1
-    else
-        run_pm2 "$pm2_name" PORT="$NODE_APP_PORT" NODE_ENV=production pm2 restart "$pm2_name" --update-env || return 1
-    fi
+    # Keep the existing PM2 process and its id. The application receives the
+    # new environment on restart; a fresh start is only needed when the
+    # process does not exist yet.
+    run_pm2 "$pm2_name" PORT="$NODE_APP_PORT" NODE_ENV=production \
+        pm2 restart "$pm2_name" --update-env || return 1
     run_pm2 "$pm2_name" pm2 save || true
 }
 
@@ -120,8 +117,9 @@ run_node_build(){
     local timeout_value="${SHIELDPRESS_BUILD_TIMEOUT:-15m}"
     local -a build_cmd=(npm run build)
 
-    if grep -Eq '"next"[[:space:]]*:' "$app_root/package.json"; then
-        if ! grep -Eq '"build"[[:space:]]*:[^,}]*webpack' "$app_root/package.json"; then
+    if grep -Eq '"next"[[:space:]]*:' "$app_root/package.json" && \
+       grep -Eq '"build"[[:space:]]*:[^,}]*next[[:space:]]+build' "$app_root/package.json"; then
+        if ! grep -Eq '"build"[[:space:]]*:[^,}]*--(webpack|turbopack)' "$app_root/package.json"; then
             build_cmd+=(-- --webpack)
         fi
     fi
@@ -402,9 +400,16 @@ start_node_app(){
     read -p "Select mode [1]: " PM2_MODE
     PM2_MODE="${PM2_MODE:-1}"
 
-    # Stop existing PM2 process if any
-    run_pm2 "$pm2_name" pm2 delete "$pm2_name" 2>/dev/null || true
-
+    # Keep an existing process. Repeated starts should restart the same PM2
+    # app instead of deleting it and creating a second daemon entry.
+    if run_pm2 "$pm2_name" pm2 describe "$pm2_name" >/dev/null 2>&1; then
+        restart_pm2_app_with_config "$pm2_name" || {
+            fail "PM2 restart failed"
+            return 1
+        }
+        pm2_persist_startup "$pm2_name"
+        ok "App restarted via PM2: $pm2_name (PORT=$NODE_APP_PORT)"
+    else
     case "$PM2_MODE" in
         1)
             if is_nextjs_app; then
@@ -445,8 +450,9 @@ start_node_app(){
             ;;
     esac
 
-    pm2_persist_startup "$pm2_name"
-    ok "App started with PM2: $pm2_name (PORT=$NODE_APP_PORT)"
+        pm2_persist_startup "$pm2_name"
+        ok "App started with PM2: $pm2_name (PORT=$NODE_APP_PORT)"
+    fi
     echo ""
     run_pm2 "$pm2_name" pm2 status "$pm2_name"
 }
@@ -543,8 +549,15 @@ deploy_node_app(){
         fi
     fi
 
-    # Build if build script exists
-    if run_pm2 "$sysuser" npm run 2>/dev/null | grep -q " build"; then
+    # Build only when package.json has an actual scripts.build entry. Parsing
+    # JSON avoids false positives from npm's help output or unrelated script
+    # names containing the word "build".
+    local has_build_script
+    has_build_script=$(node -e '
+        const p = require("./package.json");
+        process.stdout.write(p.scripts && typeof p.scripts.build === "string" ? "yes" : "no");
+    ' 2>/dev/null || echo no)
+    if [ "$has_build_script" = "yes" ]; then
         echo ""
         echo "Step $step: Building for production..."
 
@@ -959,7 +972,7 @@ while true; do
         "4|Running Apps (PM2)|cyan" \
         "5|Backup Node.js App|yellow" \
         "6|Deploy / Build|blue" \
-        "7|Start App (PM2)|green" \
+        "7|Start / Ensure App (PM2)|green" \
         "8|Stop App (PM2)|red" \
         "9|Restart App (PM2)|yellow" \
         "10|View App Logs|magenta" \

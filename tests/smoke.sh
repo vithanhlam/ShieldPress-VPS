@@ -63,6 +63,14 @@ else
     fail "Node.js deploy rollback protection is missing"
 fi
 
+if grep -q 'pm2 describe "\$pm2_name"' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh" \
+    && grep -q 'pm2 restart "\$pm2_name" --update-env' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh" \
+    && ! sed -n '380,465p' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh" | grep -q 'pm2 delete "\$pm2_name"'; then
+    pass "Node.js Start/Deploy keeps existing PM2 process"
+else
+    fail "Node.js Start/Deploy still deletes the existing PM2 process"
+fi
+
 if grep -q 'proxy_hide_header Cache-Control' "$ROOT/shieldpress/modules/domain/helpers.sh" \
     && grep -q 'location \^~ /_next/static/' "$ROOT/shieldpress/modules/domain/helpers.sh"; then
     pass "Node.js Nginx cache policy protects Next.js deployments"

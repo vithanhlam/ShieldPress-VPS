@@ -1,5 +1,17 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.55 — 2026-09-17 — Idempotent Node.js PM2 deploys
+
+- Node.js Manager Start/Ensure App now restarts an existing domain PM2 process
+  instead of deleting it and creating a new process entry.
+- Node.js Deploy / Build keeps the existing PM2 process and ID while updating
+  its environment, preventing duplicate root and domain-user process entries.
+- Deploy now detects `scripts.build` directly from `package.json`, avoids false
+  build detection, and only adds the Next.js webpack flag to a plain `next build`
+  script.
+- Verified the Start and Deploy flows on the AlmaLinux 9.8 VPS test host with
+  the PM2 process remaining online and its ID unchanged.
+
 ## v1.3.54 — 2026-09-16 — Default confirmation for updates
 
 - The main dashboard and `shieldpress update` flow now show `Update now?
