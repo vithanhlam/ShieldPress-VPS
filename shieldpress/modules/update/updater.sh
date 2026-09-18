@@ -319,6 +319,14 @@ rm -rf "$OLD_DIR"
 mv "$BASE_DIR" "$OLD_DIR"
 mv "$NEW_DIR" "$BASE_DIR"
 
+# Recreate runtime directories and compatibility symlinks after the atomic
+# switch. The previous pre-switch call operated on the old /opt/shieldpress
+# tree; when that tree was replaced, /opt/shieldpress/logs could disappear
+# even though existing PHP-FPM pools still referenced it.
+source "$BASE_DIR/core/paths.sh"
+ensure_shieldpress_dirs || fail "Cannot ensure ShieldPress runtime directories"
+create_compat_symlinks || fail "Cannot create ShieldPress compatibility symlinks"
+
 # =========================================
 # FIX PERMISSION
 # =========================================

@@ -1,5 +1,14 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.56 — 2026-09-18 — Preserve PHP-FPM log paths during updates
+
+- Fixed atomic source updates removing the `/opt/shieldpress/logs` compatibility
+  symlink after switching to the new release directory.
+- Recreate ShieldPress runtime directories and compatibility symlinks immediately
+  after the atomic switch, before service health checks run.
+- Prevented PHP-FPM startup failures with status 78 when existing pools still
+  reference `/opt/shieldpress/logs/php-slow`.
+
 ## v1.3.55 — 2026-09-17 — Idempotent Node.js PM2 deploys
 
 - Node.js Manager Start/Ensure App now restarts an existing domain PM2 process
