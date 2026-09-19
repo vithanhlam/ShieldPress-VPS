@@ -1,5 +1,25 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.57 — 2026-09-19 — Safer Node.js releases and PM2 ownership migration
+
+- Node.js Manager now shows a PM2-style domain overview with the configured
+  port, listening state, PM2 ID/status, restart count, PID, memory, runtime
+  user and uptime. Legacy root PM2 entries are explicitly marked for migration.
+- Start, Restart, Deploy, port changes and entry-file changes now detect the
+  selected domain's legacy root PM2 app. After confirmation, Deploy migrates
+  and health-checks that app under the domain user before continuing; an
+  unrelated process holding the port is reported, never killed automatically.
+- Port ownership checks now handle the normal `pm2 start npm -- start` process
+  tree, where Node (rather than npm) owns the listening socket.
+- Split Node.js Deploy / Build into Standard update, Initial deploy, and
+  Dependencies + DB migration modes. Production Prisma deploys now use
+  reviewed, committed `prisma/migrations` via `prisma migrate deploy`; the
+  previous unversioned `prisma db push` flow was removed.
+- Database migration modes require an explicit confirmation that the database
+  backup exists and migration SQL has been reviewed. Missing migration files,
+  migration failures or Prisma client-generation failures stop before PM2 is
+  restarted.
+
 ## v1.3.56 — 2026-09-18 — Preserve PHP-FPM log paths during updates
 
 - Fixed atomic source updates removing the `/opt/shieldpress/logs` compatibility

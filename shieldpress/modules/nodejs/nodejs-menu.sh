@@ -107,6 +107,128 @@ run_pm2(){
         NPM_CONFIG_CACHE="$npm_cache" "$@"
 }
 
+# Print one PM2 process as fields suitable for the domain overview:
+# id|status|restarts|pid|uptime|memory.  The working-directory check prevents
+# an unrelated PM2 app with the same name from being reported for this domain.
+pm2_app_row(){
+    local user="$1"
+    local pm2_name="$2"
+    local app_root="$3"
+    run_pm2 "$user" pm2 jlist 2>/dev/null | python3 -c '
+import json, os, sys
+name, root = sys.argv[1:]
+try:
+    for app in json.load(sys.stdin):
+        env = app.get("pm2_env", {})
+        if app.get("name") == name and os.path.realpath(env.get("pm_cwd", "")) == os.path.realpath(root):
+            print("|".join(str(x) for x in (
+                app.get("pm_id", "-"), env.get("status", "unknown"),
+                env.get("restart_time", 0), app.get("pid", "-"),
+                env.get("pm_uptime", 0), app.get("monit", {}).get("memory", 0))))
+            break
+except (json.JSONDecodeError, TypeError):
+    pass
+' "$pm2_name" "$app_root"
+}
+
+# Older ShieldPress releases placed every app in root's shared PM2 daemon.
+# Do not invoke pm2 here unless that daemon is already alive: a status screen
+# must not create a new /root/.pm2 daemon just to inspect it.
+root_pm2_app_row(){
+    local pm2_name="$1"
+    local app_root="$2"
+    local daemon_pid
+    daemon_pid=$(cat /root/.pm2/pm2.pid 2>/dev/null || true)
+    [[ "$daemon_pid" =~ ^[0-9]+$ ]] && kill -0 "$daemon_pid" 2>/dev/null || return 0
+    pm2 jlist 2>/dev/null | python3 -c '
+import json, os, sys
+name, root = sys.argv[1:]
+try:
+    for app in json.load(sys.stdin):
+        env = app.get("pm2_env", {})
+        if app.get("name") == name and os.path.realpath(env.get("pm_cwd", "")) == os.path.realpath(root):
+            print("|".join(str(x) for x in (
+                app.get("pm_id", "-"), env.get("status", "unknown"),
+                env.get("restart_time", 0), app.get("pid", "-"),
+                env.get("pm_uptime", 0), app.get("monit", {}).get("memory", 0))))
+            break
+except (json.JSONDecodeError, TypeError):
+    pass
+' "$pm2_name" "$app_root"
+}
+
+format_pm2_uptime(){
+    local started="$1"
+    [[ "$started" =~ ^[0-9]+$ ]] && [ "$started" -gt 0 ] || { echo "-"; return; }
+    local elapsed=$(( $(date +%s) - started / 1000 ))
+    [ "$elapsed" -lt 0 ] && elapsed=0
+    printf '%dd %02dh %02dm' $((elapsed / 86400)) $((elapsed % 86400 / 3600)) $((elapsed % 3600 / 60))
+}
+
+format_pm2_memory(){
+    local bytes="$1"
+    [[ "$bytes" =~ ^[0-9]+$ ]] || { echo "-"; return; }
+    printf '%dM' $((bytes / 1024 / 1024))
+}
+
+port_is_listening(){
+    local port="$1"
+    [[ "$port" =~ ^[0-9]+$ ]] || return 1
+    ss -ltn 2>/dev/null | grep -qE "(:|\.)${port}[[:space:]]"
+}
+
+prepare_root_pm2_for_action(){
+    local root_row
+    root_row=$(root_pm2_app_row "$CLEAN_DOMAIN" "$DOMAIN_PATH/public_html")
+    [ -n "$root_row" ] || return 0
+
+    warn "This domain is still running in root's legacy PM2 daemon (PM2 ID ${root_row%%|*})."
+    warn "This action cannot safely use the per-domain PM2 app while root owns port $NODE_APP_PORT."
+    echo "The app will be migrated to user $CLEAN_DOMAIN first; it may briefly restart."
+    confirm_action "Migrate root PM2 for $DOMAIN before continuing?" || return 1
+    command -v python3 >/dev/null 2>&1 || { fail "python3 is required for PM2 migration"; return 1; }
+    python3 "$BASE_DIR/modules/nodejs/migrate-root-pm2.py" \
+        "$CLEAN_DOMAIN" "$NODE_APP_PORT" "$DOMAIN" --yes || {
+            fail "Root PM2 migration failed. Deploy was not started; see the migration output above."
+            return 1
+        }
+}
+
+selected_pm2_owns_port(){
+    local port="$1"
+    local row pid status listener_pid parent_pid hops
+    row=$(pm2_app_row "$CLEAN_DOMAIN" "$CLEAN_DOMAIN" "$DOMAIN_PATH/public_html")
+    [ -n "$row" ] || return 1
+    IFS='|' read -r _ status _ pid _ _ <<< "$row"
+    [ "$status" = "online" ] && [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+    # `pm2 start npm -- start` records npm's PID, while Node is its child and
+    # owns the HTTP socket. Walk listener parents so this normal topology is
+    # accepted without treating an unrelated service as our application.
+    while read -r listener_pid; do
+        [ -n "$listener_pid" ] || continue
+        parent_pid="$listener_pid"
+        for ((hops = 0; hops < 16; hops++)); do
+            [ "$parent_pid" = "$pid" ] && return 0
+            parent_pid=$(ps -o ppid= -p "$parent_pid" 2>/dev/null | tr -d '[:space:]')
+            [[ "$parent_pid" =~ ^[0-9]+$ ]] || break
+        done
+    done < <(ss -ltnp 2>/dev/null | grep -E "(:|\.)${port}[[:space:]]" | grep -oE 'pid=[0-9]+' | cut -d= -f2)
+    return 1
+}
+
+# A process on a configured port is only safe to reuse when it is the
+# selected domain's online PM2 process. Never guess and kill an unrelated
+# service (including another root PM2 application).
+assert_node_port_available(){
+    local port="${1:-$NODE_APP_PORT}"
+    port_is_listening "$port" || return 0
+    selected_pm2_owns_port "$port" && return 0
+    fail "Port $port is already listening, but not from PM2 app $CLEAN_DOMAIN."
+    ss -ltnp 2>/dev/null | grep -E "(:|\.)${port}[[:space:]]" || true
+    warn "No process was stopped. Select the owning app, migrate its root PM2 entry, or choose another port."
+    return 1
+}
+
 # Next 16 defaults to Turbopack for production builds. On small VPSes a
 # Turbopack build can stall while compiling, and an interrupted SSH/menu
 # session can leave .next/lock behind. Keep the build bounded and use the
@@ -241,13 +363,14 @@ backup_selected_node_app(){
 select_node_deploy_mode(){
     echo ""
     echo "Deploy mode:"
-    echo "  1) Build + update environment (skip npm install and database commands)"
-    echo "  2) Full deploy (npm install, database commands, build, restart)"
+    echo "  1) Standard update — build + PM2 restart/update environment"
+    echo "  2) Initial deploy — install dependencies, Prisma migrations, build, start"
+    echo "  3) Dependencies + DB migration — install, Prisma migrations, build, restart"
     echo ""
     read -p "Select mode [1]: " NODE_DEPLOY_MODE
     NODE_DEPLOY_MODE="${NODE_DEPLOY_MODE:-1}"
     case "$NODE_DEPLOY_MODE" in
-        1|2) return 0 ;;
+        1|2|3) return 0 ;;
         *) fail "Invalid deploy mode"; return 1 ;;
     esac
 }
@@ -260,6 +383,44 @@ confirm_node_backup(){
     [[ "$answer" =~ ^[Nn]$ ]] && return 1
     warn "Invalid answer; backup will be created"
     return 0
+}
+
+is_prisma_project(){
+    [ -f "prisma/schema.prisma" ] || grep -q '"prisma"' package.json 2>/dev/null
+}
+
+confirm_prisma_migration(){
+    echo ""
+    warn "Prisma migrations can change production database data/schema."
+    echo "Confirm that a current database backup exists and the committed migration SQL was reviewed."
+    read -p "Apply pending Prisma migrations now? [y/N]: " PRISMA_CONFIRM
+    [[ "$PRISMA_CONFIRM" =~ ^[Yy]$ ]] || { warn "Database migration cancelled; deployment was not started."; return 1; }
+}
+
+run_prisma_migrations(){
+    local user="$1"
+    is_prisma_project || return 0
+
+    # Production must only apply reviewed migrations committed from local
+    # development. `db push` deliberately has no migration history and is not
+    # used here.
+    if [ ! -d "prisma/migrations" ] || ! find "prisma/migrations" -mindepth 2 -name migration.sql -print -quit | grep -q .; then
+        fail "Prisma project has no committed prisma/migrations files. Create them locally with: npx prisma migrate dev --name <change>"
+        return 1
+    fi
+
+    confirm_prisma_migration || return 1
+    echo "Step $step: Applying reviewed Prisma migrations..."
+    run_pm2 "$user" npx prisma migrate deploy || {
+        fail "Prisma migrate deploy failed; PM2 was not restarted."
+        return 1
+    }
+    run_pm2 "$user" npx prisma generate || {
+        fail "Prisma generate failed; PM2 was not restarted."
+        return 1
+    }
+    ok "Prisma migrations applied and client generated"
+    ((step++))
 }
 
 install_node_runtime(){
@@ -316,8 +477,10 @@ create_node_domain(){
 
 list_node_domains(){
     echo ""
-    echo "Node.js Domains:"
-    echo "--------------------------------"
+    echo "Node.js Domains (PM2 overview):"
+    printf '  %-25s %-7s %-9s %-6s %-10s %-8s %-8s %-10s %s\n' \
+        "DOMAIN" "PORT" "LISTENING" "PM2 ID" "STATUS" "RESTARTS" "PID" "MEMORY" "RUN AS / UPTIME"
+    printf '  %s\n' "----------------------------------------------------------------------------------------------------------------"
     local found=0
     for env in "$DOMAINS_ROOT"/*/config/domain.env; do
         [ -f "$env" ] || continue
@@ -328,21 +491,23 @@ list_node_domains(){
         ROOT=$(grep "^ROOT=" "$env" | cut -d= -f2)
         NODE_APP_PORT=$(grep "^NODE_APP_PORT=" "$env" | cut -d= -f2 | tr -d '[:space:]')
         local pm2_name=$(basename "$(dirname "$(dirname "$env")")")
-        local pm2_state="unknown"
+        local app_root="$(dirname "$(dirname "$env")")/public_html"
+        local row=""
+        local run_as="$pm2_name"
         if command -v pm2 >/dev/null 2>&1; then
-            pm2_state=$(run_pm2 "$pm2_name" pm2 jlist 2>/dev/null | python3 -c "
-import sys,json
-try:
-    apps=json.load(sys.stdin)
-    for a in apps:
-        if a['name']=='$pm2_name':
-            print(a['pm2_env']['status'])
-            sys.exit()
-    print('not running')
-except: print('unknown')
-" 2>/dev/null || echo "unknown")
+            row=$(pm2_app_row "$pm2_name" "$pm2_name" "$app_root")
+            if [ -z "$row" ]; then
+                row=$(root_pm2_app_row "$pm2_name" "$app_root")
+                [ -n "$row" ] && run_as="root (migrate)"
+            fi
         fi
-        echo "  $DOMAIN | port $NODE_APP_PORT | PM2: $pm2_state | root $ROOT"
+        local pm2_id="-" pm2_state="not running" restarts="-" pid="-" uptime="-" memory="-"
+        [ -n "$row" ] && IFS='|' read -r pm2_id pm2_state restarts pid uptime memory <<< "$row"
+        local listening="no"
+        port_is_listening "$NODE_APP_PORT" && listening="yes"
+        printf '  %-25s %-7s %-9s %-6s %-10s %-8s %-8s %-10s %s / %s\n' \
+            "$DOMAIN" "$NODE_APP_PORT" "$listening" "$pm2_id" "$pm2_state" "$restarts" "$pid" \
+            "$(format_pm2_memory "$memory")" "$run_as" "$(format_pm2_uptime "$uptime")"
     done
     [ "$found" = "0" ] && warn "No Node.js domains found"
 }
@@ -367,6 +532,13 @@ list_running_node_apps(){
         dom_user=$(basename "$(dirname "$(dirname "$env")")")
         echo "--- $dom_user ---"
         run_pm2 "$dom_user" pm2 status
+        local root_row
+        root_row=$(root_pm2_app_row "$dom_user" "$(dirname "$(dirname "$env")")/public_html")
+        if [ -n "$root_row" ]; then
+            warn "$dom_user also has a legacy root PM2 entry; migrate it before Start/Restart/Deploy."
+            echo "--- $dom_user (root legacy) ---"
+            pm2 status "$dom_user"
+        fi
     done
     [ "$found" = "0" ] && warn "No Node.js domains found"
 }
@@ -378,6 +550,8 @@ list_running_node_apps(){
 start_node_app(){
     select_node_domain || return
     ensure_pm2 || return
+    prepare_root_pm2_for_action || return
+    assert_node_port_available || return
     cd "$DOMAIN_PATH/public_html" || return
     repair_selected_node_permissions || return
 
@@ -467,7 +641,18 @@ stop_node_app(){
 
     local pm2_name="$CLEAN_DOMAIN"
     confirm_action "Stopping will take this app offline." || return
-    run_pm2 "$pm2_name" pm2 stop "$pm2_name" 2>/dev/null && ok "PM2 app stopped: $pm2_name" || fail "PM2 app not found: $pm2_name"
+    if run_pm2 "$pm2_name" pm2 describe "$pm2_name" >/dev/null 2>&1; then
+        run_pm2 "$pm2_name" pm2 stop "$pm2_name" 2>/dev/null && \
+            ok "PM2 app stopped: $pm2_name" || fail "PM2 app could not be stopped: $pm2_name"
+        return
+    fi
+    if [ -n "$(root_pm2_app_row "$pm2_name" "$DOMAIN_PATH/public_html")" ]; then
+        warn "Stopping the matching legacy root PM2 app for this domain."
+        pm2 stop "$pm2_name" 2>/dev/null && pm2 save --force >/dev/null 2>&1 && \
+            ok "Legacy root PM2 app stopped: $pm2_name" || fail "Legacy root PM2 app could not be stopped: $pm2_name"
+    else
+        fail "PM2 app not found: $pm2_name"
+    fi
 }
 
 # ==========================================
@@ -477,6 +662,8 @@ stop_node_app(){
 restart_node_app(){
     select_node_domain || return
     ensure_pm2 || return
+    prepare_root_pm2_for_action || return
+    assert_node_port_available || return
     cd "$DOMAIN_PATH/public_html" || return
     repair_selected_node_permissions || return
 
@@ -503,6 +690,12 @@ deploy_node_app(){
     select_node_deploy_mode || return
     confirm_action "This will deploy $DOMAIN." || return
 
+    # A root-owned legacy PM2 app is invisible to run_pm2 and keeps the
+    # configured port occupied. Migrate it before touching build artifacts so
+    # deployment cannot fail later with EADDRINUSE or root-owned .next files.
+    prepare_root_pm2_for_action || return
+    assert_node_port_available || return
+
     if confirm_node_backup; then
         backup_selected_node_app || return
     else
@@ -527,7 +720,7 @@ deploy_node_app(){
     echo ""
     local step=1
 
-    if [ "$NODE_DEPLOY_MODE" = "2" ]; then
+    if [ "$NODE_DEPLOY_MODE" = "2" ] || [ "$NODE_DEPLOY_MODE" = "3" ]; then
         echo "Step $step: Installing dependencies..."
         prepare_node_dependency_install "$sysuser" "$DOMAIN_PATH"
         if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
@@ -538,15 +731,7 @@ deploy_node_app(){
         ok "Dependencies installed"
         ((step++))
 
-        # Run Prisma only for a full deploy.
-        if grep -q '"prisma"' package.json 2>/dev/null; then
-            echo ""
-            echo "Step $step: Running Prisma DB push..."
-            run_pm2 "$sysuser" npx prisma db push || { warn "Prisma db push failed (non-fatal)"; }
-            run_pm2 "$sysuser" npx prisma generate || true
-            ok "Prisma schema synced"
-            ((step++))
-        fi
+        run_prisma_migrations "$sysuser" || return 1
     fi
 
     # Build only when package.json has an actual scripts.build entry. Parsing
@@ -667,7 +852,14 @@ node_logs(){
     select_node_domain || return
     ensure_pm2 || return
     local pm2_name="$CLEAN_DOMAIN"
-    run_pm2 "$pm2_name" pm2 logs "$pm2_name"
+    if run_pm2 "$pm2_name" pm2 describe "$pm2_name" >/dev/null 2>&1; then
+        run_pm2 "$pm2_name" pm2 logs "$pm2_name"
+    elif [ -n "$(root_pm2_app_row "$pm2_name" "$DOMAIN_PATH/public_html")" ]; then
+        warn "Showing logs from the legacy root PM2 entry; migrate it before managing the app."
+        pm2 logs "$pm2_name"
+    else
+        fail "PM2 app not found: $pm2_name"
+    fi
 }
 
 # ==========================================
@@ -707,6 +899,10 @@ change_node_port(){
     NGINX_TMP="/tmp/${CLEAN_DOMAIN}.nginx.conf.$$"
 
     confirm_action "Changing port updates Nginx and restarts the app." || return
+    # Migrate while the old, configured port is still active; the migration
+    # verifies the running root app against that port before any config edit.
+    prepare_root_pm2_for_action || return
+    assert_node_port_available "$NEW_PORT" || return
     backup_selected_node_app || return
 
     cp "$ENV_FILE" "$ENV_TMP" || return
@@ -746,6 +942,7 @@ change_node_port(){
 
 change_node_entry(){
     select_node_domain || return
+    ensure_pm2 || return
 
     echo ""
     echo "Current entry: ${NODE_ENTRY:-app.js}"
@@ -768,6 +965,8 @@ change_node_entry(){
     ENV_FILE="$DOMAIN_PATH/config/domain.env"
 
     confirm_action "Changing entry will restart the app." || return
+    prepare_root_pm2_for_action || return
+    assert_node_port_available || return
     backup_selected_node_app || return
 
     if grep -q "^NODE_ENTRY=" "$ENV_FILE"; then

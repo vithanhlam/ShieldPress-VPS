@@ -78,6 +78,15 @@ else
     fail "Node.js Nginx cache policy is missing"
 fi
 
+if grep -q 'Initial deploy' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh" \
+    && grep -q 'Dependencies + DB migration' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh" \
+    && grep -q 'npx prisma migrate deploy' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh" \
+    && ! grep -Eq 'npx prisma db push' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh"; then
+    pass "Node.js deploy uses reviewed Prisma migrations"
+else
+    fail "Node.js Prisma deploy mode is unsafe or incomplete"
+fi
+
 PACKAGE_TEST_DIR=$(mktemp -d)
 trap 'rm -rf "$PACKAGE_TEST_DIR"' EXIT
 tar -czf "$PACKAGE_TEST_DIR/shieldpress.tar.gz" -C "$ROOT" .

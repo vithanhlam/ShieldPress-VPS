@@ -105,6 +105,26 @@ After changing `.env` or the port, use Node.js Manager restart/redeploy so PM2
 receives the new environment; a normal web reload does not change an existing
 process environment.
 
+### Deploy modes and Prisma migrations
+
+Node.js Manager → `Deploy / Build` provides three choices:
+
+- **Standard update** builds the application and restarts its existing PM2 app
+  with refreshed environment values. Use it for code or `.env` changes that do
+  not change dependencies or the database schema.
+- **Initial deploy** installs dependencies, applies reviewed Prisma migrations,
+  builds, and starts the app when it has no PM2 process yet.
+- **Dependencies + DB migration** installs dependencies, applies reviewed
+  Prisma migrations, builds, and restarts the existing app.
+
+For a Prisma project, create and test migrations locally with `npx prisma
+migrate dev --name <change>`, then commit the generated `prisma/migrations/`
+directory with the application code. On the VPS ShieldPress runs `npx prisma
+migrate deploy`, not `prisma db push`; it requires migration files and asks for
+confirmation that a current database backup exists and the migration SQL was
+reviewed. Use an expand/contract release sequence for destructive schema
+changes such as dropping columns or changing data types.
+
 ## 7. MariaDB and PostgreSQL
 
 `Database Manager` supports database/user creation, listing, information,

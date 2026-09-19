@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.56`
+**Current version:** `1.3.57`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -349,9 +349,16 @@ Source: `modules/nodejs/`
 - List Node.js domains.
 - View running Node.js apps.
 - Backup Node.js apps.
-- Deploy Node.js apps with a build-only mode (including PM2 environment refresh) or a full mode with dependency and database commands.
+- Deploy Node.js apps in three explicit modes: standard build/environment
+  refresh, first deploy, or dependency + reviewed Prisma migration release.
+- Production Prisma releases apply committed `prisma/migrations` through
+  `prisma migrate deploy`; they never use unversioned `prisma db push`.
+- The domain overview shows the configured/listening port and PM2 ID, status,
+  PID, restarts, memory, runtime user and uptime, including legacy root PM2
+  entries that require migration.
 - Optionally create a source backup before deploy; backups exclude `uploads/`, `public/`, and `node_modules/`.
-- Automatically replaces a stale root-owned PM2 daemon for a domain before build/start, keeping Next.js processes and `.next` artifacts owned by the domain user.
+- Detects a matching legacy root PM2 app before management actions and, after
+  confirmation, migrates it safely to the domain user before deployment.
 - SELinux migration checks cache existing file-context rules and avoid repeated add/modify warnings when updating servers with many domains.
 - Start/restart apps.
 - PM2 management: start, stop, status, logs.
