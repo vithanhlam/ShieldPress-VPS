@@ -246,8 +246,21 @@ run_node_build(){
         fi
     fi
 
-    run_pm2 "$user" timeout --signal=TERM --kill-after=30s "$timeout_value" \
-        "${build_cmd[@]}"
+    local home="/home/domains/$user"
+    local npm_cache="$home/.npm"
+
+    # Keep timeout in the terminal's foreground process group. Without
+    # --foreground, Ctrl-C can terminate the menu/runuser wrapper while a
+    # Next.js worker spawned by npm keeps running and leaves .next/lock behind.
+    # The same also makes TERM from the deploy timeout reach the build command
+    # more predictably when the build is waiting in a Next.js worker phase.
+    runuser -u "$user" -- env \
+        HOME="$home" \
+        USER="$user" \
+        LOGNAME="$user" \
+        NPM_CONFIG_CACHE="$npm_cache" \
+        timeout --foreground --signal=TERM --kill-after=30s "$timeout_value" \
+        "${build_cmd[@]}" </dev/null
 }
 
 cleanup_stale_next_lock(){

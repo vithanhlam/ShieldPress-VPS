@@ -1,5 +1,18 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.58 — 2026-09-21 — Safer interrupted Node.js builds
+
+- Kept Node.js dependency installation and production builds under the domain
+  user so root-owned `node_modules`, `esbuild` and `.next` files are not
+  recreated during deploys.
+- Ran the bounded Node.js build timeout in the foreground process group so
+  Ctrl-C and timeout termination reach the npm/Next.js build more reliably and
+  do not leave stale Next.js workers behind.
+- Node.js Deploy / Build automatically migrates a matching legacy root PM2 app
+  to the domain user before touching build artifacts, with health checks and
+  rollback protection.
+- Release workflow publishes the MD5 checksum asset alongside SHA-256.
+
 ## v1.3.57 — 2026-09-19 — Safer Node.js releases and PM2 ownership migration
 
 - Node.js Manager now shows a PM2-style domain overview with the configured
