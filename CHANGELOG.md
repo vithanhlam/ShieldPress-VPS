@@ -1,5 +1,12 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.61 — 2026-09-21 — Support 1 GB VPS installations
+
+- Lowered the documented minimum RAM requirement for ShieldPress VPS from
+  2 GB to 1 GB, matching the installer's existing 1024 MB hardware check.
+- Updated the installation guide and README so supported VPS sizing is
+  consistent across the project.
+
 ## v1.3.60 — 2026-09-21 — Sequential batch backups for multi-site VPS hosts
 
 - Replaced the Auto Backup Setup creation choices with **Auto Backup Full DB**
