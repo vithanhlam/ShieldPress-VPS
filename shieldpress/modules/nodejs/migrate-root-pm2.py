@@ -43,7 +43,23 @@ def pm2_apps(output):
     raise RuntimeError('PM2 returned an invalid process list.')
 
 
-def ecosystem(app, name, home=None):
+def is_next_app(app_root):
+    """Detect Next.js apps without trusting a stale PM2 entry script."""
+    package_file = Path(app_root) / 'package.json'
+    try:
+        package = json.loads(package_file.read_text())
+    except (OSError, json.JSONDecodeError, UnicodeError):
+        return False
+    dependencies = {}
+    for section in ('dependencies', 'devDependencies', 'optionalDependencies'):
+        values = package.get(section, {})
+        if isinstance(values, dict):
+            dependencies.update(values)
+    scripts = package.get('scripts', {})
+    return 'next' in dependencies and isinstance(scripts, dict) and isinstance(scripts.get('start'), str)
+
+
+def ecosystem(app, name, home=None, app_root=None):
     e = app['pm2_env']
     if e.get('exec_mode') != 'fork_mode' or e.get('instances', 1) not in (None, 1):
         raise RuntimeError('Only single-instance fork apps can be migrated automatically.')
@@ -58,6 +74,14 @@ def ecosystem(app, name, home=None):
         if key in e:
             config[key] = e[key]
     config['interpreter'] = e.get('exec_interpreter', 'node')
+    if home and app_root and is_next_app(app_root):
+        # A legacy root PM2 entry can retain a generic app.js entry even when
+        # the project is Next.js. Rebuild the target entry from package.json.
+        config['script'] = 'npm'
+        config['args'] = 'start'
+        config['interpreter'] = 'none'
+        config.pop('node_args', None)
+        config.pop('interpreter_args', None)
     config['env'] = dict(e.get('env', {}))
     if home:
         for key in list(config['env']):
@@ -167,7 +191,7 @@ def migrate(name, port, host, yes=False):
     source = source[0]
     if Path(source['pm2_env']['pm_cwd']).resolve() != appdir.resolve():
         raise RuntimeError('Root PM2 working directory does not match the selected domain.')
-    target = ecosystem(source, name, str(home))
+    target = ecosystem(source, name, str(home), appdir)
     original = ecosystem(source, name)
     if not owns_listener(source.get('pid', 0), port):
         raise RuntimeError('Configured HTTP port does not belong to the selected root PM2 app.')

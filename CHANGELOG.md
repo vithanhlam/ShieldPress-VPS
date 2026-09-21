@@ -1,5 +1,13 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.59 — 2026-09-21 — Detect Next.js during PM2 migration
+
+- Root PM2 migration now detects Next.js from `package.json` instead of
+  trusting a stale `app.js` entry inherited from an older deployment.
+- Migrated Next.js apps now start through `npm start` under the domain user,
+  preventing immediate `MODULE_NOT_FOUND` crashes and Nginx 502 responses.
+- Added regression coverage for replacing stale Next.js PM2 entry scripts.
+
 ## v1.3.58 — 2026-09-21 — Safer interrupted Node.js builds
 
 - Kept Node.js dependency installation and production builds under the domain

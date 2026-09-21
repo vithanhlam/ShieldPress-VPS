@@ -43,6 +43,21 @@ class MigrationTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 m.ecosystem(app, 'example', '/home/domains/example')
 
+    def test_next_app_replaces_stale_entry_script(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'package.json').write_text(
+                '{"dependencies":{"next":"16.3.3"},'
+                '"scripts":{"start":"next start"}}'
+            )
+            app = self.app()
+            app['pm2_env']['pm_exec_path'] = str(root / 'app.js')
+            migrated = m.ecosystem(app, 'example', str(root), root)['apps'][0]
+            self.assertEqual(migrated['script'], 'npm')
+            self.assertEqual(migrated['args'], 'start')
+            self.assertEqual(migrated['interpreter'], 'none')
+            self.assertNotIn('node_args', migrated)
+
     def test_daemon_banner(self):
         self.assertEqual(m.pm2_apps('[PM2] Spawning daemon\n[{"name":"example"}]'), [{'name': 'example'}])
         self.assertEqual(m.pm2_apps('[]'), [])
