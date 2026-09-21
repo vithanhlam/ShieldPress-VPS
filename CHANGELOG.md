@@ -1,5 +1,22 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.60 — 2026-09-21 — Sequential batch backups for multi-site VPS hosts
+
+- Replaced the Auto Backup Setup creation choices with **Auto Backup Full DB**
+  and **Auto Backup File**, designed for VPS hosts with many websites.
+- Auto Backup Full DB selects multiple MySQL/MariaDB and PostgreSQL databases,
+  then dumps them sequentially with a non-overlapping lock, low CPU/IO
+  priority, configurable delay and per-database retention. MySQL dumps include
+  routines, triggers, events and binary-safe data; completed archives are gzip
+  validated before they are retained or uploaded.
+- Auto Backup File selects multiple domains and runs them sequentially using
+  Smart application-aware backups (WordPress content/config, Laravel source,
+  or Node.js source), recent files changed in the last 24 hours, or a full
+  source archive with dependency/build-cache exclusions.
+- Batch jobs now retain stable auto-backup logging after remote-upload helpers
+  are loaded. Verified on the AlmaLinux 9.8 VPS test host with MySQL,
+  PostgreSQL, WordPress, Laravel and Node.js archives, plus lock contention.
+
 ## v1.3.59 — 2026-09-21 — Detect Next.js during PM2 migration
 
 - Root PM2 migration now detects Next.js from `package.json` instead of

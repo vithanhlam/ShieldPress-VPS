@@ -9,11 +9,10 @@ while true; do
     sp_header "Auto Backup Setup" "Schedule automated backups"
 
     echo ""
-    echo "  Setup new schedule:"
+    echo "  Batch setup (10+ websites / databases):"
     sp_menu_grid \
-        "1|Auto Backup Database|blue" \
-        "2|Auto Backup Files|cyan" \
-        "3|Auto Full Backup|green"
+        "1|Auto Backup Full DB|blue" \
+        "2|Auto Backup File|cyan"
 
     echo ""
     echo "  Manage:"
@@ -25,9 +24,8 @@ while true; do
     sp_prompt opt
 
     case $opt in
-        1) bash "$BASE_DIR/modules/backup/auto-backup-db.sh" ;;
-        2) bash "$BASE_DIR/modules/backup/auto-backup-files.sh" ;;
-        3) bash "$BASE_DIR/modules/backup/auto-backup-full.sh" ;;
+        1) bash "$BASE_DIR/modules/backup/auto-backup-full-db.sh" ;;
+        2) bash "$BASE_DIR/modules/backup/auto-backup-file-batch.sh" ;;
         4)
             clear
             echo "===================================================="
