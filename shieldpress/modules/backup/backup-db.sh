@@ -78,7 +78,7 @@ case "$SELECT_MODE" in
     db_i=1
     while IFS= read -r db; do
         [ -z "$db" ] && continue
-        SIZE=$(mysql -N -e "SELECT ROUND(SUM(data_length+index_length)/1024/1024,1) FROM information_schema.tables WHERE table_schema='$db';" 2>/dev/null)
+        SIZE=$(mysql -N -e "SELECT COALESCE(ROUND(SUM(data_length+index_length)/1024/1024,1),0) FROM information_schema.tables WHERE table_schema='$db';" 2>/dev/null)
         SIZE="${SIZE:-0}"
         printf "  %2d) %-30s %6s MB\n" "$db_i" "$db" "$SIZE"
         DB_MAP[$db_i]="$db"
@@ -214,7 +214,7 @@ GZ_FILE="$BACKUP_DIR/${DB_NAME}_${DATE}.sql.gz"
 DB_SIZE_MB=0
 case "$DB_CONNECTION" in
     mysql|mariadb)
-        DB_SIZE_MB=$(mysql -N -e "SELECT ROUND(SUM(data_length+index_length)/1024/1024,0) FROM information_schema.tables WHERE table_schema='$DB_NAME';" 2>/dev/null)
+        DB_SIZE_MB=$(mysql -N -e "SELECT COALESCE(ROUND(SUM(data_length+index_length)/1024/1024,0),0) FROM information_schema.tables WHERE table_schema='$DB_NAME';" 2>/dev/null)
         ;;
     pgsql|postgres|postgresql)
         if [ -n "$DB_PASS" ]; then
@@ -247,25 +247,22 @@ START_TIME=$(date +%s)
 case "$DB_CONNECTION" in
     mysql|mariadb)
         MYSQL_CNF=$(mktemp /tmp/shieldpress_mycnf_XXXXXX)
-        chmod 600 "$MYSQL_CNF"
-        if [ -n "$DB_PASS" ]; then
-            cat > "$MYSQL_CNF" <<CNFEOF
-[client]
-user=$DB_USER
-password=$DB_PASS
-CNFEOF
-        else
-            cat > "$MYSQL_CNF" <<CNFEOF
-[client]
-user=$DB_USER
-CNFEOF
+        write_mysql_defaults "$MYSQL_CNF"
+
+        MYSQL_DUMP_BIN=$(mysql_dump_bin)
+        if [ -z "$MYSQL_DUMP_BIN" ]; then
+            echo "[FAIL] Neither mariadb-dump nor mysqldump is installed"
+            rm -f "$MYSQL_CNF"
+            log "FAILED backup DB: $BACKUP_LABEL ($DB_NAME) - dump client missing"
+            pause
+            exit 1
         fi
 
         if command -v pv >/dev/null 2>&1; then
-            ( set -o pipefail; mysqldump --defaults-extra-file="$MYSQL_CNF" --single-transaction --quick --routines --triggers \
+            ( set -o pipefail; "$MYSQL_DUMP_BIN" --defaults-extra-file="$MYSQL_CNF" --single-transaction --quick --routines --triggers \
                 "$DB_NAME" | pv -p -t -e -r | gzip > "$GZ_FILE" )
         else
-            ( set -o pipefail; mysqldump --defaults-extra-file="$MYSQL_CNF" --single-transaction --quick --routines --triggers \
+            ( set -o pipefail; "$MYSQL_DUMP_BIN" --defaults-extra-file="$MYSQL_CNF" --single-transaction --quick --routines --triggers \
                 "$DB_NAME" | gzip > "$GZ_FILE" )
         fi
         STATUS=$?

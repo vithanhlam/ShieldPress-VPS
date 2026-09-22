@@ -164,7 +164,7 @@ get_db_size_mb(){
     case "$DB_CONNECTION" in
         mysql|mariadb)
             SIZE_MB=$(mysql -N -e "
-                SELECT ROUND(SUM(data_length + index_length)/1024/1024, 0)
+                SELECT COALESCE(ROUND(SUM(data_length + index_length)/1024/1024, 0), 0)
                 FROM information_schema.tables
                 WHERE table_schema='$DB_NAME';" 2>/dev/null)
             ;;
@@ -240,6 +240,27 @@ show_elapsed(){
     local FMT
     FMT=$(format_duration "$ELAPSED")
     echo "  Elapsed   : $FMT"
+}
+
+# Select the dump client available on the server. Newer MariaDB packages may
+# ship mariadb-dump without the old mysqldump compatibility command.
+mysql_dump_bin(){
+    if command -v mariadb-dump >/dev/null 2>&1; then
+        command -v mariadb-dump
+    elif command -v mysqldump >/dev/null 2>&1; then
+        command -v mysqldump
+    else
+        return 1
+    fi
+}
+
+# Do not write an empty password. In particular, root commonly authenticates
+# through unix_socket; password= would disable that authentication path.
+write_mysql_defaults(){
+    local CNF="$1"
+    chmod 600 "$CNF"
+    printf '[client]\nuser=%s\n' "$DB_USER" > "$CNF"
+    [ -n "$DB_PASS" ] && printf 'password=%s\n' "$DB_PASS" >> "$CNF"
 }
 
 # Run a command with pv progress if available (for piped data)
@@ -327,12 +348,16 @@ backup_db_to_file(){
     local MYSQL_CNF=""
     if [ "$DB_CONNECTION" = "mysql" ] || [ "$DB_CONNECTION" = "mariadb" ]; then
         MYSQL_CNF=$(mktemp /tmp/shieldpress_mycnf_XXXXXX)
-        chmod 600 "$MYSQL_CNF"
-        cat > "$MYSQL_CNF" <<CNFEOF
-[client]
-user=$DB_USER
-password=$DB_PASS
-CNFEOF
+        write_mysql_defaults "$MYSQL_CNF"
+    fi
+
+    local MYSQL_DUMP_BIN=""
+    if [ "$DB_CONNECTION" = "mysql" ] || [ "$DB_CONNECTION" = "mariadb" ]; then
+        MYSQL_DUMP_BIN=$(mysql_dump_bin) || {
+            fail "Neither mariadb-dump nor mysqldump is installed"
+            rm -f "$MYSQL_CNF"
+            return 1
+        }
     fi
 
     # Không có `pv` (trường hợp phổ biến) thì dump DB lớn im lặng nhiều phút,
@@ -341,12 +366,12 @@ CNFEOF
     case "$DB_CONNECTION" in
         mysql|mariadb)
             if command -v pv >/dev/null 2>&1 && [ "$DB_SIZE_BYTES" -gt 0 ]; then
-                ( set -o pipefail; mysqldump --defaults-extra-file="$MYSQL_CNF" --single-transaction --quick --routines --triggers \
+                ( set -o pipefail; "$MYSQL_DUMP_BIN" --defaults-extra-file="$MYSQL_CNF" --single-transaction --quick --routines --triggers \
                     "$DB_NAME" | pv -s "$DB_SIZE_BYTES" -p -t -e -r | gzip > "$OUT_FILE" )
             else
                 local HB_PID=""
                 [ -t 1 ] && { start_heartbeat "Database dump ($DB_CONNECTION)" "$OUT_FILE"; HB_PID=$HEARTBEAT_PID; }
-                ( set -o pipefail; mysqldump --defaults-extra-file="$MYSQL_CNF" --single-transaction --quick --routines --triggers \
+                ( set -o pipefail; "$MYSQL_DUMP_BIN" --defaults-extra-file="$MYSQL_CNF" --single-transaction --quick --routines --triggers \
                     "$DB_NAME" | gzip > "$OUT_FILE" )
                 local CMD_STATUS=$?
                 [ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
@@ -403,12 +428,7 @@ restore_db_from_sql(){
     local MYSQL_CNF=""
     if [ "$DB_CONNECTION" = "mysql" ] || [ "$DB_CONNECTION" = "mariadb" ]; then
         MYSQL_CNF=$(mktemp /tmp/shieldpress_mycnf_XXXXXX)
-        chmod 600 "$MYSQL_CNF"
-        cat > "$MYSQL_CNF" <<CNFEOF
-[client]
-user=$DB_USER
-password=$DB_PASS
-CNFEOF
+        write_mysql_defaults "$MYSQL_CNF"
     fi
 
     case "$DB_CONNECTION" in

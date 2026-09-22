@@ -1,5 +1,17 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.65 — 2026-09-23 — MariaDB backup and database export fixes
+
+- Fixed MariaDB Backup Database authentication when `root` uses Unix socket
+  authentication by omitting an empty `password=` setting from temporary
+  client configuration files.
+- Added automatic fallback between `mariadb-dump` and `mysqldump`.
+- Export Database now accepts the displayed database number as well as the
+  database name and shares the same dump implementation as Backup Database.
+- Fixed empty databases being displayed as `NULL MB`; they now show `0 MB`.
+- Verified Backup Database and numeric Export on the AlmaLinux 9.8 VPS test
+  host, including gzip and SQL output validation.
+
 ## v1.3.64 — 2026-09-22 — Reliable per-user PM2 systemd startup
 
 - Node.js Manager now replaces PM2's stock `Type=forking`/PID-file systemd

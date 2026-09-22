@@ -3,6 +3,7 @@
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
 source "$BASE_DIR/modules/helpers/custom.sh"
+source "$BASE_DIR/modules/backup/_backup_helper.sh"
 
 DATA_FILE="$DATA_DIR/databases.list"
 EXPORT_DIR="$DATA_DIR/exports"
@@ -54,6 +55,7 @@ if [ ! -s "$DATA_FILE" ]; then
 fi
 
 declare -A DB_LINES
+declare -A DB_INDEX_MAP
 
 printf "%-4s %-32s %-20s %-10s %s\n" "No" "Database" "User" "Status" "Domain"
 echo "--------------------------------------------------------------------------------"
@@ -73,6 +75,7 @@ while IFS= read -r line; do
 
     printf "%-4s %-32s %-20s %-10s %s\n" "$idx" "$DB_NAME" "${DB_USER:-"-"}" "$STATUS" "${DOMAIN:-"-"}"
     DB_LINES["$DB_NAME"]="$line"
+    DB_INDEX_MAP["$idx"]="$DB_NAME"
     idx=$((idx + 1))
 done < "$DATA_FILE"
 
@@ -84,13 +87,18 @@ if [ "$idx" -eq 1 ]; then
     exit 1
 fi
 
-read -p "Enter database name to export: " DB_NAME
+read -p "Enter database number or name to export: " DB_NAME
 DB_NAME=$(echo "$DB_NAME" | tr -d '[:space:]')
 
 if [ -z "$DB_NAME" ]; then
     echo "Database name cannot be empty."
     pause
     exit 1
+fi
+
+# Accept the number shown in the table as well as the database name.
+if [[ "$DB_NAME" =~ ^[0-9]+$ ]] && [ -n "${DB_INDEX_MAP[$DB_NAME]}" ]; then
+    DB_NAME="${DB_INDEX_MAP[$DB_NAME]}"
 fi
 
 if [[ "$DB_NAME" =~ ^(mysql|sys|information_schema|performance_schema)$ ]]; then
@@ -140,29 +148,14 @@ echo ""
 echo "Exporting..."
 START_TIME=$(date +%s)
 
-if [ -n "$DB_USER" ] && [ -n "$DB_PASS" ]; then
-    # Dùng defaults-extra-file thay vì -p trực tiếp — tránh lộ password qua `ps aux`
-    _MYCNF=$(mktemp /tmp/sp_mycnf_XXXXXX)
-    chmod 600 "$_MYCNF"
-    printf '[client]\nuser=%s\npassword=%s\n' "$DB_USER" "$DB_PASS" > "$_MYCNF"
-
-    if command -v pv >/dev/null 2>&1 && [ "$DB_SIZE_BYTES" -gt 0 ]; then
-        ( set -o pipefail; mysqldump --defaults-extra-file="$_MYCNF" --single-transaction --quick --routines --triggers "$DB_NAME" | pv -s "$DB_SIZE_BYTES" -p -t -e -r | gzip > "$OUT_FILE" )
-    else
-        ( set -o pipefail; mysqldump --defaults-extra-file="$_MYCNF" --single-transaction --quick --routines --triggers "$DB_NAME" | gzip > "$OUT_FILE" )
-    fi
-
-    rm -f "$_MYCNF"
+DB_CONNECTION="mysql"
+# Export and Backup Database share one dump path so credentials, MariaDB
+# client selection, progress reporting, and pipe failure handling stay equal.
+if backup_db_to_file "$OUT_FILE"; then
+    STATUS=0
 else
-    if command -v pv >/dev/null 2>&1 && [ "$DB_SIZE_BYTES" -gt 0 ]; then
-        ( set -o pipefail; mysqldump --single-transaction --quick --routines --triggers "$DB_NAME" | pv -s "$DB_SIZE_BYTES" -p -t -e -r | gzip > "$OUT_FILE" )
-    else
-        ( set -o pipefail; mysqldump --single-transaction --quick --routines --triggers "$DB_NAME" | gzip > "$OUT_FILE" )
-    fi
+    STATUS=$?
 fi
-
-STATUS=$?
-rm -f "$_MYCNF" 2>/dev/null  # Xóa temp credentials file (nếu có) dù thành công hay thất bại
 if [ "$STATUS" -ne 0 ]; then
     rm -f "$OUT_FILE"
     echo ""
