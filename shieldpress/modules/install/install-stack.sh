@@ -24,18 +24,6 @@ LOG_FILE="$LOG_DIR/install.log"
 mkdir -p "$LOG_DIR"
 exec > >(tee -a $LOG_FILE) 2>&1
 
-echo "==============================================="
-echo "            ShieldPress VPS Stack v5"
-echo "==============================================="
-echo ""
-echo "  WARNING: Installation will take several"
-echo "  minutes depending on your server specs."
-echo "  Please do NOT close this terminal until"
-echo "  the process is fully complete."
-echo ""
-echo "==============================================="
-echo ""
-
 # ------------------------------------------------
 # LANGUAGE SELECT
 # ------------------------------------------------
@@ -59,6 +47,20 @@ if [ ! -f /opt/shieldpress/version.txt ]; then
     echo "1.0.0" > /opt/shieldpress/version.txt
     chmod 644 /opt/shieldpress/version.txt
 fi
+
+SHIELDPRESS_VERSION=$(tr -d '[:space:]' < /opt/shieldpress/version.txt)
+
+echo "==============================================="
+echo "            ShieldPress VPS v${SHIELDPRESS_VERSION}"
+echo "==============================================="
+echo ""
+echo "  WARNING: Installation will take several"
+echo "  minutes depending on your server specs."
+echo "  Please do NOT close this terminal until"
+echo "  the process is fully complete."
+echo ""
+echo "==============================================="
+echo ""
 
 # ------------------------------------------------
 # ROOT CHECK
@@ -111,20 +113,49 @@ TOTAL_RAM=$(free -m | awk '/Mem:/ {print $2}')
 CPU_CORES=$(nproc)
 DISK_FREE=$(df / | awk 'NR==2 {print $4}')
 
+# 1 GB VPS profile.  A provider may expose slightly less than 1,024 MB to
+# the guest (for example 951 MB), so 900 MB is the lowest supported value.
+MIN_RAM_MB=900
+LOW_MEMORY_PROFILE=0
+if [ "$TOTAL_RAM" -lt 1536 ]; then
+    LOW_MEMORY_PROFILE=1
+fi
+
 msg "Checking hardware..." "Đang kiểm tra phần cứng..."
 
 echo "RAM       : ${TOTAL_RAM}MB"
 echo "CPU Cores : ${CPU_CORES}"
 echo "Disk Free : $((DISK_FREE/1024))MB"
 
-if [ "$TOTAL_RAM" -lt 1024 ]; then
-    msg "Minimum RAM 1GB required" "Cần tối thiểu 1GB RAM"
+if [ "$TOTAL_RAM" -lt "$MIN_RAM_MB" ]; then
+    msg "Minimum RAM ${MIN_RAM_MB}MB required" "Cần tối thiểu ${MIN_RAM_MB}MB RAM"
     exit 1
 fi
 
 if [ "$DISK_FREE" -lt 5242880 ]; then
     msg "Minimum disk 5GB required" "Cần tối thiểu 5GB ổ cứng"
     exit 1
+fi
+
+# A small VPS needs disk-backed virtual memory during dnf/PHP package
+# installation. Never overwrite an existing swap device or swapfile.
+if [ "$LOW_MEMORY_PROFILE" -eq 1 ] && ! swapon --show --noheadings 2>/dev/null | grep -q .; then
+    SWAP_FILE="/swapfile"
+    if [ ! -e "$SWAP_FILE" ]; then
+        echo "[INFO] Creating 1GB swapfile for low-memory VPS..."
+        if command -v fallocate >/dev/null 2>&1; then
+            fallocate -l 1G "$SWAP_FILE"
+        else
+            dd if=/dev/zero of="$SWAP_FILE" bs=1M count=1024 status=none
+        fi
+        chmod 600 "$SWAP_FILE"
+        mkswap "$SWAP_FILE" >/dev/null
+    fi
+    swapon "$SWAP_FILE" 2>/dev/null || warn "Could not enable $SWAP_FILE"
+    if ! grep -qF "$SWAP_FILE none swap" /etc/fstab; then
+        echo "$SWAP_FILE none swap defaults 0 0" >> /etc/fstab
+    fi
+    ok "1GB swap enabled for low-memory VPS"
 fi
 
 
@@ -579,6 +610,11 @@ vm.swappiness         = 10
 vm.vfs_cache_pressure = 50
 EOF
 
+if [ "$LOW_MEMORY_PROFILE" -eq 1 ]; then
+    # Allow the kernel to use the swapfile before the 1 GB guest reaches OOM.
+    sed -i 's/^vm.swappiness         = 10/vm.swappiness         = 20/' /etc/sysctl.d/shieldpress.conf
+fi
+
 sysctl --system
 ulimit -n 100000
 ok "System tuning applied"
@@ -666,7 +702,15 @@ systemctl restart mariadb
 
 # MariaDB auto tuning - giới hạn buffer pool tối đa 70% RAM
 TOTAL_RAM=$(free -m | awk '/Mem:/ {print $2}')
-BUFFER_POOL=$((TOTAL_RAM * 35 / 100))
+if [ "$LOW_MEMORY_PROFILE" -eq 1 ]; then
+    BUFFER_POOL=128
+    DB_MAX_CONNECTIONS=40
+    DB_TMP_TABLE=16
+else
+    BUFFER_POOL=$((TOTAL_RAM * 35 / 100))
+    DB_MAX_CONNECTIONS=200
+    DB_TMP_TABLE=64
+fi
 
 # Giới hạn tối đa 4096MB để tránh OOM trên server nhỏ
 [ "$BUFFER_POOL" -gt 4096 ] && BUFFER_POOL=4096
@@ -679,9 +723,9 @@ innodb_buffer_pool_size=${BUFFER_POOL}M
 innodb_log_file_size=256M
 innodb_flush_method=O_DIRECT
 innodb_flush_log_at_trx_commit=2
-max_connections=200
-tmp_table_size=64M
-max_heap_table_size=64M
+max_connections=${DB_MAX_CONNECTIONS}
+tmp_table_size=${DB_TMP_TABLE}M
+max_heap_table_size=${DB_TMP_TABLE}M
 EOF
 
 systemctl restart mariadb
@@ -718,7 +762,11 @@ if ! systemctl is-active --quiet valkey; then
 fi
 
 TOTAL_RAM=$(free -m | awk '/Mem:/ {print $2}')
-MAXMEM=$((TOTAL_RAM / 4))
+if [ "$LOW_MEMORY_PROFILE" -eq 1 ]; then
+    MAXMEM=96
+else
+    MAXMEM=$((TOTAL_RAM / 4))
+fi
 [ "$MAXMEM" -gt 2048 ] && MAXMEM=2048
 
 # Tạo password ngẫu nhiên
@@ -879,14 +927,26 @@ install_php() {
         sed -i '/^opcache\.jit=/d'                   "$OPCACHE"
         sed -i '/^opcache\.enable=/d'                "$OPCACHE"
 
+        if [ "$LOW_MEMORY_PROFILE" -eq 1 ]; then
+            OPCACHE_MEMORY=64
+            OPCACHE_FILES=30000
+            OPCACHE_JIT_BUFFER=0
+            OPCACHE_JIT=0
+        else
+            OPCACHE_MEMORY=256
+            OPCACHE_FILES=100000
+            OPCACHE_JIT_BUFFER=128M
+            OPCACHE_JIT=1255
+        fi
+
         cat >> "$OPCACHE" <<EOF
 opcache.enable=1
-opcache.memory_consumption=256
-opcache.max_accelerated_files=100000
+opcache.memory_consumption=${OPCACHE_MEMORY}
+opcache.max_accelerated_files=${OPCACHE_FILES}
 opcache.validate_timestamps=1
 opcache.revalidate_freq=2
-opcache.jit_buffer_size=128M
-opcache.jit=1255
+opcache.jit_buffer_size=${OPCACHE_JIT_BUFFER}
+opcache.jit=${OPCACHE_JIT}
 EOF
     fi
 
@@ -898,10 +958,14 @@ EOF
     PHP_POOL_CONF="/etc/opt/remi/php${VERSION}/php-fpm.d/www.conf"
 
     TOTAL_RAM=$(free -m | awk '/Mem:/ {print $2}')
-    PM_MAX_CHILDREN=$((TOTAL_RAM / 50))
+    if [ "$LOW_MEMORY_PROFILE" -eq 1 ]; then
+        PM_MAX_CHILDREN=3
+    else
+        PM_MAX_CHILDREN=$((TOTAL_RAM / 50))
+    fi
 
-    # Đảm bảo tối thiểu 5, tối đa 100
-    [ "$PM_MAX_CHILDREN" -lt 5  ] && PM_MAX_CHILDREN=5
+    # 1 GB profile uses 3 on-demand workers; larger hosts keep the old floor.
+    [ "$LOW_MEMORY_PROFILE" -eq 0 ] && [ "$PM_MAX_CHILDREN" -lt 5 ] && PM_MAX_CHILDREN=5
     [ "$PM_MAX_CHILDREN" -gt 100 ] && PM_MAX_CHILDREN=100
 
     # Ghi đè toàn bộ www.conf - cách duy nhất đảm bảo không còn spare server directives

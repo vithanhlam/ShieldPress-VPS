@@ -151,7 +151,14 @@ apply_systemd_resilience(){
 
     # Trả 1 (không phải 0) khi service không tồn tại - để nơi gọi đếm số
     # service THẬT SỰ được áp dụng (patches-menu.sh) không bị đếm khống.
-    systemctl list-unit-files 2>/dev/null | grep -q "^${SERVICE}\.service" || return 1
+    # Do not use grep -q here: with `set -o pipefail` enabled by the installer,
+    # grep can close the pipe as soon as it finds a match and make systemctl
+    # exit with SIGPIPE. That turns a valid installed service into a false
+    # failure (and aborts the installer under `set -e`).
+    if ! systemctl list-unit-files --no-legend "${SERVICE}.service" 2>/dev/null \
+        | awk -v unit="${SERVICE}.service" '$1 == unit { found = 1 } END { exit !found }'; then
+        return 1
+    fi
 
     local DROPIN_DIR="/etc/systemd/system/${SERVICE}.service.d"
     mkdir -p "$DROPIN_DIR"

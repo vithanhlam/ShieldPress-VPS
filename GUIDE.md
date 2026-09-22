@@ -5,7 +5,8 @@ failover workflows for ShieldPress VPS on AlmaLinux 9 or 10.
 
 ## 1. Requirements and installation
 
-Use a fresh AlmaLinux 9/10 server with at least 1 GB RAM, 5 GB free disk and
+Use a fresh AlmaLinux 9/10 server with at least 900 MB exposed RAM (a 1 GB plan
+is recommended), 5 GB free disk and
 root SSH access. Before installing, make sure DNS and provider firewall rules
 are under your control.
 

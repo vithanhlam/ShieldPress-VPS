@@ -1,5 +1,22 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.63 — 2026-09-22 — Reliable MariaDB installer setup
+
+- Fixed a false installer failure after MariaDB is installed and enabled: the
+  systemd resilience check no longer treats a valid service as missing when
+  the installer runs with `pipefail` enabled.
+- Installer banner now identifies the product as **ShieldPress VPS** and reads
+  its displayed version from `version.txt` instead of showing a stale “Stack
+  v5” label.
+
+## v1.3.62 — 2026-09-21 — Low-memory 1 GB VPS installation profile
+
+- Accepts VPS instances exposing at least 900 MB RAM, covering providers that
+  reserve part of a nominal 1 GB plan.
+- Creates a 1 GB swapfile when a low-memory host has no swap configured.
+- Reduces MariaDB, Valkey, PHP-FPM and PHP OPcache limits for hosts below
+  1.5 GB RAM to reduce installation-time and runtime OOM risk.
+
 ## v1.3.61 — 2026-09-21 — Support 1 GB VPS installations
 
 - Lowered the documented minimum RAM requirement for ShieldPress VPS from

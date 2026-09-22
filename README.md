@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.61`
+**Current version:** `1.3.63`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -50,7 +50,7 @@ Source code is in the `shieldpress/` directory. On the server it installs to `/o
 | Requirement | Minimum |
 |-------------|---------|
 | OS | AlmaLinux 9 or AlmaLinux 10 |
-| RAM | 1 GB |
+| RAM | 900 MB exposed RAM minimum (1 GB plan recommended) |
 | Disk | 5 GB free |
 | Access | Root (SSH) |
 | Network | Public IP with internet access |
@@ -74,7 +74,7 @@ rm -f /tmp/shieldpress-install.sh
 The installer will:
 
 1. Verify OS compatibility (AlmaLinux 9/10 only).
-2. Check minimum RAM (1 GB) and disk space (5 GB).
+2. Check minimum RAM (900 MB) and disk space (5 GB).
 3. Install the full server stack (Nginx, PHP, MariaDB, Valkey, etc.).
 4. Set up the `shieldpress` command for quick access.
 5. Display the dashboard on completion.
