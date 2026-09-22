@@ -328,17 +328,67 @@ repair_selected_node_permissions(){
     ok "Permissions fixed before PM2 start/restart (owner: $sysuser)"
 }
 
-# Best-effort: make this user's PM2 daemon (and whatever it has saved via
-# `pm2 save`) come back after a reboot. Safe to call repeatedly. Not fatal if
-# it fails - the app still runs now, it just won't auto-resurrect on reboot.
+# Make this user's PM2 daemon (and whatever it has saved via `pm2 save`) come
+# back after a reboot.  The stock `pm2 startup` unit is Type=forking and uses
+# a PID file below /home/domains.  SELinux/systemd can reject that PID file,
+# leaving an otherwise healthy app unmanaged after reboot.  Replace just the
+# service start command with PM2's foreground mode so systemd supervises it
+# directly instead of trusting that PID file.
 pm2_persist_startup(){
     local user="$1"
     local home="/home/domains/$user"
     local out="/tmp/.pm2-startup-${user}.$$"
-    env HOME="$home" PM2_HOME="$home/.pm2" pm2 startup systemd -u "$user" --hp "$home" >"$out" 2>&1
-    grep -E '^(sudo )?env PATH=.*pm2 .*systemd' "$out" | tail -1 | bash >/dev/null 2>&1
+    local startup_cmd
+    local pm2_bin
+    local service="pm2-${user}.service"
+    local dropin="/etc/systemd/system/${service}.d/shieldpress-foreground.conf"
+
+    pm2_bin=$(command -v pm2 2>/dev/null) || {
+        fail "PM2 executable not found; cannot configure startup"
+        return 1
+    }
+
+    env HOME="$home" PM2_HOME="$home/.pm2" "$pm2_bin" startup systemd -u "$user" --hp "$home" >"$out" 2>&1 || {
+        rm -f "$out"
+        fail "Could not create systemd startup for $user"
+        return 1
+    }
+    startup_cmd=$(grep -E '^(sudo )?env PATH=.*pm2 .*systemd' "$out" | tail -1)
+    if [ -n "$startup_cmd" ] && ! bash -c "$startup_cmd" >/dev/null 2>&1; then
+        rm -f "$out"
+        fail "Could not enable systemd startup for $user"
+        return 1
+    fi
     rm -f "$out"
+
+    [ -f "/etc/systemd/system/$service" ] || {
+        fail "Systemd unit was not created for $user"
+        return 1
+    }
+    mkdir -p "$(dirname "$dropin")" || return 1
+    cat > "$dropin" <<EOF
+[Service]
+Type=simple
+PIDFile=
+ExecStart=
+ExecStart=$pm2_bin resurrect --no-daemon
+EOF
+    systemctl daemon-reload || return 1
+    systemctl enable "$service" >/dev/null || {
+        fail "Could not enable systemd startup for $user"
+        return 1
+    }
     run_pm2 "$user" pm2 save >/dev/null 2>&1 || true
+
+    # Hand the existing daemon to systemd now. This gives the same process
+    # model on first deploy and after reboot, and surfaces startup errors
+    # immediately instead of waiting for the next reboot.
+    run_pm2 "$user" pm2 kill >/dev/null 2>&1 || true
+    systemctl reset-failed "$service" 2>/dev/null || true
+    if ! systemctl restart "$service" || ! systemctl is-active --quiet "$service"; then
+        fail "Systemd PM2 startup failed for $user"
+        return 1
+    fi
 }
 
 backup_node_app(){

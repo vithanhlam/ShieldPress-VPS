@@ -1,5 +1,16 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.64 — 2026-09-22 — Reliable per-user PM2 systemd startup
+
+- Node.js Manager now replaces PM2's stock `Type=forking`/PID-file systemd
+  setup with foreground `pm2 resurrect --no-daemon` supervision. This avoids
+  SELinux and systemd PID-file access failures for PM2 homes below
+  `/home/domains`.
+- Start, deploy, port-change and entry-change flows now enable and verify the
+  domain user's PM2 systemd service immediately, so a startup failure is
+  reported during the operation rather than after the next VPS reboot.
+- Added smoke-test coverage for the foreground PM2 systemd setup.
+
 ## v1.3.63 — 2026-09-22 — Reliable MariaDB installer setup
 
 - Fixed a false installer failure after MariaDB is installed and enabled: the

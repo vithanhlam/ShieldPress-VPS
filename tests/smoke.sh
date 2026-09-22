@@ -71,6 +71,14 @@ else
     fail "Node.js Start/Deploy still deletes the existing PM2 process"
 fi
 
+if grep -q 'resurrect --no-daemon' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh" \
+    && grep -q 'PIDFile=' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh" \
+    && grep -q 'systemctl is-active --quiet "\$service"' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh"; then
+    pass "Node.js PM2 startup uses foreground systemd supervision"
+else
+    fail "Node.js PM2 startup may fail on systemd PID file checks"
+fi
+
 if grep -q 'proxy_hide_header Cache-Control' "$ROOT/shieldpress/modules/domain/helpers.sh" \
     && grep -q 'location \^~ /_next/static/' "$ROOT/shieldpress/modules/domain/helpers.sh"; then
     pass "Node.js Nginx cache policy protects Next.js deployments"
