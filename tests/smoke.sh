@@ -71,6 +71,13 @@ else
     fail "Node.js Start/Deploy still deletes the existing PM2 process"
 fi
 
+if grep -q 'SHIELDPRESS_START_MODE=next' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh" \
+    && grep -q 'Replacing legacy PM2 launcher with Next.js' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh"; then
+    pass "Node.js Start/Deploy replaces placeholder app.js for Next.js"
+else
+    fail "Node.js Start/Deploy may retain placeholder app.js for Next.js"
+fi
+
 if grep -q 'resurrect --no-daemon' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh" \
     && grep -q 'PIDFile=' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh" \
     && grep -q 'systemctl is-active --quiet "\$service"' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh"; then

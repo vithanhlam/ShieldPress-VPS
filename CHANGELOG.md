@@ -1,5 +1,19 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.66 — 2026-09-23 — Reliable Next.js PM2 launcher migration
+
+- Fixed Node.js domains created before source upload retaining ShieldPress's
+  temporary `app.js` PM2 process after a Next.js project is deployed.
+- Start, Restart and Deploy / Build now detect that legacy launcher and replace
+  it with the Next.js launcher under the domain user, configured port and
+  project working directory.
+- Stored the selected PM2 launch mode so future restarts preserve the intended
+  application command while generic Node.js apps continue to use their
+  configured entry or `npm start`.
+- Added smoke-test coverage and verified the full Node.js Manager → Deploy /
+  Build flow with a production Next.js 16.3.6 build on AlmaLinux 9.8, including
+  PM2 persistence and Nginx proxy health checks.
+
 ## v1.3.65 — 2026-09-23 — MariaDB backup and database export fixes
 
 - Fixed MariaDB Backup Database authentication when `root` uses Unix socket

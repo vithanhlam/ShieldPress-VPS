@@ -33,7 +33,12 @@ start_pm2_next_app(){
     local next_bin="./node_modules/.bin/next"
     [ -x "$next_bin" ] || next_bin="$(command -v next 2>/dev/null || true)"
     [ -n "$next_bin" ] || return 1
-    run_pm2 "$pm2_name" PORT="$NODE_APP_PORT" NODE_ENV=production pm2 start "$next_bin" \
+    # Persist the selected launcher in PM2's environment.  A domain can be
+    # created before its source is uploaded, in which case its placeholder
+    # app.js is initially started.  This marker lets Start/Deploy replace that
+    # legacy process once a Next.js package is present instead of merely
+    # restarting app.js forever.
+    run_pm2 "$pm2_name" SHIELDPRESS_START_MODE=next PORT="$NODE_APP_PORT" NODE_ENV=production pm2 start "$next_bin" \
         --name "$pm2_name" --update-env -- start --port "$NODE_APP_PORT" \
         && pm2_persist_startup "$pm2_name"
 }
@@ -43,8 +48,38 @@ is_nextjs_app(){
     grep -Eq '"next"[[:space:]]*:' "$DOMAIN_PATH/public_html/package.json"
 }
 
+pm2_app_start_mode(){
+    local user="$1"
+    local pm2_name="$2"
+    run_pm2 "$user" pm2 jlist 2>/dev/null | python3 -c '
+import json, sys
+name = sys.argv[1]
+try:
+    for app in json.load(sys.stdin):
+        if app.get("name") != name:
+            continue
+        env = app.get("pm2_env", {})
+        value = env.get("SHIELDPRESS_START_MODE")
+        if value is None:
+            value = env.get("env", {}).get("SHIELDPRESS_START_MODE", "")
+        print(value)
+        break
+except (json.JSONDecodeError, TypeError):
+    pass
+' "$pm2_name"
+}
+
 restart_pm2_app_with_config(){
     local pm2_name="$1"
+    # Do not let a PM2 process created for the temporary app.js survive after
+    # a Next.js project has been uploaded.  Restarting preserves PM2's old
+    # executable, so this is the one intentional replacement path.
+    if is_nextjs_app && [ "$(pm2_app_start_mode "$pm2_name" "$pm2_name")" != "next" ]; then
+        warn "Replacing legacy PM2 launcher with Next.js for $pm2_name"
+        run_pm2 "$pm2_name" pm2 delete "$pm2_name" || return 1
+        start_pm2_next_app "$pm2_name" || return 1
+        return 0
+    fi
     # Keep the existing PM2 process and its id. The application receives the
     # new environment on restart; a fresh start is only needed when the
     # process does not exist yet.

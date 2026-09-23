@@ -1048,9 +1048,9 @@ start_nodejs_service(){
 
     runuser -u "$CLEAN_DOMAIN" -- env HOME="$DOMAIN_PATH" PM2_HOME="$pm2_home" pm2 delete "$pm2_name" 2>/dev/null || true
     if [ -f "$app_root/package.json" ] && grep -q '"start"' "$app_root/package.json" 2>/dev/null; then
-        runuser -u "$CLEAN_DOMAIN" -- env HOME="$DOMAIN_PATH" PM2_HOME="$pm2_home" PORT="$NODE_APP_PORT" pm2 start npm --name "$pm2_name" -- start || return 1
+        runuser -u "$CLEAN_DOMAIN" -- env HOME="$DOMAIN_PATH" PM2_HOME="$pm2_home" SHIELDPRESS_START_MODE=npm PORT="$NODE_APP_PORT" pm2 start npm --name "$pm2_name" -- start || return 1
     else
-        runuser -u "$CLEAN_DOMAIN" -- env HOME="$DOMAIN_PATH" PM2_HOME="$pm2_home" PORT="$NODE_APP_PORT" pm2 start "$NODE_ENTRY" --name "$pm2_name" || return 1
+        runuser -u "$CLEAN_DOMAIN" -- env HOME="$DOMAIN_PATH" PM2_HOME="$pm2_home" SHIELDPRESS_START_MODE=node PORT="$NODE_APP_PORT" pm2 start "$NODE_ENTRY" --name "$pm2_name" || return 1
     fi
 
     # Best-effort: tự khởi động lại app sau khi reboot server, dưới đúng user.
