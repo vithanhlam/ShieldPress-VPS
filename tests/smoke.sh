@@ -71,6 +71,14 @@ else
     fail "Node.js Start/Deploy still deletes the existing PM2 process"
 fi
 
+if grep -q 'migrate_legacy_domain_pm2_name' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh" \
+    && grep -q 'pm2 restart "\$legacy_name" --name "\$CLEAN_DOMAIN" --update-env' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh" \
+    && grep -q 'legacy_row=$(pm2_app_row "\$CLEAN_DOMAIN" "\$legacy_name" "\$app_root")' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh"; then
+    pass "Node.js manager migrates only matching legacy PM2 app names"
+else
+    fail "Node.js manager cannot migrate matching legacy PM2 app names"
+fi
+
 if grep -q 'SHIELDPRESS_START_MODE=next' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh" \
     && grep -q 'Replacing legacy PM2 launcher with Next.js' "$ROOT/shieldpress/modules/nodejs/nodejs-menu.sh"; then
     pass "Node.js Start/Deploy replaces placeholder app.js for Next.js"

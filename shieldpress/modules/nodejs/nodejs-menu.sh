@@ -229,6 +229,35 @@ prepare_root_pm2_for_action(){
         }
 }
 
+# Early Node.js releases used the display domain as the PM2 app name (for
+# example, `example.com`).  The per-domain manager now consistently uses the
+# safe Linux-user name (`example_com`).  Recognise only the exact legacy name
+# in this domain's own PM2 daemon and exact project root, then rename it
+# before port ownership is checked.  Matching the root prevents a same-named
+# app belonging to another domain from ever being adopted.
+migrate_legacy_domain_pm2_name(){
+    local app_root="$DOMAIN_PATH/public_html"
+    local legacy_name="$DOMAIN"
+    local legacy_row current_row
+
+    [ "$legacy_name" != "$CLEAN_DOMAIN" ] || return 0
+
+    current_row=$(pm2_app_row "$CLEAN_DOMAIN" "$CLEAN_DOMAIN" "$app_root")
+    [ -n "$current_row" ] && return 0
+
+    legacy_row=$(pm2_app_row "$CLEAN_DOMAIN" "$legacy_name" "$app_root")
+    [ -n "$legacy_row" ] || return 0
+
+    warn "Migrating legacy PM2 app name '$legacy_name' to '$CLEAN_DOMAIN'"
+    run_pm2 "$CLEAN_DOMAIN" PORT="$NODE_APP_PORT" NODE_ENV=production \
+        pm2 restart "$legacy_name" --name "$CLEAN_DOMAIN" --update-env || {
+            fail "Could not migrate legacy PM2 app name '$legacy_name'"
+            return 1
+        }
+    run_pm2 "$CLEAN_DOMAIN" pm2 save >/dev/null 2>&1 || true
+    ok "Migrated PM2 app name to $CLEAN_DOMAIN"
+}
+
 selected_pm2_owns_port(){
     local port="$1"
     local row pid status listener_pid parent_pid hops
@@ -649,6 +678,7 @@ start_node_app(){
     select_node_domain || return
     ensure_pm2 || return
     prepare_root_pm2_for_action || return
+    migrate_legacy_domain_pm2_name || return
     assert_node_port_available || return
     cd "$DOMAIN_PATH/public_html" || return
     repair_selected_node_permissions || return
@@ -761,6 +791,7 @@ restart_node_app(){
     select_node_domain || return
     ensure_pm2 || return
     prepare_root_pm2_for_action || return
+    migrate_legacy_domain_pm2_name || return
     assert_node_port_available || return
     cd "$DOMAIN_PATH/public_html" || return
     repair_selected_node_permissions || return
@@ -792,6 +823,7 @@ deploy_node_app(){
     # configured port occupied. Migrate it before touching build artifacts so
     # deployment cannot fail later with EADDRINUSE or root-owned .next files.
     prepare_root_pm2_for_action || return
+    migrate_legacy_domain_pm2_name || return
     assert_node_port_available || return
 
     if confirm_node_backup; then

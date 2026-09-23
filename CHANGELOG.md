@@ -1,5 +1,17 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.67 — 2026-09-23 — Legacy PM2 app-name migration
+
+- Fixed Node.js Start, Restart and Deploy / Build rejecting a healthy
+  per-domain PM2 process when an older setup named it after the display domain
+  (for example, `example.com`) instead of its safe domain-user name
+  (`example_com`).
+- The manager now verifies the legacy app belongs to the selected domain by
+  PM2 user and project root, renames it to the canonical name, preserves the
+  configured port/environment, and saves PM2 before checking port ownership.
+- Unrelated processes and apps in another domain's PM2 daemon remain rejected
+  and are never adopted or stopped automatically.
+
 ## v1.3.66 — 2026-09-23 — Reliable Next.js PM2 launcher migration
 
 - Fixed Node.js domains created before source upload retaining ShieldPress's
