@@ -38,7 +38,7 @@ start_pm2_next_app(){
     # app.js is initially started.  This marker lets Start/Deploy replace that
     # legacy process once a Next.js package is present instead of merely
     # restarting app.js forever.
-    run_pm2 "$pm2_name" SHIELDPRESS_START_MODE=next PORT="$NODE_APP_PORT" NODE_ENV=production pm2 start "$next_bin" \
+    run_pm2 "$pm2_name" SHIELDPRESS_START_MODE=next NEXT_DIST_DIR=.next-release PORT="$NODE_APP_PORT" NODE_ENV=production pm2 start "$next_bin" \
         --name "$pm2_name" --update-env -- start --port "$NODE_APP_PORT" \
         && pm2_persist_startup "$pm2_name"
 }
@@ -46,6 +46,19 @@ start_pm2_next_app(){
 is_nextjs_app(){
     [ -f "$DOMAIN_PATH/public_html/package.json" ] || return 1
     grep -Eq '"next"[[:space:]]*:' "$DOMAIN_PATH/public_html/package.json"
+}
+
+# Candidate builds are safe only when the app's Next config uses this
+# environment variable for `distDir`. Other Next apps keep the established
+# .next build path and rollback behavior.
+next_app_supports_dist_dir(){
+    local app_root="$DOMAIN_PATH/public_html"
+    local config
+    for config in "$app_root"/next.config.js "$app_root"/next.config.mjs "$app_root"/next.config.ts "$app_root"/next.config.cjs; do
+        [ -f "$config" ] || continue
+        grep -q 'NEXT_DIST_DIR' "$config" && return 0
+    done
+    return 1
 }
 
 pm2_app_start_mode(){
@@ -71,6 +84,7 @@ except (json.JSONDecodeError, TypeError):
 
 restart_pm2_app_with_config(){
     local pm2_name="$1"
+    local next_dist_dir="${2:-.next-release}"
     # Do not let a PM2 process created for the temporary app.js survive after
     # a Next.js project has been uploaded.  Restarting preserves PM2's old
     # executable, so this is the one intentional replacement path.
@@ -83,8 +97,15 @@ restart_pm2_app_with_config(){
     # Keep the existing PM2 process and its id. The application receives the
     # new environment on restart; a fresh start is only needed when the
     # process does not exist yet.
-    run_pm2 "$pm2_name" PORT="$NODE_APP_PORT" NODE_ENV=production \
-        pm2 restart "$pm2_name" --update-env || return 1
+    if is_nextjs_app; then
+        # PM2 reload keeps cluster-mode Next apps serving while workers rotate.
+        # PM2 may fall back to restart for fork-mode applications.
+        run_pm2 "$pm2_name" NEXT_DIST_DIR="$next_dist_dir" PORT="$NODE_APP_PORT" NODE_ENV=production \
+            pm2 reload "$pm2_name" --update-env || return 1
+    else
+        run_pm2 "$pm2_name" PORT="$NODE_APP_PORT" NODE_ENV=production \
+            pm2 restart "$pm2_name" --update-env || return 1
+    fi
     run_pm2 "$pm2_name" pm2 save || true
 }
 
@@ -302,6 +323,7 @@ run_node_build(){
     local app_root="$2"
     local timeout_value="${SHIELDPRESS_BUILD_TIMEOUT:-15m}"
     local -a build_cmd=(npm run build)
+    local dist_dir="${3:-}"
 
     if grep -Eq '"next"[[:space:]]*:' "$app_root/package.json" && \
        grep -Eq '"build"[[:space:]]*:[^,}]*next[[:space:]]+build' "$app_root/package.json"; then
@@ -312,17 +334,20 @@ run_node_build(){
 
     local home="/home/domains/$user"
     local npm_cache="$home/.npm"
+    local -a build_env=(
+        "HOME=$home"
+        "USER=$user"
+        "LOGNAME=$user"
+        "NPM_CONFIG_CACHE=$npm_cache"
+    )
+    [ -n "$dist_dir" ] && build_env+=("NEXT_DIST_DIR=$dist_dir")
 
     # Keep timeout in the terminal's foreground process group. Without
     # --foreground, Ctrl-C can terminate the menu/runuser wrapper while a
     # Next.js worker spawned by npm keeps running and leaves .next/lock behind.
     # The same also makes TERM from the deploy timeout reach the build command
     # more predictably when the build is waiting in a Next.js worker phase.
-    runuser -u "$user" -- env \
-        HOME="$home" \
-        USER="$user" \
-        LOGNAME="$user" \
-        NPM_CONFIG_CACHE="$npm_cache" \
+    runuser -u "$user" -- env "${build_env[@]}" \
         timeout --foreground --signal=TERM --kill-after=30s "$timeout_value" \
         "${build_cmd[@]}" </dev/null
 }
@@ -697,7 +722,7 @@ start_node_app(){
     echo "Start mode:"
     echo "  1) npm start (recommended for Next.js, etc.)"
     echo "  2) node $NODE_ENTRY"
-    echo "  3) Next.js standalone (node .next/standalone/server.js)"
+    echo "  3) Next.js standalone (node .next-release/standalone/server.js or .next/standalone/server.js)"
     echo ""
     read -p "Select mode [1]: " PM2_MODE
     PM2_MODE="${PM2_MODE:-1}"
@@ -737,11 +762,13 @@ start_node_app(){
             }
             ;;
         3)
-            if [ ! -f ".next/standalone/server.js" ]; then
-                fail ".next/standalone/server.js not found. Run Deploy/Build first."
+            local standalone_server=".next/standalone/server.js"
+            [ -f ".next-release/standalone/server.js" ] && standalone_server=".next-release/standalone/server.js"
+            if [ ! -f "$standalone_server" ]; then
+                fail "Next.js standalone server not found. Run Deploy/Build first."
                 return 1
             fi
-            run_pm2 "$pm2_name" PORT=${NODE_APP_PORT} NODE_ENV=production pm2 start ".next/standalone/server.js" --name "$pm2_name" --update-env || {
+            run_pm2 "$pm2_name" PORT=${NODE_APP_PORT} NODE_ENV=production pm2 start "$standalone_server" --name "$pm2_name" --update-env || {
                 fail "PM2 start failed"
                 return 1
             }
@@ -876,53 +903,89 @@ deploy_node_app(){
         echo ""
         echo "Step $step: Building for production..."
 
-        cleanup_stale_next_lock "$DOMAIN_PATH/public_html"
-
-        # Keep the previous production build until the new build succeeds.
-        # Removing .next first can take a healthy app offline permanently when
-        # `next build` fails halfway through (missing env/dependency, OOM,
-        # TypeScript error, etc.).
         local previous_next=""
-        if [ -d ".next" ]; then
-            previous_next=".next.deploy-backup.$$"
-            echo "Saving previous .next build..."
-            mv .next "$previous_next" || { fail "Could not save previous .next build"; return 1; }
+        local build_output=".next"
+        local candidate_next=""
+        local dist_dir_supported="no"
+
+        if is_nextjs_app && next_app_supports_dist_dir; then
+            dist_dir_supported="yes"
+            candidate_next=".next.candidate.$$"
+            build_output="$candidate_next"
+            rm -rf "$candidate_next"
+            mkdir -p "$candidate_next/server/app" || {
+                fail "Could not prepare candidate output for $sysuser"
+                return 1
+            }
+            chown -R "$sysuser:$sysuser" "$candidate_next" || {
+                fail "Could not assign candidate output to $sysuser"
+                return 1
+            }
+            echo "Building separately in $candidate_next; the live build remains untouched."
+        else
+            cleanup_stale_next_lock "$DOMAIN_PATH/public_html"
+            # Legacy path for apps whose Next config does not expose NEXT_DIST_DIR.
+            if [ -d ".next" ]; then
+                previous_next=".next.deploy-backup.$$"
+                echo "Saving previous .next build..."
+                mv .next "$previous_next" || { fail "Could not save previous .next build"; return 1; }
+            fi
+            mkdir -p .next/server/app || {
+                fail "Could not prepare .next for $sysuser"
+                return 1
+            }
+            chown -R "$sysuser:$sysuser" .next || {
+                fail "Could not assign .next to $sysuser"
+                return 1
+            }
         fi
 
-        # Always give Turbopack a fresh, user-owned output root. A stale
-        # `.next/server/app` created by an earlier root build can survive
-        # partial cleanup and make Turbopack fail with EACCES on one route.
-        mkdir -p .next/server/app || {
-            fail "Could not prepare .next for $sysuser"
-            return 1
-        }
-        chown -R "$sysuser:$sysuser" .next || {
-            fail "Could not assign .next to $sysuser"
-            return 1
-        }
-
         echo "Running build as Linux user: $sysuser"
-        if ! run_node_build "$sysuser" "$DOMAIN_PATH/public_html"; then
+        if ! run_node_build "$sysuser" "$DOMAIN_PATH/public_html" "$candidate_next"; then
             fail "Build failed"
-            # A failed Next build may leave a partial .next directory behind.
-            rm -rf .next
-            if [ -n "$previous_next" ] && [ -d "$previous_next" ]; then
-                mv "$previous_next" .next
-                fix_node_app_permissions "$sysuser" "$DOMAIN_PATH"
-                warn "Previous .next build restored; the running app was left untouched."
+            if [ "$dist_dir_supported" = "yes" ]; then
+                rm -rf "$candidate_next"
+            else
+                rm -rf .next
+                if [ -n "$previous_next" ] && [ -d "$previous_next" ]; then
+                    mv "$previous_next" .next
+                    fix_node_app_permissions "$sysuser" "$DOMAIN_PATH"
+                    warn "Previous .next build restored; the running app was left untouched."
+                fi
             fi
             return 1
         fi
 
-        # The new build is valid; the old one is no longer needed.
-        [ -n "$previous_next" ] && rm -rf "$previous_next"
+        if [ "$dist_dir_supported" = "yes" ]; then
+            if [ ! -s "$candidate_next/BUILD_ID" ]; then
+                rm -rf "$candidate_next"
+                fail "Candidate build has no BUILD_ID; live release was not changed."
+                return 1
+            fi
+            # Preserve the current release until the candidate is complete.
+            # The directory handoff is brief; the running PM2 process is then
+            # reloaded with NEXT_DIST_DIR=.next-release.
+            if [ -e .next-release ] || [ -L .next-release ]; then
+                previous_next=".next-release.deploy-backup.$$"
+                mv .next-release "$previous_next" || {
+                    fail "Could not preserve the current .next-release"
+                    return 1
+                }
+            fi
+            mv "$candidate_next" .next-release || {
+                [ -n "$previous_next" ] && mv "$previous_next" .next-release
+                fail "Could not activate candidate build"
+                return 1
+            }
+            build_output=".next-release"
+        fi
 
-        # Next.js standalone: copy public + static into standalone
-        if [ -d ".next/standalone" ]; then
+        # Next.js standalone: copy public + static into the selected output.
+        if [ -d "$build_output/standalone" ]; then
             echo "Detected Next.js standalone output, copying assets..."
-            [ -d "public" ] && cp -r public .next/standalone/
-            [ -d ".next/static" ] && mkdir -p .next/standalone/.next && cp -r .next/static .next/standalone/.next/
-            ok "Copied public + static into .next/standalone"
+            [ -d "public" ] && cp -r public "$build_output/standalone/"
+            [ -d "$build_output/static" ] && mkdir -p "$build_output/standalone/.next" && cp -r "$build_output/static" "$build_output/standalone/.next/"
+            ok "Copied public + static into standalone"
         fi
 
         ok "Build completed"
@@ -936,11 +999,28 @@ deploy_node_app(){
     echo "Step $((step + 1)): Restarting app via PM2 and updating environment..."
 
     if run_pm2 "$pm2_name" pm2 describe "$pm2_name" >/dev/null 2>&1; then
-        restart_pm2_app_with_config "$pm2_name" && \
-            ok "App restarted via PM2 (environment updated, PORT=$NODE_APP_PORT)" || {
+        if restart_pm2_app_with_config "$pm2_name"; then
+            ok "App reloaded via PM2 (environment updated, PORT=$NODE_APP_PORT)"
+            if [ "$dist_dir_supported" = "yes" ] && [ -n "$previous_next" ]; then
+                ok "Previous Next.js release retained at $previous_next for rollback"
+            else
+                [ -n "$previous_next" ] && rm -rf "$previous_next"
+            fi
+        else
                 fail "PM2 restart failed"
+                if [ "$dist_dir_supported" = "yes" ]; then
+                    rm -rf .next-release
+                    if [ -n "$previous_next" ] && [ -d "$previous_next" ]; then
+                        mv "$previous_next" .next-release
+                        restart_pm2_app_with_config "$pm2_name" .next-release >/dev/null 2>&1 || true
+                        warn "Previous Next.js release restored after reload failure."
+                    elif [ -d .next ]; then
+                        restart_pm2_app_with_config "$pm2_name" .next >/dev/null 2>&1 || true
+                        warn "Previous .next build retained after reload failure."
+                    fi
+                fi
                 return 1
-            }
+        fi
     else
         echo "App not yet running in PM2. Starting now..."
         echo ""
@@ -961,7 +1041,11 @@ deploy_node_app(){
                 fi
                 ;;
             2) run_pm2 "$pm2_name" PORT=${NODE_APP_PORT} NODE_ENV=production pm2 start "$NODE_ENTRY" --name "$pm2_name" --update-env || { fail "PM2 start failed"; return 1; } ;;
-            3) run_pm2 "$pm2_name" PORT=${NODE_APP_PORT} NODE_ENV=production pm2 start ".next/standalone/server.js" --name "$pm2_name" --update-env || { fail "PM2 start failed"; return 1; } ;;
+            3)
+                local standalone_server=".next/standalone/server.js"
+                [ -f ".next-release/standalone/server.js" ] && standalone_server=".next-release/standalone/server.js"
+                run_pm2 "$pm2_name" PORT=${NODE_APP_PORT} NODE_ENV=production pm2 start "$standalone_server" --name "$pm2_name" --update-env || { fail "PM2 start failed"; return 1; }
+                ;;
             *) fail "Invalid mode"; return 1 ;;
         esac
 

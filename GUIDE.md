@@ -118,6 +118,14 @@ Node.js Manager → `Deploy / Build` provides three choices:
 - **Dependencies + DB migration** installs dependencies, applies reviewed
   Prisma migrations, builds, and restarts the existing app.
 
+For Next.js projects whose `next.config.*` reads `NEXT_DIST_DIR` into `distDir`,
+Deploy / Build writes to a separate `.next.candidate.<pid>` directory and checks
+for `BUILD_ID` before replacing `.next-release`. The previous release is kept
+as `.next-release.deploy-backup.<pid>` after a successful PM2 reload. The app
+must keep using `NEXT_DIST_DIR=.next-release` at runtime. PM2 reload can avoid
+downtime in cluster mode; in fork mode PM2 may fall back to a restart. Apps
+without this config support continue using the standard `.next` build path.
+
 For a Prisma project, create and test migrations locally with `npx prisma
 migrate dev --name <change>`, then commit the generated `prisma/migrations/`
 directory with the application code. On the VPS ShieldPress runs `npx prisma

@@ -1,5 +1,19 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.68 — 2026-09-24 — Isolated Next.js candidate builds
+
+- Next.js apps whose config maps `NEXT_DIST_DIR` to `distDir` now build into a
+  separate candidate directory, leaving the active output untouched during
+  compilation. The manager verifies `BUILD_ID`, swaps to `.next-release`, and
+  reloads PM2 with the matching runtime environment.
+- The preceding release is retained for manual rollback. Apps without this
+  config continue using the existing `.next` build and restore flow.
+- PM2 uses `reload` for Next.js apps; zero downtime depends on cluster mode,
+  while fork mode may fall back to a restart.
+- Verified two consecutive Deploy / Build runs on AlmaLinux 9.8 with Next.js
+  16.3.6; candidate output, PM2 runtime environment, retained rollback build
+  and HTTP responses through Nginx were confirmed.
+
 ## v1.3.67 — 2026-09-23 — Legacy PM2 app-name migration
 
 - Fixed Node.js Start, Restart and Deploy / Build rejecting a healthy

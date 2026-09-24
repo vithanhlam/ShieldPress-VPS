@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.67`
+**Current version:** `1.3.68`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -351,6 +351,10 @@ Source: `modules/nodejs/`
 - Backup Node.js apps.
 - Deploy Node.js apps in three explicit modes: standard build/environment
   refresh, first deploy, or dependency + reviewed Prisma migration release.
+- Next.js projects whose config reads `NEXT_DIST_DIR` into `distDir` build into
+  an isolated candidate directory, verify `BUILD_ID`, then activate the release
+  while retaining the previous build for rollback. See the [Next.js deploy
+  guide](GUIDE.md#6-nodejs-and-nextjs) for PM2 reload behavior and limits.
 - Production Prisma releases apply committed `prisma/migrations` through
   `prisma migrate deploy`; they never use unversioned `prisma db push`.
 - The domain overview shows the configured/listening port and PM2 ID, status,
