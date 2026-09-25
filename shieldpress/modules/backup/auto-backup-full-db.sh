@@ -97,12 +97,12 @@ flock -n 9 || { echo "$(date '+%F %T') | SKIP: full DB batch is already running"
 
 value_from_env(){ grep "^$2=" "$1/config/domain.env" 2>/dev/null | head -n1 | cut -d= -f2-; }
 backup_one(){
-    local engine="$1" db="$2" domain_path="$3" retention="$4" date file backup_dir db_user db_pass domain status
+    local engine="$1" db="$2" domain_path="$3" retention="$4" date file backup_dir db_user db_pass domain upload_scope status
     if [ -n "$domain_path" ] && [ -f "$domain_path/config/domain.env" ]; then
         db_user=$(value_from_env "$domain_path" DB_USER); db_pass=$(value_from_env "$domain_path" DB_PASS); domain=$(value_from_env "$domain_path" DOMAIN)
-        backup_dir="$domain_path/backup/db"
+        backup_dir="$domain_path/backup/db"; upload_scope="$domain"
     else
-        db_user=""; db_pass=""; domain="$db"; backup_dir="$BACKUP_GLOBAL_DIR/standalone-db"
+        db_user=""; db_pass=""; domain="$db"; upload_scope="standalone/$db"; backup_dir="$BACKUP_GLOBAL_DIR/standalone-db"
     fi
     mkdir -p "$backup_dir"
     date=$(date +%F_%H-%M-%S); file="$backup_dir/${db}_${date}.sql.gz"; status=1
@@ -119,7 +119,7 @@ backup_one(){
     if [ "$status" -eq 0 ] && gzip -t "$file" 2>/dev/null; then
         echo "$(date '+%F %T') | SUCCESS: batch DB $domain ($engine/$db): $file" >> "$RUN_LOG_FILE"
         find "$backup_dir" -maxdepth 1 -type f -name "${db}_*.sql.gz" -printf '%T@ %p\n' | sort -nr | tail -n +$((retention+1)) | cut -d' ' -f2- | xargs -r rm -f
-        source "$BASE_DIR/modules/backup/_backup_helper.sh"; remote_upload_backup "$file" "db"
+        source "$BASE_DIR/modules/backup/_backup_helper.sh"; remote_upload_backup "$file" "db" "$upload_scope"
     else
         echo "$(date '+%F %T') | FAILED: batch DB $domain ($engine/$db)" >> "$RUN_LOG_FILE"; rm -f "$file"
         source "$BASE_DIR/modules/backup/_backup_helper.sh"; shieldpress_notify_event "backup_fail" "Batch database backup failed" "$domain ($engine/$db)"

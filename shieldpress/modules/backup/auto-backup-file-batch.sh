@@ -71,7 +71,7 @@ backup_one(){
  if [ "$status" -eq 0 ] && [ -f "$file" ]; then
    echo "$(date '+%F %T') | SUCCESS: batch files $domain ($mode): $file" >> "$RUN_LOG_FILE"
    find "$dir" -maxdepth 1 -type f -name "files_${mode}_*.tar.gz" -printf '%T@ %p\n' | sort -nr | tail -n +$((retention+1)) | cut -d' ' -f2- | xargs -r rm -f
-   source "$BASE_DIR/modules/backup/_backup_helper.sh"; remote_upload_backup "$file" files
+   source "$BASE_DIR/modules/backup/_backup_helper.sh"; remote_upload_backup "$file" files "$domain"
  else echo "$(date '+%F %T') | FAILED: batch files $domain ($mode)" >> "$RUN_LOG_FILE"; rm -f "$file"; fi
 }
 RUNNER

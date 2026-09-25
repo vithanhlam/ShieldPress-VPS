@@ -817,6 +817,7 @@ load_remote_config(){
 remote_upload_backup(){
     local FILE="$1"
     local TYPE="$2"
+    local DEST_DOMAIN="${3:-${DOMAIN:-}}"
 
     load_remote_config
     [ "$REMOTE_ENABLED" = "1" ] || return 0
@@ -828,13 +829,17 @@ remote_upload_backup(){
         warn "Remote upload skipped: file not found: $FILE"
         return 1
     fi
+    if [ -z "$DEST_DOMAIN" ]; then
+        warn "Remote upload skipped: no domain scope was provided for $(basename "$FILE")"
+        return 1
+    fi
 
     local REMOTE DEST UPLOAD_OK=1 START_TIME END_TIME DURATION
     local UPLOAD_LABEL="$(basename "$FILE")"
     while read -r REMOTE; do
         REMOTE="${REMOTE%:}"
         [ -z "$REMOTE" ] && continue
-        DEST="${REMOTE}:${RCLONE_PATH}/${DOMAIN}/${TYPE}"
+        DEST="${REMOTE}:${RCLONE_PATH}/${DEST_DOMAIN}/${TYPE}"
         if [ -n "${REMOTE_UPLOAD_TOTAL:-}" ]; then
             printf '[%s/%s] Uploading %s (%s) -> %s\n' \
                 "${REMOTE_UPLOAD_INDEX:-0}" "$REMOTE_UPLOAD_TOTAL" "$UPLOAD_LABEL" \

@@ -92,11 +92,16 @@ case "$APP_TYPE" in
         DB_CONNECTION="mysql"
         DEFAULT_CREATE_DB="N"
         NODE_APP_PORT=$(find_free_node_port)
+        [ -n "$NODE_APP_PORT" ] || { echo "No free Node.js port found in range 3000-3999."; exit 1; }
         NODE_ENTRY="app.js"
         echo "Default Node.js app port: $NODE_APP_PORT"
         read -p "Change Node.js app port? [y/N]: " CHANGE_NODE_PORT
         if [[ "$CHANGE_NODE_PORT" =~ ^[Yy]$ ]]; then
             read -p "Node.js app port: " NODE_APP_PORT
+            while ! node_port_is_available "$NODE_APP_PORT"; do
+                echo "Port must be an unused port between 3000 and 3999."
+                read -p "Choose another Node.js app port: " NODE_APP_PORT
+            done
         fi
         ;;
     *)

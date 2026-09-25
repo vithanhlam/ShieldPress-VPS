@@ -226,23 +226,31 @@ select_domain(){
 
 find_free_node_port(){
     local port
-    # Chỉ soi cổng đang LISTEN là không đủ: nếu app Node.js của domain khác
-    # đang tạm thời không chạy (crash, đang restart, đang cài đặt dở), cổng
-    # của nó trông "rảnh" và bị cấp trùng cho domain mới - 2 domain cùng
-    # NODE_APP_PORT thì domain vào sau sẽ đè cổng, cả 2 đều lỗi 502. Soi
-    # thêm NODE_APP_PORT đã ghi trong domain.env của mọi domain hiện có.
-    local used_ports
-    used_ports=$(grep -h "^NODE_APP_PORT=" "$DOMAINS_ROOT"/*/config/domain.env 2>/dev/null \
-        | cut -d= -f2 | tr -d '[:space:]')
-
     for port in $(seq 3000 3999); do
-        ss -tuln 2>/dev/null | grep -q ":${port} " && continue
-        echo "$used_ports" | grep -qxF "$port" && continue
+        node_port_is_available "$port" || continue
         echo "$port"
         return 0
     done
 
     return 1
+}
+
+# Explicit ports entered during domain creation need the same checks as the
+# automatically selected port. Check both live listeners and saved domain
+# configuration so stopped or restarting apps cannot claim a duplicate.
+node_port_is_available(){
+    local candidate="$1"
+    local configured_port
+
+    [[ "$candidate" =~ ^3[0-9]{3}$ ]] || return 1
+    ss -ltn 2>/dev/null | grep -qE ":${candidate}[[:space:]]" && return 1
+
+    while IFS= read -r configured_port; do
+        [ "$configured_port" = "$candidate" ] && return 1
+    done < <(grep -h "^NODE_APP_PORT=" "$DOMAINS_ROOT"/*/config/domain.env 2>/dev/null \
+        | cut -d= -f2 | tr -d '[:space:]')
+
+    return 0
 }
 
 # ===============================

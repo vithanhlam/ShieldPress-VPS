@@ -1,5 +1,19 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.69 — 2026-09-25 — Backup scope and Node.js port checks
+
+- Fixed scheduled database and file backups uploading without their domain
+  scope. Backups now go under a distinct domain/type directory on remote
+  storage; standalone database backups use a separate directory per database,
+  so retention cannot remove another database's backup.
+- Remote uploads now stop with a clear warning when no destination scope is
+  provided instead of uploading into an ambiguous shared directory.
+- Fixed Node.js domain creation assigning a port already configured for a
+  stopped domain. Explicitly entered ports are also checked for range,
+  listeners and existing domain assignments.
+- Verified remote file backups for WordPress, Node.js, Next.js and PHP on the
+  ShieldPress test VPS. Laravel was not present for a live backup test.
+
 ## v1.3.68 — 2026-09-24 — Isolated Next.js candidate builds
 
 - Next.js apps whose config maps `NEXT_DIST_DIR` to `distDir` now build into a
