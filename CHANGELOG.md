@@ -1,5 +1,11 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.72 — 2026-09-27 — Detect standalone DB backup schedules
+
+- Fixed the All Databases list checking legacy standalone script names after
+  current schedules started including the database engine in their filenames.
+  Existing MySQL and PostgreSQL schedules now display as configured.
+
 ## v1.3.71 — 2026-09-27 — Configure all database backups separately
 
 - Added an **All Databases** setup option that lists MariaDB and PostgreSQL

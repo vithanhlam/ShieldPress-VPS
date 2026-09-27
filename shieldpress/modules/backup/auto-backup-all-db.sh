@@ -9,7 +9,7 @@ engine_name(){
     case "$1" in mysql|mariadb) echo mysql ;; pgsql|postgres|postgresql) echo pgsql ;; esac
 }
 database_script(){
-    local engine="$1" db="$2" env env_db env_engine safe_name
+    local engine="$1" db="$2" env env_db env_engine safe_name legacy_script
     for env in "$DOMAINS_ROOT"/*/config/domain.env; do
         [ -f "$env" ] || continue
         env_db=$(grep '^DB_NAME=' "$env" | cut -d'=' -f2- | tr -d '[:space:]')
@@ -20,7 +20,12 @@ database_script(){
         fi
     done
     safe_name=$(printf '%s' "$db" | sed 's/[^a-zA-Z0-9]/_/g')
-    printf '%s/config/auto-backup/auto-backup-db-%s.sh\n' "$BASE_DIR" "$safe_name"
+    legacy_script="$BASE_DIR/config/auto-backup/auto-backup-db-${safe_name}.sh"
+    if [ -f "$legacy_script" ] && crontab -l 2>/dev/null | grep -Fq "$legacy_script"; then
+        printf '%s\n' "$legacy_script"
+    else
+        printf '%s/config/auto-backup/auto-backup-db-%s-%s.sh\n' "$BASE_DIR" "$engine" "$safe_name"
+    fi
 }
 schedule_status(){
     local script="$1"
