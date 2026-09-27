@@ -20,7 +20,16 @@ for d in "$DOMAINS_ROOT"/*/; do
     [ -f "$d/config/domain.env" ] || continue
     DN=$(grep "^DOMAIN=" "$d/config/domain.env" | cut -d'=' -f2 | tr -d '[:space:]')
     [ -z "$DN" ] && continue
-    echo "$i) $DN"
+    DB_SCRIPT="$d/config/auto-backup-db.sh"
+    FILE_SCRIPT="$d/config/auto-backup-files.sh"
+    FULL_SCRIPT="$d/config/auto-backup-full.sh"
+    DB_STATUS="No Backup"
+    FILE_STATUS="No Backup"
+    FULL_STATUS="No Backup"
+    [ -f "$DB_SCRIPT" ] && crontab -l 2>/dev/null | grep -Fq "$DB_SCRIPT" && DB_STATUS="AUTO Backup conf"
+    [ -f "$FILE_SCRIPT" ] && crontab -l 2>/dev/null | grep -Fq "$FILE_SCRIPT" && FILE_STATUS="AUTO Backup conf"
+    [ -f "$FULL_SCRIPT" ] && crontab -l 2>/dev/null | grep -Fq "$FULL_SCRIPT" && FULL_STATUS="AUTO Backup conf"
+    echo "$i) $DN | DB: $DB_STATUS | Files: $FILE_STATUS | Full: $FULL_STATUS"
     FOLDERS[$i]=$(basename "$d")
     ((i++))
 done

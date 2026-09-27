@@ -8,6 +8,30 @@ mkdir -p "$LOG_DIR"
 
 pause(){ echo ""; read -p "Press Enter..."; }
 
+database_schedule_script(){
+    local db="$1" env env_db safe_name
+    for env in "$DOMAINS_ROOT"/*/config/domain.env; do
+        [ -f "$env" ] || continue
+        env_db=$(grep '^DB_NAME=' "$env" | cut -d'=' -f2- | tr -d '[:space:]')
+        if [ "$env_db" = "$db" ]; then
+            printf '%s/config/auto-backup-db.sh\n' "$(dirname "$(dirname "$env")")"
+            return
+        fi
+    done
+    safe_name=$(printf '%s' "$db" | sed 's/[^a-zA-Z0-9]/_/g')
+    printf '%s/config/auto-backup/auto-backup-db-%s.sh\n' "$BASE_DIR" "$safe_name"
+}
+
+database_schedule_status(){
+    local script
+    script=$(database_schedule_script "$1")
+    if [ -f "$script" ] && crontab -l 2>/dev/null | grep -Fq "$script"; then
+        printf 'scheduled'
+    else
+        printf 'not configured'
+    fi
+}
+
 clear
 echo "===================================================="
 echo "              AUTO BACKUP DATABASE"
@@ -45,7 +69,7 @@ case "$SELECT_MODE" in
         DBC=$(grep "^DB_CONNECTION=" "$d/config/domain.env" | cut -d'=' -f2 | tr -d '[:space:]')
         [ -z "$DN" ] && continue
         [ -z "$DB" ] && continue
-        echo "$i) $DN  →  $DB (${DBC:-mysql})"
+        echo "$i) $DN  →  $DB (${DBC:-mysql}) [$(database_schedule_status "$DB")]"
         FOLDERS[$i]=$(basename "$d")
         ((i++))
     done
@@ -86,7 +110,7 @@ case "$SELECT_MODE" in
         [ -z "$db" ] && continue
         SIZE=$(mysql -N -e "SELECT ROUND(SUM(data_length+index_length)/1024/1024,1) FROM information_schema.tables WHERE table_schema='$db';" 2>/dev/null)
         SIZE="${SIZE:-0}"
-        printf "  %2d) %-30s %6s MB\n" "$db_i" "$db" "$SIZE"
+        printf "  %2d) %-30s %6s MB [%s]\n" "$db_i" "$db" "$SIZE" "$(database_schedule_status "$db")"
         DB_MAP[$db_i]="$db"
         ((db_i++))
     done < <(mysql -N -e "SHOW DATABASES;" 2>/dev/null | grep -Ev "^(information_schema|performance_schema|mysql|sys)$")
@@ -145,7 +169,7 @@ case "$SELECT_MODE" in
         [ -z "$db" ] && continue
         SIZE=$(runuser -u postgres -- psql -tAc "SELECT pg_size_pretty(pg_database_size('$db'));" 2>/dev/null)
         SIZE="${SIZE:-?}"
-        printf "  %2d) %-30s %10s\n" "$pg_i" "$db" "$SIZE"
+        printf "  %2d) %-30s %10s [%s]\n" "$pg_i" "$db" "$SIZE" "$(database_schedule_status "$db")"
         PG_MAP[$pg_i]="$db"
         ((pg_i++))
     done < <(runuser -u postgres -- psql -tAc "SELECT datname FROM pg_database WHERE datistemplate=false AND datname NOT IN ('postgres');" 2>/dev/null)

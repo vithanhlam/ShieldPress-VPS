@@ -176,9 +176,15 @@ case "$VIEW_MODE" in
     # Auto-backup status
     echo "  AUTO-BACKUP STATUS:"
     echo "  ─────────────────────────────────────────────"
-    [ -f "$DOMAIN_PATH/config/auto-backup-db.sh" ] && echo "    DB Auto   : ON" || echo "    DB Auto   : OFF"
-    [ -f "$DOMAIN_PATH/config/auto-backup-files.sh" ] && echo "    Files Auto: ON" || echo "    Files Auto: OFF"
-    [ -f "$DOMAIN_PATH/config/auto-backup-full.sh" ] && echo "    Full Auto : ON" || echo "    Full Auto : OFF"
+    DB_SCRIPT="$DOMAIN_PATH/config/auto-backup-db.sh"
+    FILE_SCRIPT="$DOMAIN_PATH/config/auto-backup-files.sh"
+    FULL_SCRIPT="$DOMAIN_PATH/config/auto-backup-full.sh"
+    [ -f "$DB_SCRIPT" ] && crontab -l 2>/dev/null | grep -Fq "$DB_SCRIPT" && DB_STATUS="AUTO Backup conf" || DB_STATUS="No Backup"
+    [ -f "$FILE_SCRIPT" ] && crontab -l 2>/dev/null | grep -Fq "$FILE_SCRIPT" && FILE_STATUS="AUTO Backup conf" || FILE_STATUS="No Backup"
+    [ -f "$FULL_SCRIPT" ] && crontab -l 2>/dev/null | grep -Fq "$FULL_SCRIPT" && FULL_STATUS="AUTO Backup conf" || FULL_STATUS="No Backup"
+    echo "    DB Auto   : $DB_STATUS"
+    echo "    Files Auto: $FILE_STATUS"
+    echo "    Full Auto : $FULL_STATUS"
     CRON_JOBS=$(crontab -l 2>/dev/null | grep "$FOLDER" | head -3)
     if [ -n "$CRON_JOBS" ]; then
         echo ""

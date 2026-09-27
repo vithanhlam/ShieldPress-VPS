@@ -1,18 +1,19 @@
 #!/bin/bash
-# Unified auto-backup setup: choose type, then configure schedule
+# Configure independent automatic backup schedules per database or website.
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/ui.sh"
 
 while true; do
     clear
-    sp_header "Auto Backup Setup" "Schedule automated backups"
+    sp_header "Auto Backup Setup" "Configure a separate schedule per target"
 
     echo ""
-    echo "  Batch setup (10+ websites / databases):"
+    echo "  Configure an individual target:"
     sp_menu_grid \
-        "1|Auto Backup Full DB|blue" \
-        "2|Auto Backup File|cyan"
+        "1|Database (select one)|blue" \
+        "2|Website + Database + Files|cyan" \
+        "3|Website Files Only|cyan"
 
     echo ""
     echo "  Manage:"
@@ -24,8 +25,9 @@ while true; do
     sp_prompt opt
 
     case $opt in
-        1) bash "$BASE_DIR/modules/backup/auto-backup-full-db.sh" ;;
-        2) bash "$BASE_DIR/modules/backup/auto-backup-file-batch.sh" ;;
+        1) bash "$BASE_DIR/modules/backup/auto-backup-db.sh" ;;
+        2) bash "$BASE_DIR/modules/backup/auto-backup-full.sh" ;;
+        3) bash "$BASE_DIR/modules/backup/auto-backup-files.sh" ;;
         4)
             clear
             echo "===================================================="

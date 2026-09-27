@@ -1,5 +1,16 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.70 — 2026-09-27 — Independent automatic backup schedules
+
+- Replaced the combined automatic database batch entry with per-database
+  scheduling for MariaDB and PostgreSQL, including databases linked to a
+  domain and standalone databases.
+- Added schedule status to database and domain selection lists. Database,
+  files-only and full website backup lists show `AUTO Backup conf` when their
+  schedule is active, or `No Backup` when no schedule is configured.
+- Full website backups continue to include the domain database when available
+  and the website files, with an independent schedule for each domain.
+
 ## v1.3.69 — 2026-09-25 — Backup scope and Node.js port checks
 
 - Fixed scheduled database and file backups uploading without their domain
