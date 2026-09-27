@@ -7,24 +7,34 @@ source "$BASE_DIR/modules/backup/_backup_helper.sh"
 mkdir -p "$LOG_DIR"
 
 pause(){ echo ""; read -p "Press Enter..."; }
+TARGET_ENGINE="${1:-}"
+TARGET_DB="${2:-}"
 
 database_schedule_script(){
-    local db="$1" env env_db safe_name
+    local engine="$1" db="$2" env env_db env_engine safe_name legacy_name
+    case "$engine" in mysql|mariadb) engine=mysql ;; pgsql|postgres|postgresql) engine=pgsql ;; esac
     for env in "$DOMAINS_ROOT"/*/config/domain.env; do
         [ -f "$env" ] || continue
         env_db=$(grep '^DB_NAME=' "$env" | cut -d'=' -f2- | tr -d '[:space:]')
-        if [ "$env_db" = "$db" ]; then
+        env_engine=$(grep '^DB_CONNECTION=' "$env" | cut -d'=' -f2- | tr -d '[:space:]')
+        case "$env_engine" in mysql|mariadb) env_engine=mysql ;; pgsql|postgres|postgresql) env_engine=pgsql ;; esac
+        if [ "$env_db" = "$db" ] && [ "$env_engine" = "$engine" ]; then
             printf '%s/config/auto-backup-db.sh\n' "$(dirname "$(dirname "$env")")"
             return
         fi
     done
     safe_name=$(printf '%s' "$db" | sed 's/[^a-zA-Z0-9]/_/g')
-    printf '%s/config/auto-backup/auto-backup-db-%s.sh\n' "$BASE_DIR" "$safe_name"
+    legacy_name="$BASE_DIR/config/auto-backup/auto-backup-db-${safe_name}.sh"
+    if [ -f "$legacy_name" ] && crontab -l 2>/dev/null | grep -Fq "$legacy_name"; then
+        printf '%s\n' "$legacy_name"
+    else
+        printf '%s/config/auto-backup/auto-backup-db-%s-%s.sh\n' "$BASE_DIR" "$engine" "$safe_name"
+    fi
 }
 
 database_schedule_status(){
     local script
-    script=$(database_schedule_script "$1")
+    script=$(database_schedule_script "$1" "$2")
     if [ -f "$script" ] && crontab -l 2>/dev/null | grep -Fq "$script"; then
         printf 'scheduled'
     else
@@ -37,12 +47,21 @@ echo "===================================================="
 echo "              AUTO BACKUP DATABASE"
 echo "===================================================="
 echo ""
-echo "Select database by:"
-echo "  1) Domain (read from domain config)"
-echo "  2) Database name (list from MariaDB)"
-echo "  3) Database name (list from PostgreSQL)"
-echo "--------------------------------------------------"
-read -p "Select mode: " SELECT_MODE
+if [ -n "$TARGET_DB" ]; then
+    case "$TARGET_ENGINE" in
+        mysql|mariadb) SELECT_MODE=2 ;;
+        pgsql|postgres|postgresql) SELECT_MODE=3 ;;
+        *) echo "Unsupported database engine: $TARGET_ENGINE"; pause; exit 1 ;;
+    esac
+    echo "Configuring individual backup for $TARGET_ENGINE database: $TARGET_DB"
+else
+    echo "Select database by:"
+    echo "  1) Domain (read from domain config)"
+    echo "  2) Database name (list from MariaDB)"
+    echo "  3) Database name (list from PostgreSQL)"
+    echo "--------------------------------------------------"
+    read -p "Select mode: " SELECT_MODE
+fi
 
 # Variables to be set by selection
 DB_NAME=""
@@ -69,7 +88,7 @@ case "$SELECT_MODE" in
         DBC=$(grep "^DB_CONNECTION=" "$d/config/domain.env" | cut -d'=' -f2 | tr -d '[:space:]')
         [ -z "$DN" ] && continue
         [ -z "$DB" ] && continue
-        echo "$i) $DN  →  $DB (${DBC:-mysql}) [$(database_schedule_status "$DB")]"
+        echo "$i) $DN  →  $DB (${DBC:-mysql}) [$(database_schedule_status "${DBC:-mysql}" "$DB")]"
         FOLDERS[$i]=$(basename "$d")
         ((i++))
     done
@@ -110,7 +129,7 @@ case "$SELECT_MODE" in
         [ -z "$db" ] && continue
         SIZE=$(mysql -N -e "SELECT ROUND(SUM(data_length+index_length)/1024/1024,1) FROM information_schema.tables WHERE table_schema='$db';" 2>/dev/null)
         SIZE="${SIZE:-0}"
-        printf "  %2d) %-30s %6s MB [%s]\n" "$db_i" "$db" "$SIZE" "$(database_schedule_status "$db")"
+        printf "  %2d) %-30s %6s MB [%s]\n" "$db_i" "$db" "$SIZE" "$(database_schedule_status mysql "$db")"
         DB_MAP[$db_i]="$db"
         ((db_i++))
     done < <(mysql -N -e "SHOW DATABASES;" 2>/dev/null | grep -Ev "^(information_schema|performance_schema|mysql|sys)$")
@@ -118,8 +137,13 @@ case "$SELECT_MODE" in
     [ $db_i -eq 1 ] && { echo "No databases found."; pause; exit 1; }
 
     echo "--------------------------------------------------"
-    read -p "Select database number: " choice
-    DB_NAME="${DB_MAP[$choice]}"
+    if [ -n "$TARGET_DB" ]; then
+        DB_NAME="$TARGET_DB"
+        mysql -N -e "SHOW DATABASES;" 2>/dev/null | grep -Fxq "$DB_NAME" || { echo "Database not found: $DB_NAME"; pause; exit 1; }
+    else
+        read -p "Select database number: " choice
+        DB_NAME="${DB_MAP[$choice]}"
+    fi
     [ -z "$DB_NAME" ] && { echo "Invalid selection!"; pause; exit 1; }
 
     DB_CONNECTION="mysql"
@@ -128,7 +152,8 @@ case "$SELECT_MODE" in
     for d in "$DOMAINS_ROOT"/*/config/domain.env; do
         [ -f "$d" ] || continue
         ENV_DB=$(grep "^DB_NAME=" "$d" | cut -d'=' -f2 | tr -d '[:space:]')
-        if [ "$ENV_DB" = "$DB_NAME" ]; then
+        ENV_ENGINE=$(grep "^DB_CONNECTION=" "$d" | cut -d'=' -f2 | tr -d '[:space:]')
+        if [ "$ENV_DB" = "$DB_NAME" ] && [[ "$ENV_ENGINE" =~ ^(mysql|mariadb)$ ]]; then
             DOMAIN_PATH="$(dirname "$(dirname "$d")")"
             DOMAIN=$(grep "^DOMAIN=" "$d" | cut -d'=' -f2 | tr -d '[:space:]')
             DB_USER=$(grep "^DB_USER=" "$d" | cut -d'=' -f2 | tr -d '[:space:]')
@@ -169,7 +194,7 @@ case "$SELECT_MODE" in
         [ -z "$db" ] && continue
         SIZE=$(runuser -u postgres -- psql -tAc "SELECT pg_size_pretty(pg_database_size('$db'));" 2>/dev/null)
         SIZE="${SIZE:-?}"
-        printf "  %2d) %-30s %10s [%s]\n" "$pg_i" "$db" "$SIZE" "$(database_schedule_status "$db")"
+        printf "  %2d) %-30s %10s [%s]\n" "$pg_i" "$db" "$SIZE" "$(database_schedule_status pgsql "$db")"
         PG_MAP[$pg_i]="$db"
         ((pg_i++))
     done < <(runuser -u postgres -- psql -tAc "SELECT datname FROM pg_database WHERE datistemplate=false AND datname NOT IN ('postgres');" 2>/dev/null)
@@ -177,8 +202,13 @@ case "$SELECT_MODE" in
     [ $pg_i -eq 1 ] && { echo "No databases found."; pause; exit 1; }
 
     echo "--------------------------------------------------"
-    read -p "Select database number: " choice
-    DB_NAME="${PG_MAP[$choice]}"
+    if [ -n "$TARGET_DB" ]; then
+        DB_NAME="$TARGET_DB"
+        runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME';" 2>/dev/null | grep -qx 1 || { echo "Database not found: $DB_NAME"; pause; exit 1; }
+    else
+        read -p "Select database number: " choice
+        DB_NAME="${PG_MAP[$choice]}"
+    fi
     [ -z "$DB_NAME" ] && { echo "Invalid selection!"; pause; exit 1; }
 
     DB_CONNECTION="pgsql"
@@ -187,7 +217,8 @@ case "$SELECT_MODE" in
     for d in "$DOMAINS_ROOT"/*/config/domain.env; do
         [ -f "$d" ] || continue
         ENV_DB=$(grep "^DB_NAME=" "$d" | cut -d'=' -f2 | tr -d '[:space:]')
-        if [ "$ENV_DB" = "$DB_NAME" ]; then
+        ENV_ENGINE=$(grep "^DB_CONNECTION=" "$d" | cut -d'=' -f2 | tr -d '[:space:]')
+        if [ "$ENV_DB" = "$DB_NAME" ] && [[ "$ENV_ENGINE" =~ ^(pgsql|postgres|postgresql)$ ]]; then
             DOMAIN_PATH="$(dirname "$(dirname "$d")")"
             DOMAIN=$(grep "^DOMAIN=" "$d" | cut -d'=' -f2 | tr -d '[:space:]')
             DB_USER=$(grep "^DB_USER=" "$d" | cut -d'=' -f2 | tr -d '[:space:]')
@@ -278,7 +309,8 @@ if [ -n "$DOMAIN_PATH" ]; then
 else
     mkdir -p "$BASE_DIR/config/auto-backup"
     SAFE_NAME=$(echo "$DB_NAME" | sed 's/[^a-zA-Z0-9]/_/g')
-    AUTO_SCRIPT="$BASE_DIR/config/auto-backup/auto-backup-db-${SAFE_NAME}.sh"
+    ENGINE_SAFE_NAME=$(case "$DB_CONNECTION" in mysql|mariadb) echo mysql ;; *) echo pgsql ;; esac)
+    AUTO_SCRIPT="$BASE_DIR/config/auto-backup/auto-backup-db-${ENGINE_SAFE_NAME}-${SAFE_NAME}.sh"
 fi
 
 # Generate mysqldump/pg_dump command based on engine
@@ -318,8 +350,13 @@ mkdir -p "\$BACKUP_DIR"
 
 case "\$DB_CONNECTION" in
     mysql|mariadb)
-        mysqldump --single-transaction --quick --routines --triggers \\
-            -u "\$DB_USER" -p"\$DB_PASS" "\$DB_NAME" | gzip > "\$FILE"
+        if [ -n "\$DB_PASS" ]; then
+            mysqldump --single-transaction --quick --routines --triggers \\
+                -u "\$DB_USER" -p"\$DB_PASS" "\$DB_NAME" | gzip > "\$FILE"
+        else
+            mysqldump --single-transaction --quick --routines --triggers \\
+                "\$DB_NAME" | gzip > "\$FILE"
+        fi
         ;;
     pgsql|postgres|postgresql)
         if [ -n "\$DB_PASS" ]; then

@@ -1,5 +1,16 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.71 — 2026-09-27 — Configure all database backups separately
+
+- Added an **All Databases** setup option that lists MariaDB and PostgreSQL
+  databases, shows which already have active automatic schedules, and offers
+  to configure each database without a schedule.
+- Each database keeps its own generated backup script and cron schedule;
+  standalone database script names include the engine to avoid MySQL and
+  PostgreSQL name collisions.
+- Standalone MariaDB backups now use the local socket when no password is
+  configured, matching root socket authentication on common VPS installs.
+
 ## v1.3.70 — 2026-09-27 — Independent automatic backup schedules
 
 - Replaced the combined automatic database batch entry with per-database

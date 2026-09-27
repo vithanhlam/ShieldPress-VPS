@@ -11,24 +11,26 @@ while true; do
     echo ""
     echo "  Configure an individual target:"
     sp_menu_grid \
-        "1|Database (select one)|blue" \
-        "2|Website + Database + Files|cyan" \
-        "3|Website Files Only|cyan"
+        "1|All Databases (separate jobs)|blue" \
+        "2|Single Database|cyan" \
+        "3|Website + Database + Files|green" \
+        "4|Website Files Only|cyan"
 
     echo ""
     echo "  Manage:"
     sp_menu_grid \
-        "4|View All Schedules|yellow" \
-        "5|Remove a Schedule|red" \
+        "5|View All Schedules|yellow" \
+        "6|Remove a Schedule|red" \
         "0|Back|white"
 
     sp_prompt opt
 
     case $opt in
-        1) bash "$BASE_DIR/modules/backup/auto-backup-db.sh" ;;
-        2) bash "$BASE_DIR/modules/backup/auto-backup-full.sh" ;;
-        3) bash "$BASE_DIR/modules/backup/auto-backup-files.sh" ;;
-        4)
+        1) bash "$BASE_DIR/modules/backup/auto-backup-all-db.sh" ;;
+        2) bash "$BASE_DIR/modules/backup/auto-backup-db.sh" ;;
+        3) bash "$BASE_DIR/modules/backup/auto-backup-full.sh" ;;
+        4) bash "$BASE_DIR/modules/backup/auto-backup-files.sh" ;;
+        5)
             clear
             echo "===================================================="
             echo "           ALL BACKUP SCHEDULES (crontab)"
@@ -46,7 +48,7 @@ while true; do
             echo "===================================================="
             read -p "Press Enter..."
             ;;
-        5)
+        6)
             clear
             echo "===================================================="
             echo "           REMOVE BACKUP SCHEDULE"
