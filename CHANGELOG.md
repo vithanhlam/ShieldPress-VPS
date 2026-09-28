@@ -1,5 +1,14 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.74 — 2026-09-28 — Show remote backup transfer progress
+
+- Manual PostgreSQL backups now display rclone transfer statistics and remote
+  verification status while also writing them to the persistent remote log.
+- A failed remote upload now reports where to find its details and confirms
+  that the local backup is retained.
+- Manual PostgreSQL and MariaDB backups now ask whether to upload to all
+  configured remotes; choosing no saves the backup locally only.
+
 ## v1.3.73 — 2026-09-28 — Reliable database backups
 
 - PostgreSQL backup jobs now include `/usr/sbin` in their cron PATH, allowing

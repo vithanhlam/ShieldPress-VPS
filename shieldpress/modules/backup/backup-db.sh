@@ -239,6 +239,17 @@ echo "Est.time : ~${EST_FMT}"
 echo "Output   : $GZ_FILE"
 echo ""
 
+UPLOAD_REMOTE=0
+load_remote_config
+if [ "$REMOTE_ENABLED" = "1" ]; then
+    read -r -p "Upload this backup to all configured remotes (Google Drive, etc.)? [y/N]: " REMOTE_CHOICE
+    case "$REMOTE_CHOICE" in
+        y|Y|yes|YES) UPLOAD_REMOTE=1 ;;
+    esac
+else
+    echo "Remote backup is not configured; saving locally only."
+fi
+
 log "START backup DB: $BACKUP_LABEL ($DB_NAME) | Size: ${DB_SIZE_MB}MB"
 
 START_TIME=$(date +%s)
@@ -342,7 +353,10 @@ echo ""
 log "SUCCESS backup DB: $BACKUP_LABEL ($DB_NAME) | Size: $SIZE | Duration: $DURATION_FMT"
 shieldpress_notify_event "backup_success" "Database backup completed" "$BACKUP_LABEL ($DB_CONNECTION/$DB_NAME) | Size: $SIZE"
 
-# Remote upload if domain is linked
-[ -n "$DOMAIN_PATH" ] && remote_upload_backup "$GZ_FILE" "db"
+if [ "$UPLOAD_REMOTE" -eq 1 ]; then
+    if ! remote_upload_backup "$GZ_FILE" "db" "$DOMAIN"; then
+        warn "Remote upload failed; local backup retained. Details: $LOG_DIR/backup.log"
+    fi
+fi
 
 pause

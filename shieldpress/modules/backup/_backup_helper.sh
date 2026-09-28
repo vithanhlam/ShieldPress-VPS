@@ -857,6 +857,7 @@ remote_upload_backup(){
             --contimeout=10s --timeout=60s --retries=3 --low-level-retries=10; then
             END_TIME=$(date +%s)
             DURATION=$((END_TIME - START_TIME))
+            echo "Verifying remote backup: $DEST/$UPLOAD_LABEL"
             if prune_remote_backups "$DEST" "$REMOTE_RETENTION" "$UPLOAD_LABEL"; then
                 ok "Remote uploaded: $DEST/$(basename "$FILE") | Upload time: ${DURATION}s"
             else

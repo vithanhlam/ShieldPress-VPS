@@ -86,16 +86,29 @@ mapfile -t backups < <(find "$BACKUP_DIR" -maxdepth 1 -type f -name "${DB_NAME}_
 for ((i=KEEP; i<${#backups[@]}; i++)); do
     rm -f -- "$BACKUP_DIR/${backups[i]}"
 done
-if [ -f "$BASE_DIR/modules/backup/_backup_helper.sh" ]; then
-    start_progress "Checking remote backup destination..." "$BACKUP_FILE"
+if [ "${4:-}" != "--local-only" ] && [ -f "$BASE_DIR/modules/backup/_backup_helper.sh" ]; then
     DOMAIN="$DB_NAME"
     # Legacy helpers were written without nounset/errexit; isolate their options.
-    (
-        set +eu
-        source "$BASE_DIR/modules/backup/_backup_helper.sh"
-        remote_upload_backup "$BACKUP_FILE" db
-    ) >>"$LOG_DIR/remote-backup.log" 2>&1 || echo "Remote upload failed: $DB_NAME" >&2
-    stop_progress
+    if [ "$INTERACTIVE_PROGRESS" -eq 1 ]; then
+        # stdout is reserved for the backup path. Send rclone's real transfer
+        # stats to the terminal while keeping the persistent remote log.
+        if (
+            set +eu
+            source "$BASE_DIR/modules/backup/_backup_helper.sh"
+            remote_upload_backup "$BACKUP_FILE" db
+        ) 2>&1 | tee -a "$LOG_DIR/remote-backup.log" >&3; then
+            :
+        else
+            echo "Remote upload failed; local backup retained. Details: $LOG_DIR/remote-backup.log" >&3
+            echo "Remote upload failed: $DB_NAME" >&2
+        fi
+    else
+        (
+            set +eu
+            source "$BASE_DIR/modules/backup/_backup_helper.sh"
+            remote_upload_backup "$BACKUP_FILE" db
+        ) >>"$LOG_DIR/remote-backup.log" 2>&1 || echo "Remote upload failed: $DB_NAME" >&2
+    fi
 fi
 echo "$(date -Is) [OK] PostgreSQL backup: $DB_NAME -> $BACKUP_FILE" >&2
 printf '%s\n' "$BACKUP_FILE"

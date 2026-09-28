@@ -432,7 +432,7 @@ pg_import_db(){
     if [[ "$BACKUP_CONFIRM" =~ ^[Yy]$ ]]; then
         echo "Creating backup..."
         ensure_pg_backup_script || return 1
-        BACKUP_FILE=$("$PG_BACKUP_SCRIPT" "$DB_NAME" "" --progress) || {
+        BACKUP_FILE=$(pg_manual_backup) || {
             fail "Backup failed"
             return 1
         }
@@ -480,6 +480,20 @@ pg_import_db(){
 # =============================================
 # BACKUP
 # =============================================
+pg_manual_backup(){
+    local remote_option="--local-only" remote_choice=""
+    if [ -f "$BASE_DIR/config/backup-remote.env" ] &&
+        grep -Eq '^REMOTE_ENABLED=1[[:space:]]*$' "$BASE_DIR/config/backup-remote.env"; then
+        read -r -p "Upload this backup to all configured remotes (Google Drive, etc.)? [y/N]: " remote_choice </dev/tty
+        case "$remote_choice" in
+            y|Y|yes|YES) remote_option="--upload-remote" ;;
+        esac
+    else
+        echo "Remote backup is not configured; saving locally only." >&2
+    fi
+    "$PG_BACKUP_SCRIPT" "$DB_NAME" "" --progress "$remote_option"
+}
+
 pg_backup_db(){
     if ! postgresql_ready; then
         warn "PostgreSQL is not installed or not running."
@@ -488,7 +502,7 @@ pg_backup_db(){
 
     select_pg_database || return
     ensure_pg_backup_script || return 1
-    BACKUP_FILE=$("$PG_BACKUP_SCRIPT" "$DB_NAME" "" --progress) || {
+    BACKUP_FILE=$(pg_manual_backup) || {
         fail "Backup failed"
         return 1
     }
