@@ -29,22 +29,27 @@ database_script(){
 }
 schedule_status(){
     local script="$1"
-    if [ -f "$script" ] && crontab -l 2>/dev/null | grep -Fq "$script"; then
-        printf 'AUTO Backup conf'
+    if [ -x "$script" ] && crontab -l 2>/dev/null | awk -v path="$script" '
+        $0 !~ /^[[:space:]]*#/ && index($0, path) { found=1 }
+        END { exit !found }
+    '; then
+        printf 'Scheduled'
     else
-        printf 'No Backup'
+        printf 'No schedule'
     fi
 }
 
 declare -a ENGINES=() DATABASES=() SCRIPTS=() LABELS=()
+declare -a BACKUP_DIRS=() NO_LOCAL=()
 declare -A SEEN=()
 INDEX=0
 add_database(){
-    local engine="$1" db="$2" env env_db env_engine label script
+    local engine="$1" db="$2" env env_db env_engine label script backup_dir status
     local key="$engine:$db"
     [ -z "$db" ] || [ -n "${SEEN[$key]:-}" ] && return
     SEEN[$key]=1
     label="standalone"
+    backup_dir="$BASE_DIR/backup/standalone-db"
     for env in "$DOMAINS_ROOT"/*/config/domain.env; do
         [ -f "$env" ] || continue
         env_db=$(grep '^DB_NAME=' "$env" | cut -d'=' -f2- | tr -d '[:space:]')
@@ -52,6 +57,7 @@ add_database(){
         if [ "$env_db" = "$db" ] && [ "$env_engine" = "$engine" ]; then
             label=$(grep '^DOMAIN=' "$env" | cut -d'=' -f2- | tr -d '[:space:]')
             label="${label:-linked domain}"
+            backup_dir="$(dirname "$(dirname "$env")")/backup/db"
             break
         fi
     done
@@ -61,7 +67,14 @@ add_database(){
     DATABASES[$INDEX]="$db"
     SCRIPTS[$INDEX]="$script"
     LABELS[$INDEX]="$label"
-    printf '%2d) %-7s %-32s %-28s %s\n' "$INDEX" "$engine" "$db" "$label" "$(schedule_status "$script")"
+    BACKUP_DIRS[$INDEX]="$backup_dir"
+    status=$(schedule_status "$script")
+    if [ "$status" = Scheduled ] && ! find "$backup_dir" -maxdepth 1 -type f \
+        -name "${db}_*.sql.gz" -print -quit 2>/dev/null | grep -q .; then
+        status='Scheduled; no local file'
+        NO_LOCAL+=("$INDEX")
+    fi
+    printf '%2d) %-7s %-32s %-28s %s\n' "$INDEX" "$engine" "$db" "$label" "$status"
 }
 
 clear
@@ -94,14 +107,22 @@ fi
 
 declare -a MISSING=()
 for ((i=1; i<=INDEX; i++)); do
-    if [ "$(schedule_status "${SCRIPTS[$i]}")" = "No Backup" ]; then
+    if [ "$(schedule_status "${SCRIPTS[$i]}")" = "No schedule" ]; then
         MISSING+=("$i")
     fi
 done
 
 echo "------------------------------------------------------------"
 if [ "${#MISSING[@]}" -eq 0 ]; then
-    echo "All listed databases already have individual automatic schedules."
+    echo "All listed databases have individual automatic schedules."
+    if [ "${#NO_LOCAL[@]}" -gt 0 ]; then
+        echo "${#NO_LOCAL[@]} scheduled database(s) have no local .sql.gz backup file:"
+        for i in "${NO_LOCAL[@]}"; do
+            echo "  ${DATABASES[$i]}: ${BACKUP_DIRS[$i]}"
+        done
+        echo "Check $LOG_DIR/auto-backup.log and the remote backup settings."
+        echo "Local files may be removed after a successful remote upload if configured."
+    fi
     pause
     exit 0
 fi

@@ -631,6 +631,34 @@ patch_recover_backup_config(){
     ok "Recovered nested backup settings and enabled PostgreSQL backup runner"
 }
 
+# Existing cron scripts live in persistent config directories, so replacing
+# the packaged generators alone does not repair their restricted cron PATH.
+patch_backup_scheduled_jobs(){
+    local ID="SP_20260928_BACKUP_JOBS" script count=0
+    patch_applied "$ID" && return 0
+
+    for script in "$BASE_DIR"/config/auto-backup/auto-backup-db-*.sh \
+                  "$BASE_DIR"/config/auto-backup/auto-backup-full-db-batch.sh \
+                  "$DOMAINS_ROOT"/*/config/auto-backup-db.sh; do
+        [ -f "$script" ] || continue
+        if grep -qx 'set -o pipefail' "$script" && ! grep -q '^export PATH=' "$script"; then
+            sed -i '/^set -o pipefail$/a export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' "$script" || return 1
+        fi
+        if grep -Fq 'ls -1t "$BACKUP_DIR"/*.gz' "$script"; then
+            sed -i '/ls -1t "\$BACKUP_DIR"\/\*\.gz/c\    source "$BASE_DIR/modules/backup/_backup_helper.sh"; prune_local_backups "$BACKUP_DIR" "$RETENTION" "${DB_NAME}_*.sql.gz"' "$script" || return 1
+        fi
+        if [ "${script##*/}" = auto-backup-full-db-batch.sh ] &&
+           ! grep -Fq 'exec 2>>"$RUN_LOG_FILE"' "$script"; then
+            sed -i '/^RUN_LOG_FILE=.*auto-backup.log.*$/a exec 2>>"$RUN_LOG_FILE"' "$script" || return 1
+        fi
+        bash -n "$script" || return 1
+        count=$((count + 1))
+    done
+
+    patch_mark_done "$ID"
+    ok "Repaired cron PATH and database-specific backup retention ($count jobs)"
+}
+
 apply_all_patches(){
     echo ""
     echo "======================================"
@@ -639,6 +667,7 @@ apply_all_patches(){
     echo ""
 
     patch_recover_backup_config
+    patch_backup_scheduled_jobs
     patch_134_fix_bin_perms
     patch_134_secure_config_dir
     patch_134_fix_open_basedir_tmp
@@ -693,6 +722,7 @@ show_patch_status(){
     _status "SP_1331_WARN_NODE_ROOT_PM2"          "v1.3.31 Warn about Node.js domains running as root"
     _status "SP_1331_SERVICE_RESILIENCE"          "v1.3.31 Auto-restart MariaDB/PostgreSQL/PHP-FPM after crash"
     _status "SP_1331_RESIZE_PHP_POOLS"            "v1.3.31 Resize pm.max_children (prevent RAM overcommit)"
+    _status "SP_20260928_BACKUP_JOBS"             "Repair existing database backup schedules"
 
     echo ""
     echo "  Registry: $PATCH_REGISTRY"

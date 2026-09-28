@@ -1,5 +1,21 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.73 — 2026-09-28 — Reliable database backups
+
+- PostgreSQL backup jobs now include `/usr/sbin` in their cron PATH, allowing
+  `runuser` to execute. A migration repairs existing individual and batch jobs
+  retained in persistent config directories during updates.
+- Remote retention now verifies an uploaded file and prunes only older backups
+  with the same database name and timestamp format. It keeps the local copy if
+  remote verification fails, avoiding loss when a destination contains files
+  from another database.
+- Individual database jobs now retain local archives per database and record
+  upload failures separately. Batch jobs capture dump errors in the backup log.
+- Manual MariaDB and PostgreSQL backups show ongoing progress or periodic
+  status, and the All Databases screen distinguishes a configured schedule
+  from an existing local backup file.
+- Release assets include the archive plus SHA-256 and MD5 checksums.
+
 ## v1.3.72 — 2026-09-27 — Detect standalone DB backup schedules
 
 - Fixed the All Databases list checking legacy standalone script names after

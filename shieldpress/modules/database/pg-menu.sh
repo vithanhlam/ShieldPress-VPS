@@ -432,7 +432,7 @@ pg_import_db(){
     if [[ "$BACKUP_CONFIRM" =~ ^[Yy]$ ]]; then
         echo "Creating backup..."
         ensure_pg_backup_script || return 1
-        BACKUP_FILE=$("$PG_BACKUP_SCRIPT" "$DB_NAME") || {
+        BACKUP_FILE=$("$PG_BACKUP_SCRIPT" "$DB_NAME" "" --progress) || {
             fail "Backup failed"
             return 1
         }
@@ -488,7 +488,7 @@ pg_backup_db(){
 
     select_pg_database || return
     ensure_pg_backup_script || return 1
-    BACKUP_FILE=$("$PG_BACKUP_SCRIPT" "$DB_NAME") || {
+    BACKUP_FILE=$("$PG_BACKUP_SCRIPT" "$DB_NAME" "" --progress) || {
         fail "Backup failed"
         return 1
     }

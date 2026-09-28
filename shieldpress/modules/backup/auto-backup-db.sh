@@ -334,6 +334,7 @@ esac
 cat > "$AUTO_SCRIPT" << SCRIPT
 #!/bin/bash
 set -o pipefail
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 BASE_DIR="$BASE_DIR"
 BACKUP_DIR="$BACKUP_DIR"
 DOMAIN="$DOMAIN"
@@ -342,7 +343,7 @@ DB_USER="$DB_USER"
 DB_PASS="$DB_PASS"
 DB_CONNECTION="$DB_CONNECTION"
 RETENTION=$RETENTION
-LOG_FILE="$LOG_FILE"
+RUN_LOG_FILE="$LOG_DIR/auto-backup.log"
 
 DATE=\$(date +%F_%H-%M-%S)
 FILE="\$BACKUP_DIR/\${DB_NAME}_\$DATE.sql.gz"
@@ -352,35 +353,39 @@ case "\$DB_CONNECTION" in
     mysql|mariadb)
         if [ -n "\$DB_PASS" ]; then
             mysqldump --single-transaction --quick --routines --triggers \\
-                -u "\$DB_USER" -p"\$DB_PASS" "\$DB_NAME" | gzip > "\$FILE"
+                -u "\$DB_USER" -p"\$DB_PASS" "\$DB_NAME" 2>> "\$RUN_LOG_FILE" | gzip > "\$FILE" 2>> "\$RUN_LOG_FILE"
         else
             mysqldump --single-transaction --quick --routines --triggers \\
-                "\$DB_NAME" | gzip > "\$FILE"
+                "\$DB_NAME" 2>> "\$RUN_LOG_FILE" | gzip > "\$FILE" 2>> "\$RUN_LOG_FILE"
         fi
         ;;
     pgsql|postgres|postgresql)
         if [ -n "\$DB_PASS" ]; then
-            PGPASSWORD="\$DB_PASS" pg_dump -h 127.0.0.1 -U "\$DB_USER" -d "\$DB_NAME" --no-owner --no-privileges | gzip > "\$FILE"
+            PGPASSWORD="\$DB_PASS" pg_dump -h 127.0.0.1 -U "\$DB_USER" -d "\$DB_NAME" --no-owner --no-privileges 2>> "\$RUN_LOG_FILE" | gzip > "\$FILE" 2>> "\$RUN_LOG_FILE"
         else
-            runuser -u postgres -- pg_dump -d "\$DB_NAME" --no-owner --no-privileges | gzip > "\$FILE"
+            runuser -u postgres -- pg_dump -d "\$DB_NAME" --no-owner --no-privileges 2>> "\$RUN_LOG_FILE" | gzip > "\$FILE" 2>> "\$RUN_LOG_FILE"
         fi
         ;;
     *)
-        echo "\$(date '+%F %T') | FAILED: \$DOMAIN unsupported DB engine \$DB_CONNECTION" >> "\$LOG_FILE"
+        echo "\$(date '+%F %T') | FAILED: \$DOMAIN unsupported DB engine \$DB_CONNECTION" >> "\$RUN_LOG_FILE"
         exit 1
         ;;
 esac
 
 if [ \$? -eq 0 ]; then
-    echo "\$(date '+%F %T') | SUCCESS: \$DOMAIN DB backup \$FILE" >> "\$LOG_FILE"
-    ls -1t "\$BACKUP_DIR"/*.gz 2>/dev/null | tail -n +\$((RETENTION+1)) | xargs -r rm -f
+    echo "\$(date '+%F %T') | SUCCESS: \$DOMAIN DB backup \$FILE" >> "\$RUN_LOG_FILE"
+    find "\$BACKUP_DIR" -maxdepth 1 -type f -name "\${DB_NAME}_*.sql.gz" -printf '%T@ %p\n' \
+        | sort -nr | tail -n +\$((RETENTION+1)) | cut -d' ' -f2- \
+        | while IFS= read -r old_file; do rm -f -- "\$old_file"; done
     if [ -f "\$BASE_DIR/modules/backup/_backup_helper.sh" ]; then
         source "\$BASE_DIR/modules/backup/_backup_helper.sh"
         shieldpress_notify_event "backup_success" "Auto database backup completed" "\$DOMAIN (\$DB_CONNECTION/\$DB_NAME): \$FILE"
-        remote_upload_backup "\$FILE" "db"
+        if ! remote_upload_backup "\$FILE" "db" >> "\$RUN_LOG_FILE" 2>&1; then
+            echo "\$(date '+%F %T') | REMOTE FAILED: \$DOMAIN DB backup \$FILE" >> "\$RUN_LOG_FILE"
+        fi
     fi
 else
-    echo "\$(date '+%F %T') | FAILED: \$DOMAIN DB backup" >> "\$LOG_FILE"
+    echo "\$(date '+%F %T') | FAILED: \$DOMAIN DB backup" >> "\$RUN_LOG_FILE"
     if [ -f "\$BASE_DIR/modules/backup/_backup_helper.sh" ]; then
         source "\$BASE_DIR/modules/backup/_backup_helper.sh"
         shieldpress_notify_event "backup_fail" "Auto database backup failed" "\$DOMAIN (\$DB_CONNECTION/\$DB_NAME)"

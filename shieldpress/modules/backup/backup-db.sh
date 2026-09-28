@@ -242,6 +242,12 @@ echo ""
 log "START backup DB: $BACKUP_LABEL ($DB_NAME) | Size: ${DB_SIZE_MB}MB"
 
 START_TIME=$(date +%s)
+echo "Backing up database..."
+HB_PID=""
+if ! command -v pv >/dev/null 2>&1 && [ -t 1 ]; then
+    start_heartbeat "Database dump ($DB_CONNECTION)" "$GZ_FILE"
+    HB_PID=$HEARTBEAT_PID
+fi
 
 # Execute backup
 case "$DB_CONNECTION" in
@@ -252,6 +258,7 @@ case "$DB_CONNECTION" in
         MYSQL_DUMP_BIN=$(mysql_dump_bin)
         if [ -z "$MYSQL_DUMP_BIN" ]; then
             echo "[FAIL] Neither mariadb-dump nor mysqldump is installed"
+            [ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
             rm -f "$MYSQL_CNF"
             log "FAILED backup DB: $BACKUP_LABEL ($DB_NAME) - dump client missing"
             pause
@@ -260,7 +267,7 @@ case "$DB_CONNECTION" in
 
         if command -v pv >/dev/null 2>&1; then
             ( set -o pipefail; "$MYSQL_DUMP_BIN" --defaults-extra-file="$MYSQL_CNF" --single-transaction --quick --routines --triggers \
-                "$DB_NAME" | pv -p -t -e -r | gzip > "$GZ_FILE" )
+                "$DB_NAME" | pv -b -t -r | gzip > "$GZ_FILE" )
         else
             ( set -o pipefail; "$MYSQL_DUMP_BIN" --defaults-extra-file="$MYSQL_CNF" --single-transaction --quick --routines --triggers \
                 "$DB_NAME" | gzip > "$GZ_FILE" )
@@ -273,7 +280,7 @@ case "$DB_CONNECTION" in
         if [ -n "$DB_PASS" ]; then
             if command -v pv >/dev/null 2>&1; then
                 ( set -o pipefail; PGPASSWORD="$DB_PASS" pg_dump -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" \
-                    --no-owner --no-privileges | pv -p -t -e -r | gzip > "$GZ_FILE" )
+                    --no-owner --no-privileges | pv -b -t -r | gzip > "$GZ_FILE" )
             else
                 ( set -o pipefail; PGPASSWORD="$DB_PASS" pg_dump -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" \
                     --no-owner --no-privileges | gzip > "$GZ_FILE" )
@@ -282,7 +289,7 @@ case "$DB_CONNECTION" in
             # Use postgres system user (for standalone DBs)
             if command -v pv >/dev/null 2>&1; then
                 ( set -o pipefail; runuser -u postgres -- pg_dump -d "$DB_NAME" \
-                    --no-owner --no-privileges | pv -p -t -e -r | gzip > "$GZ_FILE" )
+                    --no-owner --no-privileges | pv -b -t -r | gzip > "$GZ_FILE" )
             else
                 ( set -o pipefail; runuser -u postgres -- pg_dump -d "$DB_NAME" \
                     --no-owner --no-privileges | gzip > "$GZ_FILE" )
@@ -293,9 +300,11 @@ case "$DB_CONNECTION" in
 
     *)
         echo "[FAIL] Unsupported DB engine: $DB_CONNECTION"
+        [ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
         pause; exit 1
         ;;
 esac
+[ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
 
 if [ "$STATUS" -ne 0 ]; then
     echo "[FAIL] Backup failed!"

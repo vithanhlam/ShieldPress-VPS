@@ -821,8 +821,8 @@ remote_upload_backup(){
 
     load_remote_config
     [ "$REMOTE_ENABLED" = "1" ] || return 0
-    [ -n "$RCLONE_REMOTES" ] || { warn "Remote backup enabled but RCLONE_REMOTES is empty"; return 0; }
-    command -v rclone >/dev/null 2>&1 || { warn "rclone not installed; remote upload skipped"; return 0; }
+    [ -n "$RCLONE_REMOTES" ] || { warn "Remote backup enabled but RCLONE_REMOTES is empty"; return 1; }
+    command -v rclone >/dev/null 2>&1 || { warn "rclone not installed; remote upload skipped"; return 1; }
 
     # Validate file exists before attempting upload
     if [ ! -f "$FILE" ]; then
@@ -857,8 +857,12 @@ remote_upload_backup(){
             --contimeout=10s --timeout=60s --retries=3 --low-level-retries=10; then
             END_TIME=$(date +%s)
             DURATION=$((END_TIME - START_TIME))
-            ok "Remote uploaded: $DEST/$(basename "$FILE") | Upload time: ${DURATION}s"
-            prune_remote_backups "$DEST" "$REMOTE_RETENTION"
+            if prune_remote_backups "$DEST" "$REMOTE_RETENTION" "$UPLOAD_LABEL"; then
+                ok "Remote uploaded: $DEST/$(basename "$FILE") | Upload time: ${DURATION}s"
+            else
+                warn "Remote upload could not be verified: $DEST/$UPLOAD_LABEL"
+                UPLOAD_OK=0
+            fi
         else
             END_TIME=$(date +%s)
             DURATION=$((END_TIME - START_TIME))
@@ -872,26 +876,54 @@ remote_upload_backup(){
         rm -f "$FILE"
         ok "Local backup deleted: $(basename "$FILE")"
     fi
+    [ "$UPLOAD_OK" = "1" ]
 }
 
 prune_remote_backups(){
     local DEST="$1"
     local KEEP="$2"
+    local CURRENT="$3" listing prefix suffix date_style candidate stamp
+    local -a matches=() sorted=()
 
-    [ "$KEEP" -gt 0 ] 2>/dev/null || return 0
-    command -v rclone >/dev/null 2>&1 || return 0
-
-    local TMP
-    TMP=$(mktemp /tmp/sp_prune_XXXXXX)
-    rclone lsf "$DEST" --files-only 2>/dev/null | sort > "$TMP"
-    local COUNT
-    COUNT=$(wc -l < "$TMP" | tr -d '[:space:]')
-    if [ "$COUNT" -gt "$KEEP" ]; then
-        head -n "$((COUNT - KEEP))" "$TMP" | while read -r OLD_FILE; do
-            [ -n "$OLD_FILE" ] && rclone deletefile "$DEST/$OLD_FILE" >/dev/null 2>&1
-        done
+    listing=$(rclone lsf "$DEST" --files-only 2>/dev/null) || {
+        warn "Unable to verify remote backup: $DEST/$CURRENT"
+        return 1
+    }
+    if [[ $'\n'"$listing"$'\n' != *$'\n'"$CURRENT"$'\n'* ]]; then
+        warn "Uploaded backup is not visible remotely: $DEST/$CURRENT"
+        return 1
     fi
-    rm -f "$TMP"
+    [ "$KEEP" -gt 0 ] 2>/dev/null || return 0
+
+    # A destination can contain files from several databases. Retain only
+    # backups with the same name prefix, timestamp format and extension.
+    if [[ "$CURRENT" =~ ^(.+)_([0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}|[0-9]{8}_[0-9]{6})(\..+)$ ]]; then
+        prefix="${BASH_REMATCH[1]}_"
+        suffix="${BASH_REMATCH[3]}"
+        date_style="${BASH_REMATCH[2]}"
+    else
+        warn "Remote retention skipped for unrecognized filename: $CURRENT"
+        return 0
+    fi
+    while IFS= read -r candidate; do
+        [[ "$candidate" == "$prefix"*"$suffix" ]] || continue
+        stamp="${candidate#"$prefix"}"
+        stamp="${stamp%"$suffix"}"
+        if [[ "$date_style" == *-* ]]; then
+            [[ "$stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}$ ]] || continue
+        else
+            [[ "$stamp" =~ ^[0-9]{8}_[0-9]{6}$ ]] || continue
+        fi
+        matches+=("$candidate")
+    done <<< "$listing"
+    [ "${#matches[@]}" -gt "$KEEP" ] || return 0
+    mapfile -t sorted < <(printf '%s\n' "${matches[@]}" | sort -r)
+    local i
+    for ((i=KEEP; i<${#sorted[@]}; i++)); do
+        [ "${sorted[i]}" = "$CURRENT" ] && continue
+        rclone deletefile "$DEST/${sorted[i]}" >/dev/null 2>&1 ||
+            warn "Unable to delete old remote backup: $DEST/${sorted[i]}"
+    done
 }
 
 shieldpress_notify_event(){

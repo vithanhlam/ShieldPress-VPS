@@ -6,6 +6,13 @@ BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$BASE_DIR/core/paths.sh"
 umask 077
 mkdir -p "$LOG_DIR"
+# Manual callers capture stdout to obtain the backup path. Keep their terminal
+# on fd 3 before stderr is redirected to the persistent diagnostic log.
+exec 3>&2
+INTERACTIVE_PROGRESS=0
+if [ "${3:-}" = "--progress" ] && [ -t 3 ]; then
+    INTERACTIVE_PROGRESS=1
+fi
 # Cron historically discards stderr. Keep diagnostics independently of its redirect.
 exec 2>>"$LOG_DIR/postgresql-backup.log"
 DB_NAME="${1:-}"
@@ -27,11 +34,40 @@ exec 9>"$BACKUP_DIR/.backup.lock"
 flock -n 9 || { echo "Backup already running: $DB_NAME" >&2; exit 1; }
 BACKUP_FILE="$BACKUP_DIR/${DB_NAME}_$(date '+%Y%m%d_%H%M%S').sql.gz"
 PARTIAL=$(mktemp "$BACKUP_DIR/.partial.XXXXXX")
+PROGRESS_PID=""
+stop_progress(){
+    if [ -n "$PROGRESS_PID" ]; then
+        kill "$PROGRESS_PID" 2>/dev/null || true
+        wait "$PROGRESS_PID" 2>/dev/null || true
+        PROGRESS_PID=""
+    fi
+}
+start_progress(){
+    [ "$INTERACTIVE_PROGRESS" -eq 1 ] || return 0
+    local label="$1" progress_file="$2"
+    echo "$label" >&3
+    (
+        tick_pid=""
+        trap 'kill "$tick_pid" 2>/dev/null || true; exit 0' TERM
+        start=$(date +%s)
+        while :; do
+            sleep 5 &
+            tick_pid=$!
+            wait "$tick_pid" || exit 0
+            elapsed=$(( $(date +%s) - start ))
+            bytes=$(stat -c %s "$progress_file" 2>/dev/null || echo 0)
+            printf '  %s | %ds | backup size: %s bytes\n' "$label" "$elapsed" "$bytes" >&3
+        done
+    ) >/dev/null &
+    PROGRESS_PID=$!
+}
 cleanup(){
     status=$?
+    stop_progress
     rm -f "$PARTIAL"
     if [ "$status" -ne 0 ]; then
         echo "$(date -Is) [FAIL] PostgreSQL backup: $DB_NAME (exit $status)" >&2
+        [ "$INTERACTIVE_PROGRESS" -eq 1 ] && echo "Backup failed. Details: $LOG_DIR/postgresql-backup.log" >&3
     fi
 }
 trap cleanup EXIT
@@ -39,7 +75,10 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 cd /tmp
 # A failing pg_dump must never publish a compressed partial SQL file.
+start_progress "Backing up PostgreSQL database: $DB_NAME" "$PARTIAL"
 runuser -u postgres -- pg_dump --no-owner --no-privileges --dbname="$DB_NAME" | gzip > "$PARTIAL"
+stop_progress
+[ "$INTERACTIVE_PROGRESS" -eq 1 ] && echo "Dump complete. Verifying backup..." >&3
 gzip -t "$PARTIAL"
 mv "$PARTIAL" "$BACKUP_FILE"
 # Delete old completed backups only after a successful dump.
@@ -48,6 +87,7 @@ for ((i=KEEP; i<${#backups[@]}; i++)); do
     rm -f -- "$BACKUP_DIR/${backups[i]}"
 done
 if [ -f "$BASE_DIR/modules/backup/_backup_helper.sh" ]; then
+    start_progress "Checking remote backup destination..." "$BACKUP_FILE"
     DOMAIN="$DB_NAME"
     # Legacy helpers were written without nounset/errexit; isolate their options.
     (
@@ -55,6 +95,7 @@ if [ -f "$BASE_DIR/modules/backup/_backup_helper.sh" ]; then
         source "$BASE_DIR/modules/backup/_backup_helper.sh"
         remote_upload_backup "$BACKUP_FILE" db
     ) >>"$LOG_DIR/remote-backup.log" 2>&1 || echo "Remote upload failed: $DB_NAME" >&2
+    stop_progress
 fi
 echo "$(date -Is) [OK] PostgreSQL backup: $DB_NAME -> $BACKUP_FILE" >&2
 printf '%s\n' "$BACKUP_FILE"
