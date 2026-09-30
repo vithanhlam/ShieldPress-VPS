@@ -1,5 +1,12 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.76 — 2026-09-30 — Repair SSL configs without SSL metadata
+
+- SSL cleanup no longer exits when a domain has no `SSL_TYPE` in
+  `domain.env`. It now repairs stale or unterminated Certbot Nginx redirect
+  blocks while preserving certificate files, allowing Cloudflare SSL setup on
+  domains whose SSL metadata was never recorded.
+
 ## v1.3.75 — 2026-09-30 — SSL renewal and Cloudflare proxy support
 
 - Fixed Certbot cleanup deleting Nginx closing braces and leaving malformed

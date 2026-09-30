@@ -136,10 +136,12 @@ cleanup_old_ssl(){
     ENV_FILE=$(find "$DOMAINS_ROOT" -path "*/${CLEAN}/config/domain.env" 2>/dev/null | head -1)
     [ -f "$ENV_FILE" ] && OLD_TYPE=$(grep "^SSL_TYPE=" "$ENV_FILE" | cut -d'=' -f2 | tr -d '[:space:]')
 
-    [ -z "$OLD_TYPE" ] && return 0
-
-    echo ""
-    echo "Removing old SSL ($OLD_TYPE)..."
+    if [ -n "$OLD_TYPE" ]; then
+        echo ""
+        echo "Removing old SSL ($OLD_TYPE)..."
+    else
+        warn "SSL_TYPE is missing; cleaning stale Nginx SSL directives without removing certificate files"
+    fi
 
     # 1. Remove certbot cert (letsencrypt / zerossl)
     if [[ "$OLD_TYPE" == "letsencrypt" || "$OLD_TYPE" == "zerossl" ]]; then
