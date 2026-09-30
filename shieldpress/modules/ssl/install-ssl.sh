@@ -68,11 +68,16 @@ echo ""
 # Quick DNS check
 get_server_ips
 A_RECORD=$(dig +short A "$DOMAIN" 2>/dev/null | tail -1)
+CF_PROXY=0
+detect_cloudflare "$DOMAIN" && CF_PROXY=1
 
 echo "  Server IP : $SERVER_IPV4"
 echo "  DNS A     : ${A_RECORD:-not found}"
 
-if [ -n "$A_RECORD" ] && [ "$A_RECORD" != "$SERVER_IPV4" ]; then
+if [ "$CF_PROXY" -eq 1 ]; then
+    echo "  Cloudflare : proxied (orange cloud)"
+    echo "  HTTP-01    : Cloudflare proxy can stay enabled if port 80 reaches this origin"
+elif [ -n "$A_RECORD" ] && [ "$A_RECORD" != "$SERVER_IPV4" ]; then
     echo ""
     warn "DNS A record ($A_RECORD) does not point to this server ($SERVER_IPV4)"
     warn "SSL issuance will likely fail!"
@@ -82,14 +87,9 @@ if [ -n "$A_RECORD" ] && [ "$A_RECORD" != "$SERVER_IPV4" ]; then
 fi
 
 # Cloudflare proxy check
-if detect_cloudflare "$DOMAIN"; then
+if [ "$CF_PROXY" -eq 1 ]; then
     echo ""
-    warn "Cloudflare proxy detected!"
-    warn "Switch to DNS Only (grey cloud) before issuing free SSL,"
-    warn "or use Cloudflare Origin SSL instead."
-    echo ""
-    read -p "Continue anyway? [y/N]: " CF_CONFIRM
-    [[ ! "$CF_CONFIRM" =~ ^[Yy]$ ]] && exit 0
+    warn "Cloudflare proxy detected; it can remain enabled for HTTP-01 validation. Ensure port 80 is open and Cloudflare reaches this origin."
 fi
 
 # Check nginx config

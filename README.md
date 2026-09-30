@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.74`
+**Current version:** `1.3.75`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -299,6 +299,14 @@ SSL features:
 - Remove SSL.
 - Check SSL status — multi-provider aware (Let's Encrypt, ZeroSSL, Cloudflare, Custom).
 - Auto SSL (wildcard).
+
+For domains proxied through Cloudflare (orange cloud), Let's Encrypt and
+ZeroSSL can keep the proxy enabled when HTTP-01 requests reach the VPS on port
+80. Cloudflare Origin SSL is also supported with Cloudflare set to **Full
+(strict)**. Origin certificates are not renewed by Certbot; create a
+replacement in Cloudflare and install it from the SSL Manager. Let's Encrypt
+and ZeroSSL renew through Certbot, including automatic renewals, while the
+proxy remains enabled.
 
 ### 3. WordPress Manager
 

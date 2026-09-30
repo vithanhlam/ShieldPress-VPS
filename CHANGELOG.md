@@ -1,5 +1,21 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.75 — 2026-09-30 — SSL renewal and Cloudflare proxy support
+
+- Fixed Certbot cleanup deleting Nginx closing braces and leaving malformed
+  Cloudflare redirect blocks during SSL changes. Cleanup now removes the
+  generated redirect lines safely, including already damaged blocks.
+- Cloudflare Origin and custom certificate installs preserve the new cert/key
+  while cleaning old SSL state, attach HTTPS to the website server block, and
+  remove obsolete certificate files only after Nginx validates and reloads.
+- Let's Encrypt and ZeroSSL installers support Cloudflare's orange-cloud proxy
+  with HTTP-01 when port 80 reaches the origin. DNS edge IPs now produce a
+  warning instead of being treated as a hard mismatch.
+- SSL renewal now respects the provider: Certbot handles Let's Encrypt and
+  ZeroSSL; Cloudflare Origin and custom certificates show provider-specific
+  renewal guidance. Forced ACME renewal requires confirmation, and the
+  Certbot call is bounded by the shared timeout.
+
 ## v1.3.74 — 2026-09-28 — Show remote backup transfer progress
 
 - Manual PostgreSQL backups now display rclone transfer statistics and remote

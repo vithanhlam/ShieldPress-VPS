@@ -146,9 +146,10 @@ fi
 
 NGINX_BACKUP="$CONF.bak_ssl_$(date +%s)"
 cp "$CONF" "$NGINX_BACKUP"
+PREVIOUS_SSL_TYPE=$(grep "^SSL_TYPE=" "$DOMAIN_PATH/config/domain.env" | cut -d'=' -f2 | tr -d '[:space:]')
 
 # Clean up old SSL if switching type
-cleanup_old_ssl "$DOMAIN" "$CLEAN" "$CONF"
+cleanup_old_ssl "$DOMAIN" "$CLEAN" "$CONF" 1
 
 # Check if already has ssl_certificate directives
 if grep -q "ssl_certificate " "$CONF"; then
@@ -161,7 +162,10 @@ else
         sed -i "0,/listen 443/{/listen 443/a\\    ssl_certificate $CERT_FILE;\n    ssl_certificate_key $KEY_FILE;
 }" "$CONF"
     else
-        sed -i "0,/listen 80/{/listen 80/a\\    listen 443 ssl;\n    listen [::]:443 ssl;\n    ssl_certificate $CERT_FILE;\n    ssl_certificate_key $KEY_FILE;
+        # Certbot may leave a separate HTTP redirect vhost; attach HTTPS to
+        # the first (application) server block instead of the first port-80
+        # listener in the file.
+        sed -i "0,/^[[:space:]]*server_name /{/^[[:space:]]*server_name /a\\    listen 443 ssl;\n    listen [::]:443 ssl;\n    ssl_certificate $CERT_FILE;\n    ssl_certificate_key $KEY_FILE;
 }" "$CONF"
     fi
 fi
@@ -188,6 +192,7 @@ if [ $? -eq 0 ]; then
     systemctl reload nginx
     ok "Nginx reloaded"
     rm -f "$NGINX_BACKUP"
+    [ "$PREVIOUS_SSL_TYPE" = "cloudflare" ] && rm -f "/etc/nginx/ssl/$CLEAN/cloudflare-origin.pem" "/etc/nginx/ssl/$CLEAN/cloudflare-origin.key"
 else
     fail "Nginx config error, rolling back..."
     echo ""

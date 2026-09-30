@@ -50,11 +50,13 @@ check_ssl_dns_targets(){
             return 1
         fi
         if [ -n "$SERVER_IPV4" ] && [ "$ipv4" != "$SERVER_IPV4" ]; then
-            fail "DNS A for $host is $ipv4, expected $SERVER_IPV4"
-            return 1
+            # A proxied Cloudflare record (or another CDN/reverse proxy) returns
+            # edge IPs here. HTTP-01 still works when the proxy forwards the
+            # challenge to this origin, so treat this as a warning, not a block.
+            warn "DNS A for $host is $ipv4, not this server ($SERVER_IPV4); confirm the proxy forwards HTTP-01 requests to this origin"
         fi
         if [ -n "$ipv6" ]; then
-            warn "DNS AAAA exists for $host ($ipv6); ACME may use IPv6, ensure port 80 works over IPv6"
+            warn "DNS AAAA exists for $host ($ipv6); ensure the origin/proxy serves HTTP-01 over IPv6 too"
         fi
     done
     return 0
@@ -120,11 +122,12 @@ enable_hsts(){
 
 # Clean up old SSL before installing new type.
 # Removes certbot certs, custom/cloudflare cert files, and SSL lines from nginx config.
-# Usage: cleanup_old_ssl "$DOMAIN" "$CLEAN" "$CONF"
+# Usage: cleanup_old_ssl "$DOMAIN" "$CLEAN" "$CONF" [preserve-cert-files]
 cleanup_old_ssl(){
     local DOMAIN="$1"
     local CLEAN="$2"
     local CONF="$3"
+    local PRESERVE_CERT_FILES="${4:-0}"
     local SSL_DIR="/etc/nginx/ssl/${CLEAN}"
     local OLD_TYPE=""
 
@@ -146,7 +149,7 @@ cleanup_old_ssl(){
     fi
 
     # 2. Remove custom/cloudflare cert files
-    if [[ "$OLD_TYPE" == "cloudflare" || "$OLD_TYPE" == "custom" ]]; then
+    if [[ "$OLD_TYPE" == "cloudflare" || "$OLD_TYPE" == "custom" ]] && [ "$PRESERVE_CERT_FILES" != "1" ]; then
         rm -f "$SSL_DIR/cloudflare-origin.pem" "$SSL_DIR/cloudflare-origin.key"
         rm -f "$SSL_DIR/fullchain.pem" "$SSL_DIR/privkey.pem"
         ok "Old certificate files removed"
@@ -154,8 +157,16 @@ cleanup_old_ssl(){
 
     # 3. Clean SSL directives from nginx config
     if [ -f "$CONF" ]; then
-        # Remove certbot-managed lines
-        sed -i '/managed by Certbot/d' "$CONF"
+        # Remove Certbot's generated host redirect lines, including annotated
+        # closing braces. Deleting every line containing the annotation would
+        # remove those braces and leave invalid, unterminated `if` blocks.
+        # Removing these specific lines also repairs configs already damaged
+        # by an earlier cleanup attempt.
+        sed -i '/^[[:space:]]*if (\$host = .*).*{[[:space:]]*$/d' "$CONF"
+        sed -i '/^[[:space:]]*return 301 https:\/\/\$host\$request_uri;[[:space:]]*$/d' "$CONF"
+        sed -i '/^[[:space:]]*}[[:space:]]*# managed by Certbot[[:space:]]*$/d' "$CONF"
+        # Strip remaining inline Certbot annotations while preserving syntax.
+        sed -i 's/[[:space:]]*# managed by Certbot[[:space:]]*$//' "$CONF"
         # Remove SSL cert/key/client lines
         sed -i '/ssl_certificate /d' "$CONF"
         sed -i '/ssl_certificate_key /d' "$CONF"
