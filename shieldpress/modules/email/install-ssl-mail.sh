@@ -4,13 +4,14 @@
 #  Applies Let's Encrypt cert to Postfix + Dovecot
 # ============================================================
 
-BASE_DIR="/opt/shieldpress"
+BASE_DIR="${BASE_DIR:-/opt/shieldpress}"
 MODULE_DIR="$BASE_DIR/modules/email"
 ETC_DIR="/etc/shieldpress"
 EMAIL_CONFIG="$ETC_DIR/email.conf"
 
 source "$BASE_DIR/core/ui.sh"
 source "$MODULE_DIR/helpers.sh"
+source "$BASE_DIR/modules/ssl/ssl-renewal.sh"
 
 clear
 sp_header "Mail SSL" "Let's Encrypt for mail server"
@@ -47,13 +48,9 @@ if [ -f "$CERT_DIR/fullchain.pem" ]; then
     else
         warn "SSL certificate EXPIRED or expires within 24h (${EXPIRY})"
     fi
-    echo ""
-    read -p "Force renew? (y/N): " FORCE_INPUT
-    FORCE_INPUT="${FORCE_INPUT:-N}"
-    [[ "$FORCE_INPUT" =~ ^[Yy]$ ]] && FORCE_OPTS="--force-renewal" || FORCE_OPTS=""
+    info "The existing certificate will be renewed when due."
 else
     warn "No SSL certificate found for ${MAIL_HOSTNAME}"
-    FORCE_OPTS=""
 fi
 
 # Check DNS
@@ -85,41 +82,28 @@ CONFIRM="${CONFIRM:-Y}"
 [[ ! "$CONFIRM" =~ ^[Yy]$ ]] && exit 0
 
 echo ""
-info "Stopping Nginx temporarily to free port 80..."
-
-NGINX_WAS_RUNNING=false
-if systemctl is-active --quiet nginx 2>/dev/null; then
-    NGINX_WAS_RUNNING=true
-    systemctl stop nginx 2>/dev/null
+# Use Nginx for HTTP-01 without stopping websites. An existing standalone
+# lineage is tested and migrated before the next scheduled renewal.
+if ! certbot plugins --text 2>/dev/null | grep nginx >/dev/null; then
+    dnf install -y certbot python3-certbot-nginx || exit 1
 fi
-
-certbot certonly --standalone \
-    --agree-tos --non-interactive \
-    $FORCE_OPTS \
-    -d "${MAIL_HOSTNAME}" \
-    --email "postmaster@${MAIL_DOMAIN}" \
-    2>&1 | tee -a "$LOG_FILE"
-
+ssl_install_mail "$MAIL_HOSTNAME" "postmaster@$MAIL_DOMAIN" 2>&1 | tee -a "$LOG_FILE"
 CERTBOT_EXIT=${PIPESTATUS[0]}
-
-if $NGINX_WAS_RUNNING; then
-    systemctl start nginx 2>/dev/null
-fi
 
 echo ""
 
 if [ $CERTBOT_EXIT -eq 0 ] && [ -f "$CERT_DIR/fullchain.pem" ]; then
-    # Apply to Postfix
-    postconf -e "smtpd_tls_cert_file = $CERT_DIR/fullchain.pem"
-    postconf -e "smtpd_tls_key_file = $CERT_DIR/privkey.pem"
-
-    # Apply to Dovecot
-    sed -i "s|ssl_cert = .*|ssl_cert = <$CERT_DIR/fullchain.pem|" /etc/dovecot/dovecot.conf
-    sed -i "s|ssl_key = .*|ssl_key = <$CERT_DIR/privkey.pem|" /etc/dovecot/dovecot.conf
-
-    # Restart services to apply cert
-    systemctl restart postfix 2>/dev/null
-    systemctl restart dovecot 2>/dev/null
+    # Apply and reload only after Certbot and auto-renew setup succeeded.
+    if ! (
+        postconf -e "smtpd_tls_cert_file = $CERT_DIR/fullchain.pem" &&
+        postconf -e "smtpd_tls_key_file = $CERT_DIR/privkey.pem" &&
+        sed -i "s|ssl_cert = .*|ssl_cert = <$CERT_DIR/fullchain.pem|" /etc/dovecot/dovecot.conf &&
+        sed -i "s|ssl_key = .*|ssl_key = <$CERT_DIR/privkey.pem|" /etc/dovecot/dovecot.conf &&
+        systemctl reload postfix && systemctl reload dovecot
+    ); then
+        fail "Certificate obtained, but mail services could not apply it"
+        exit 1
+    fi
 
     EXPIRY=$(openssl x509 -enddate -noout -in "$CERT_DIR/fullchain.pem" 2>/dev/null | cut -d= -f2)
     ok "SSL installed and applied to Postfix + Dovecot"
@@ -130,7 +114,8 @@ if [ $CERTBOT_EXIT -eq 0 ] && [ -f "$CERT_DIR/fullchain.pem" ]; then
     log "SSL installed for ${MAIL_HOSTNAME} (expires: ${EXPIRY})"
 else
     fail "SSL installation failed (certbot exit: $CERTBOT_EXIT)"
-    warn "Check logs: journalctl -xn 50 | grep certbot"
+    warn "Check logs: journalctl -u certbot-renew.service -n 50"
+    exit 1
 fi
 
 echo ""

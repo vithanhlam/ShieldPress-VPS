@@ -385,8 +385,11 @@ ok "Installed version: $(tr -d '[:space:]' < "$BASE_DIR/version.txt" 2>/dev/null
 PATCHES_SCRIPT="$BASE_DIR/modules/patches/patches-menu.sh"
 if [ -f "$PATCHES_SCRIPT" ]; then
     log "Running migration patches..."
-    bash "$PATCHES_SCRIPT" --auto 2>&1 | tee -a "$LOG_FILE" || true
-    ok "Migration patches applied"
+    if bash "$PATCHES_SCRIPT" --auto 2>&1 | tee -a "$LOG_FILE"; then
+        ok "Migration patches applied"
+    else
+        log "[WARN] Some migration patches remain pending; review the errors and retry from Migration Patches"
+    fi
 fi
 
 echo ""

@@ -305,3 +305,39 @@ timer. For replication issues, check `pg_stat_replication` on Primary,
 `pg_stat_wal_receiver` on Standby, slot activity, firewall rules and network
 reachability. Never remove a replication slot while the Standby may need its
 WAL; an inactive slot can retain WAL and fill the disk.
+
+### SSL automatic renewal and existing certificates
+
+Installing Let's Encrypt or ZeroSSL configures the available Certbot systemd
+timer. AlmaLinux/RHEL uses `certbot-renew.timer`; Debian and snap use their
+packaged timers. When none exists, ShieldPress creates
+`shieldpress-certbot-renew.timer` to check twice daily with a randomized delay.
+The installer verifies that the timer is both enabled and active.
+
+If the selected domain already has a Certbot certificate and renewal file,
+Install SSL preserves its provider and domain names, renews only when Certbot
+considers it due, and reinstalls the certificate into Nginx. It does not delete
+a valid certificate or force a new issuance. Mail SSL uses Nginx HTTP-01 and
+reloads Postfix/Dovecot after successful renewals. Legacy standalone lineages
+are migrated using Certbot 2.3+ reconfigure, including a staging validation.
+
+Existing servers receive the SSL auto-renew migration through Migration
+Patches on update. To retry a failed setup directly on an updated server:
+
+```bash
+bash /opt/shieldpress/modules/ssl/setup-auto-renew.sh
+certbot renew --cert-name example.com --dry-run
+```
+
+Check SSL Status for the active timer and last job result. Timer activation
+does not prove that domain validation succeeds; use dry-run to verify it.
+Manual wildcard DNS validation needs a DNS plugin or authentication hook for
+automatic renewal. Cloudflare Origin and custom certificates retain their
+provider-specific replacement workflow.
+
+Local regression checks (no VPS or ACME access):
+
+```bash
+python3 tests/ssl-renewal.py
+bash tests/smoke.sh
+```

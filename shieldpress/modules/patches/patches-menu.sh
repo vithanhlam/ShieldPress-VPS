@@ -659,7 +659,24 @@ patch_backup_scheduled_jobs(){
     ok "Repaired cron PATH and database-specific backup retention ($count jobs)"
 }
 
+patch_ssl_auto_renew(){
+    local ID="SP_20261001_SSL_AUTO_RENEW"
+    patch_applied "$ID" && { skip "SSL auto-renew migration already applied"; return 0; }
+    if ! command -v certbot >/dev/null; then
+        skip "Certbot is not installed; SSL auto-renew migration remains pending"
+        return 0
+    fi
+    if bash "$BASE_DIR/modules/ssl/setup-auto-renew.sh"; then
+        patch_mark_done "$ID"
+        ok "SSL auto-renew schedule and legacy mail authentication repaired"
+    else
+        fail "SSL auto-renew migration incomplete; remains pending for retry"
+        return 1
+    fi
+}
+
 apply_all_patches(){
+    local ssl_status=0
     echo ""
     echo "======================================"
     echo "  ShieldPress Migration Patches"
@@ -680,6 +697,7 @@ apply_all_patches(){
     patch_1331_warn_node_root_pm2
     patch_1331_service_resilience
     patch_1331_resize_php_pools
+    patch_ssl_auto_renew || ssl_status=$?
 
     # Add new patch calls here ↑
 
@@ -687,6 +705,7 @@ apply_all_patches(){
     echo "======================================"
     ok "All patches processed"
     echo "======================================"
+    return "$ssl_status"
 }
 
 # ==================================================
@@ -723,6 +742,7 @@ show_patch_status(){
     _status "SP_1331_SERVICE_RESILIENCE"          "v1.3.31 Auto-restart MariaDB/PostgreSQL/PHP-FPM after crash"
     _status "SP_1331_RESIZE_PHP_POOLS"            "v1.3.31 Resize pm.max_children (prevent RAM overcommit)"
     _status "SP_20260928_BACKUP_JOBS"             "Repair existing database backup schedules"
+    _status "SP_20261001_SSL_AUTO_RENEW"          "Repair SSL auto-renew and standalone mail certificates"
 
     echo ""
     echo "  Registry: $PATCH_REGISTRY"
@@ -736,7 +756,7 @@ show_patch_status(){
 # Called by updater: bash patches-menu.sh --auto
 if [ "${1:-}" = "--auto" ]; then
     apply_all_patches
-    exit 0
+    exit $?
 fi
 
 # ==================================================

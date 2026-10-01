@@ -14,30 +14,18 @@ fail(){ echo "[FAIL] $1"; log "[FAIL] $1"; }
 ensure_ssl_dependencies(){
     if ! command -v dig &>/dev/null; then
         log "Installing bind-utils..."
-        dnf install -y bind-utils >/dev/null 2>&1
+        dnf install -y bind-utils >/dev/null 2>&1 || return 1
     fi
     if ! command -v certbot &>/dev/null; then
         log "Installing certbot..."
-        dnf install -y certbot python3-certbot-nginx >/dev/null 2>&1
+        dnf install -y certbot python3-certbot-nginx >/dev/null 2>&1 || return 1
+    fi
+    if ! certbot plugins --text 2>/dev/null | grep nginx >/dev/null; then
+        dnf install -y python3-certbot-nginx >/dev/null 2>&1 || return 1
     fi
 }
 
-# Certbot can wait indefinitely when an ACME HTTP-01 challenge cannot reach
-# the server (wrong DNS, broken IPv6, blocked port 80, or a proxy). Keep SSL
-# installation bounded and preserve the useful certbot error output.
-run_certbot(){
-    local timeout_seconds="${CERTBOT_TIMEOUT_SECONDS:-180}"
-    if command -v timeout >/dev/null 2>&1; then
-        timeout --foreground "${timeout_seconds}s" certbot "$@"
-        local status=$?
-        if [ "$status" -eq 124 ]; then
-            fail "Certbot timed out after ${timeout_seconds}s"
-            echo "Check DNS (including AAAA), Cloudflare proxy, and inbound port 80."
-        fi
-        return "$status"
-    fi
-    certbot "$@"
-}
+source "$BASE_DIR/modules/ssl/ssl-renewal.sh"
 
 check_ssl_dns_targets(){
     local host ipv4 ipv6

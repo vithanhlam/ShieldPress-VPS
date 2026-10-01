@@ -506,13 +506,14 @@ check_ssl(){
         fi
     done
 
-    # Certbot timer
-    if systemctl is-active --quiet certbot-renew.timer 2>/dev/null || \
-       crontab -l 2>/dev/null | grep -q "certbot"; then
-        check_pass "SSL auto-renewal configured"
+    # Share timer detection with the SSL installer (RHEL, Debian, snap, fallback).
+    source "$BASE_DIR/modules/ssl/ssl-renewal.sh"
+    if ssl_active_timer >/dev/null; then
+        check_pass "SSL auto-renewal timer active"
     else
-        check_warn "SSL auto-renewal may not be configured"
+        check_warn "SSL auto-renewal timer inactive; install/renew SSL to configure it"
     fi
+
 }
 
 # ====================================================

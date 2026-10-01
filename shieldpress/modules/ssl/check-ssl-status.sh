@@ -1,6 +1,7 @@
 #!/bin/bash
 
-DOMAINS_ROOT="/home/domains"
+BASE_DIR="${BASE_DIR:-/opt/shieldpress}"
+DOMAINS_ROOT="${DOMAINS_ROOT:-/home/domains}"
 
 RED="\033[31m"
 GREEN="\033[32m"
@@ -101,12 +102,15 @@ echo ""
 
 # Certbot auto-renew (dùng cho Let's Encrypt và ZeroSSL)
 echo -n "Certbot Auto Renew : "
-if systemctl is-active --quiet certbot.timer 2>/dev/null; then
-    echo -e "${GREEN}● Active${RESET}"
-elif systemctl is-active --quiet snap.certbot.renew.timer 2>/dev/null; then
-    echo -e "${GREEN}● Active (snap)${RESET}"
+source "$BASE_DIR/modules/ssl/ssl-renewal.sh"
+if TIMER=$(ssl_active_timer); then
+    echo -e "${GREEN}● Active ($TIMER)${RESET}"
+    LAST_RESULT=$(systemctl show "${TIMER%.timer}.service" -p Result --value 2>/dev/null)
+    if [ -n "$LAST_RESULT" ] && [ "$LAST_RESULT" != "success" ]; then
+        echo -e "${YELLOW}Last renewal job failed ($LAST_RESULT); inspect journalctl -u ${TIMER%.timer}.service${RESET}"
+    fi
 else
-    echo -e "${YELLOW}● Not running${RESET} (run: systemctl enable --now certbot.timer)"
+    echo -e "${YELLOW}● Not running${RESET} (install/renew SSL to configure auto-renew)"
 fi
 
 # ACME auto-renew (ZeroSSL / acme.sh)

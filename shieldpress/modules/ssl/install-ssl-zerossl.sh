@@ -5,7 +5,7 @@
 #  Fully automatic — no manual registration needed
 # ============================================================
 
-BASE_DIR="/opt/shieldpress"
+BASE_DIR="${BASE_DIR:-/opt/shieldpress}"
 MODULE_DIR="$BASE_DIR/modules/ssl"
 DOMAINS_ROOT="/home/domains"
 ZEROSSL_ACME="https://acme.zerossl.com/v2/DV90"
@@ -59,11 +59,18 @@ fi
 
 DOMAIN=$(grep "^DOMAIN=" "$DOMAIN_PATH/config/domain.env" | cut -d'=' -f2 | tr -d '[:space:]')
 CLEAN=$(echo "$DOMAIN" | sed 's/[^a-zA-Z0-9]/_/g')
-CONF="/etc/nginx/conf.d/${CLEAN}.conf"
+CONF="$SSL_NGINX_DIR/${CLEAN}.conf"
 ADMIN_EMAIL=$(grep "^ADMIN_EMAIL=" "$BASE_DIR/config.env" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]')
 [ -z "$ADMIN_EMAIL" ] && ADMIN_EMAIL="admin@${DOMAIN}"
 
-ensure_ssl_dependencies
+ensure_ssl_dependencies || { fail "SSL dependencies could not be installed"; exit 1; }
+
+# Existing lineages use the renewal flow, preserving their SANs and provider.
+if ssl_has_lineage "$DOMAIN"; then
+    echo "Existing certificate found; keeping its provider and names, renewing when due."
+    SHIELDPRESS_REUSE_ACME=1 bash "$MODULE_DIR/renew-ssl.sh" "$DOMAIN_PATH"
+    exit $?
+fi
 
 echo ""
 echo "===================================================="
@@ -176,11 +183,10 @@ fi
 check_ssl_dns_targets "${SSL_HOSTS[@]}" || exit 1
 
 # ================================================
-# CLEANUP OLD SSL + ISSUE
+# VALIDATE NGINX + ISSUE WITHOUT DELETING OLD CERTIFICATES
 # ================================================
 
-cleanup_old_ssl "$DOMAIN" "$CLEAN" "$CONF"
-nginx -t 2>/dev/null && systemctl reload nginx 2>/dev/null
+nginx -t || { fail "Fix Nginx configuration before installing SSL"; exit 1; }
 
 echo ""
 echo "Installing ZeroSSL certificate..."
@@ -199,7 +205,7 @@ run_certbot register \
 
 # Issue certificate
 if [ "$WWW_OPT" = "2" ]; then
-    run_certbot --nginx \
+    ssl_install_nginx "$DOMAIN" "$CONF" \
         --non-interactive \
         --agree-tos \
         -m "$ADMIN_EMAIL" \
@@ -207,7 +213,7 @@ if [ "$WWW_OPT" = "2" ]; then
         -d "$DOMAIN" \
         --redirect
 else
-    run_certbot --nginx \
+    ssl_install_nginx "$DOMAIN" "$CONF" \
         --non-interactive \
         --agree-tos \
         -m "$ADMIN_EMAIL" \
@@ -223,7 +229,7 @@ if [ $? -ne 0 ]; then
     echo "Common causes:"
     echo "  - DNS not pointing to this server"
     echo "  - Port 80 blocked by firewall"
-    echo "  - Cloudflare proxy enabled (use DNS Only)"
+    echo "  - Proxy is not forwarding HTTP-01 challenges to this server"
     echo ""
     echo "Try: Let's Encrypt (option 1) or Cloudflare Origin SSL (option 4)"
     exit 1
@@ -286,17 +292,18 @@ if nginx -V 2>&1 | grep -q http_v3_module; then
         sed -i "/server_name/a\    add_header Alt-Svc 'h3=\":443\"; ma=86400' always;" "$CONF"
 fi
 
-# Test & reload
-NGINX_ERR=$(nginx -t 2>&1)
-if [ $? -eq 0 ]; then
-    systemctl reload nginx
+# Test both syntax and reload before reporting success. Keep the working
+# Certbot configuration if optional hardening is unsupported by this Nginx.
+if nginx -t && systemctl reload nginx; then
     rm -f "$NGINX_BACKUP"
 else
-    warn "Nginx config issue after hardening, rolling back..."
-    echo "$NGINX_ERR"
-    cp "$NGINX_BACKUP" "$CONF"
+    warn "Nginx hardening/reload failed; restoring working SSL configuration"
+    cp "$NGINX_BACKUP" "$CONF" || exit 1
+    if ! nginx -t || ! systemctl reload nginx; then
+        fail "Nginx could not load SSL; backup retained at $NGINX_BACKUP"
+        exit 1
+    fi
     rm -f "$NGINX_BACKUP"
-    nginx -t 2>/dev/null && systemctl reload nginx
 fi
 
 # Update domain.env
@@ -306,8 +313,7 @@ sed -i '/^SSL_TYPE=/d' "$DOMAIN_PATH/config/domain.env"
 echo "SSL_TYPE=zerossl" >> "$DOMAIN_PATH/config/domain.env"
 
 # Auto-renew
-systemctl enable certbot.timer 2>/dev/null
-systemctl start certbot.timer 2>/dev/null
+ensure_ssl_auto_renew || { fail "SSL installed, but auto-renew setup failed"; exit 1; }
 
 echo ""
 echo "======================================"

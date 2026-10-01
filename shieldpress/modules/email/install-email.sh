@@ -17,6 +17,7 @@ EMAIL_CONFIG="$ETC_DIR/email.conf"
 
 source "$BASE_DIR/core/ui.sh"
 source "$MODULE_DIR/helpers.sh"
+source "$BASE_DIR/modules/ssl/ssl-renewal.sh"
 
 # ============================================================
 #  PRE-FLIGHT CHECKS
@@ -207,7 +208,7 @@ dnf install -y \
     dovecot-pigeonhole \
     opendkim \
     opendkim-tools \
-    certbot \
+    certbot python3-certbot-nginx \
     cyrus-sasl cyrus-sasl-plain \
     bind-utils \
     2>&1 | tee -a "$LOG_FILE"
@@ -700,24 +701,9 @@ else
     if [ -n "$A_RECORD" ] && [ "$A_RECORD" = "$SERVER_IP" ]; then
         info "Requesting Let's Encrypt certificate for mail.${MAIL_DOMAIN}..."
 
-        # Stop Nginx temporarily so certbot can use port 80
-        NGINX_WAS_RUNNING=false
-        if systemctl is-active --quiet nginx 2>/dev/null; then
-            NGINX_WAS_RUNNING=true
-            systemctl stop nginx 2>/dev/null
-        fi
-
-        certbot certonly --standalone \
-            --agree-tos --non-interactive \
-            -d "mail.${MAIL_DOMAIN}" \
-            --email "postmaster@${MAIL_DOMAIN}" \
-            2>&1 | tee -a "$LOG_FILE"
-
-        if $NGINX_WAS_RUNNING; then
-            systemctl start nginx 2>/dev/null
-        fi
-
-        if [ -f "$CERT_DIR/fullchain.pem" ]; then
+        # Handle failure explicitly under set -e/pipefail. Nginx stays running.
+        if ssl_install_mail "mail.${MAIL_DOMAIN}" "postmaster@${MAIL_DOMAIN}" \
+            2>&1 | tee -a "$LOG_FILE"; then
             postconf -e "smtpd_tls_cert_file = $CERT_DIR/fullchain.pem"
             postconf -e "smtpd_tls_key_file = $CERT_DIR/privkey.pem"
             sed -i "s|ssl_cert = .*|ssl_cert = <$CERT_DIR/fullchain.pem|" /etc/dovecot/dovecot.conf

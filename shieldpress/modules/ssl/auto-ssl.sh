@@ -45,29 +45,21 @@ read -p "Choose: " TYPE
 
 case $TYPE in
 1)
-    certbot --nginx \
-        -d "$DOMAIN" \
-        -d "www.$DOMAIN" \
-        --email "$ADMIN_EMAIL" \
-        --agree-tos \
-        --non-interactive \
-        --redirect && \
-        sed -i 's/^SSL=.*/SSL=enabled/' "$DOMAIN_PATH/config/domain.env" && \
-        ok "Standard SSL installed for $DOMAIN" || \
-        fail "SSL installation failed"
+    bash "$BASE_DIR/modules/ssl/install-ssl.sh" "$DOMAIN_PATH"
+    exit $?
     ;;
 2)
     warn "Wildcard SSL requires manual DNS TXT record verification"
+    warn "Manual DNS certificates cannot auto-renew without a DNS plugin or authentication hook."
     echo ""
-    certbot certonly \
+    certbot certonly --cert-name "$DOMAIN" --keep-until-expiring \
         --manual \
         --preferred-challenges dns \
         -d "$DOMAIN" \
         -d "*.$DOMAIN" \
         --email "$ADMIN_EMAIL" \
         --agree-tos && \
-        sed -i 's/^SSL=.*/SSL=enabled/' "$DOMAIN_PATH/config/domain.env" && \
-        ok "Wildcard SSL installed for $DOMAIN" || \
+        ok "Wildcard certificate obtained for $DOMAIN; configure Nginx and automated DNS validation before enabling auto-renew" || \
         fail "Wildcard SSL installation failed"
     ;;
 0) exit 0 ;;

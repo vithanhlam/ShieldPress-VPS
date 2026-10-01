@@ -4,7 +4,7 @@
 #  Just select domain → install → done
 # ============================================================
 
-BASE_DIR="/opt/shieldpress"
+BASE_DIR="${BASE_DIR:-/opt/shieldpress}"
 MODULE_DIR="$BASE_DIR/modules/ssl"
 DOMAINS_ROOT="/home/domains"
 
@@ -55,9 +55,16 @@ ADMIN_EMAIL=$(grep "^ADMIN_EMAIL=" "$BASE_DIR/config.env" 2>/dev/null | cut -d'=
 [ -z "$ADMIN_EMAIL" ] && ADMIN_EMAIL="admin@${DOMAIN}"
 
 CLEAN=$(echo "$DOMAIN" | sed 's/[^a-zA-Z0-9]/_/g')
-CONF="/etc/nginx/conf.d/${CLEAN}.conf"
+CONF="$SSL_NGINX_DIR/${CLEAN}.conf"
 
-ensure_ssl_dependencies
+ensure_ssl_dependencies || { fail "SSL dependencies could not be installed"; exit 1; }
+
+# Existing lineages use the renewal flow, preserving their SANs and provider.
+if ssl_has_lineage "$DOMAIN"; then
+    echo "Existing certificate found; keeping its provider and names, renewing when due."
+    SHIELDPRESS_REUSE_ACME=1 bash "$MODULE_DIR/renew-ssl.sh" "$DOMAIN_PATH"
+    exit $?
+fi
 
 echo ""
 echo "===================================================="
@@ -111,9 +118,8 @@ if [ "$WWW_OPT" = "1" ]; then
 fi
 check_ssl_dns_targets "${SSL_HOSTS[@]}" || exit 1
 
-# Clean up old SSL if switching type
-cleanup_old_ssl "$DOMAIN" "$CLEAN" "$CONF"
-nginx -t 2>/dev/null && systemctl reload nginx 2>/dev/null
+# Validate the current configuration without deleting certificates or HTTPS
+nginx -t || { fail "Fix Nginx configuration before installing SSL"; exit 1; }
 
 echo ""
 echo "Installing SSL certificate..."
@@ -121,14 +127,14 @@ echo "(This may take 1-2 minutes while verifying domain ownership)"
 echo ""
 
 if [ "$WWW_OPT" = "2" ]; then
-    run_certbot --nginx \
+    ssl_install_nginx "$DOMAIN" "$CONF" \
         --non-interactive \
         --agree-tos \
         -m "$ADMIN_EMAIL" \
         -d "$DOMAIN" \
         --redirect
 else
-    run_certbot --nginx \
+    ssl_install_nginx "$DOMAIN" "$CONF" \
         --non-interactive \
         --agree-tos \
         -m "$ADMIN_EMAIL" \
@@ -143,7 +149,7 @@ if [ $? -ne 0 ]; then
     echo "Common causes:"
     echo "  - DNS not pointing to this server"
     echo "  - Port 80 blocked by firewall"
-    echo "  - Cloudflare proxy enabled (use DNS Only)"
+    echo "  - Proxy is not forwarding HTTP-01 challenges to this server"
     echo "  - Rate limit reached (50 certs/domain/week, 5 duplicates/week)"
     exit 1
 fi
@@ -205,15 +211,18 @@ if nginx -V 2>&1 | grep -q http_v3_module; then
         sed -i "/server_name/a\    add_header Alt-Svc 'h3=\":443\"; ma=86400' always;" "$CONF"
 fi
 
-# Test & reload
-if nginx -t 2>/dev/null; then
-    systemctl reload nginx
+# Test both syntax and reload before reporting success. Keep the working
+# Certbot configuration if optional hardening is unsupported by this Nginx.
+if nginx -t && systemctl reload nginx; then
     rm -f "$NGINX_BACKUP"
 else
-    warn "Nginx config issue after hardening, rolling back hardening..."
-    cp "$NGINX_BACKUP" "$CONF"
+    warn "Nginx hardening/reload failed; restoring working SSL configuration"
+    cp "$NGINX_BACKUP" "$CONF" || exit 1
+    if ! nginx -t || ! systemctl reload nginx; then
+        fail "Nginx could not load SSL; backup retained at $NGINX_BACKUP"
+        exit 1
+    fi
     rm -f "$NGINX_BACKUP"
-    nginx -t && systemctl reload nginx
 fi
 
 # Update domain.env
@@ -223,8 +232,7 @@ sed -i '/^SSL_TYPE=/d' "$DOMAIN_PATH/config/domain.env"
 echo "SSL_TYPE=letsencrypt" >> "$DOMAIN_PATH/config/domain.env"
 
 # Enable auto-renew
-systemctl enable certbot.timer 2>/dev/null
-systemctl start certbot.timer 2>/dev/null
+ensure_ssl_auto_renew || { fail "SSL installed, but auto-renew setup failed"; exit 1; }
 
 echo ""
 echo "======================================"

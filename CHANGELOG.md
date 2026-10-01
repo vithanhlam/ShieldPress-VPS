@@ -1,5 +1,23 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.77 — 2026-10-01 — SSL install and automatic renewal
+
+- Detect and enable the actual Certbot timer (including AlmaLinux/RHEL
+  `certbot-renew.timer`), verify activation, and create a persistent twice-daily
+  fallback timer when no packaged timer exists. Report setup errors.
+- Install SSL reuses existing Certbot lineages, preserves their provider and
+  SANs, renews when due, and reinstalls HTTPS without deleting certificates.
+  Failed issuance/installation restores the previous website configuration.
+- Mail SSL uses Nginx HTTP-01 without stopping websites. Legacy standalone
+  lineages migrate through Certbot reconfigure (2.3+), which validates the new
+  method against staging before saving it. Deploy hooks reload Nginx and mail
+  services consuming the renewed certificate.
+- Existing installations receive an idempotent migration patch on update;
+  failed migrations remain pending. Manual DNS certificates without an auth
+  hook are explicitly identified as unable to auto-renew.
+- SSL status recognizes all supported timers and reports a failed last job.
+  Added isolated regression tests for scheduling, renewal, rollback and hooks.
+
 ## v1.3.76 — 2026-09-30 — Repair SSL configs without SSL metadata
 
 - SSL cleanup no longer exits when a domain has no `SSL_TYPE` in
