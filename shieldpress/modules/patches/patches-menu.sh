@@ -676,7 +676,7 @@ patch_ssl_auto_renew(){
 }
 
 patch_wp_recovery_output(){
-    local ID="SP_20261005_WP_RECOVERY_OUTPUT"
+    local ID="SP_20261005_WP_RECOVERY_SCAN_LOCK"
     local unit="shieldpress-wp-recovery.service"
     local dropin="/etc/systemd/system/${unit}.d"
     patch_applied "$ID" && return 0
@@ -789,6 +789,7 @@ show_patch_status(){
     _status "SP_20260928_BACKUP_JOBS"             "Repair existing database backup schedules"
     _status "SP_20261001_SSL_AUTO_RENEW"          "Repair SSL auto-renew and standalone mail certificates"
     _status "SP_20261005_WP_RECOVERY_OUTPUT"      "Repair WordPress recovery daemon startup output"
+    _status "SP_20261005_WP_RECOVERY_SCAN_LOCK"   "Restart WordPress recovery with scan-scoped locking"
 
     echo ""
     echo "  Registry: $PATCH_REGISTRY"

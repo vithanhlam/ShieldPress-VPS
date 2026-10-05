@@ -42,16 +42,6 @@ log(){
 
 install -d -m 700 "$COOLDOWN_DIR" "$LOG_DIR" "$(dirname "$RECOVERY_LOCK")"
 
-# A manual scan and the daemon must never recover the same set of sites at the
-# same time. Without a lock, two scans can both observe a missing socket and
-# issue overlapping restarts, producing a longer outage and stale cooldown
-# markers.
-exec 9>"$RECOVERY_LOCK"
-if ! flock -n 9; then
-    log "Recovery scan skipped: another scan is already running"
-    exit 0
-fi
-
 # ─── PHP-FPM Detection ────────────────────────────────────
 
 # Read PHP version from domain config
@@ -409,7 +399,15 @@ recover_domain(){
 
 # ─── Scan All Sites ───────────────────────────────────────
 
-scan_all_sites(){
+scan_all_sites()(
+    # Lock only this scan. The menu and the daemon's interval must remain
+    # available; the subshell releases the descriptor on every return path.
+    exec 9>"$RECOVERY_LOCK" || return 1
+    if ! flock -n 9; then
+        log "Recovery scan skipped: another scan is already running"
+        [ "${1:-}" = "silent" ] || echo "Another recovery scan is running. Try again shortly."
+        return 0
+    fi
     local silent="${1:-}"  # "silent" for daemon mode (no echo)
     local sites_checked=0
     local sites_error=0
@@ -458,7 +456,7 @@ scan_all_sites(){
 
     [ -z "$silent" ] && echo "" && echo "  Checked: $sites_checked | Errors: $sites_error | Recovered: $sites_recovered"
     log "Scan complete: checked=$sites_checked errors=$sites_error recovered=$sites_recovered"
-}
+)
 
 # ─── Daemon Mode ──────────────────────────────────────────
 

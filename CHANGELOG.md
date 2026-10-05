@@ -1,5 +1,15 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.79 — 2026-10-05 — Keep recovery menu accessible
+
+- Acquire the recovery lock only during each scan, releasing it when the
+  scan finishes. The running daemon no longer prevents WordPress menu 10
+  from opening, and a busy manual scan reports its status without exiting
+  the menu.
+- Reapply the service migration to restart existing daemons with this fix.
+- Verified on the TEST.MD AlmaLinux VPS with SELinux enforcing: installation,
+  menu access while scanning, status, logs, stop/reinstall, and scan completion.
+
 ## v1.3.78 — 2026-10-05 — WordPress recovery daemon startup
 
 - Send daemon stdout/stderr to journald to avoid systemd startup failure
