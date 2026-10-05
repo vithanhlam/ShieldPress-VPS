@@ -1,5 +1,14 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.78 — 2026-10-05 — WordPress recovery daemon startup
+
+- Send daemon stdout/stderr to journald to avoid systemd startup failure
+  `209/STDOUT` when opening the recovery log is denied. Recovery events
+  continue to use the script's persistent log.
+- Align both installers to launch the recovery script through Bash.
+- Automatically repair existing recovery services during updates, restarting
+  enabled or running services. Failed migrations remain pending for retry.
+
 ## v1.3.77 — 2026-10-01 — SSL install and automatic renewal
 
 - Detect and enable the actual Certbot timer (including AlmaLinux/RHEL

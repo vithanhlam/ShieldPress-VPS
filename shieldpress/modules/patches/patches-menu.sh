@@ -675,6 +675,50 @@ patch_ssl_auto_renew(){
     fi
 }
 
+patch_wp_recovery_output(){
+    local ID="SP_20261005_WP_RECOVERY_OUTPUT"
+    local unit="shieldpress-wp-recovery.service"
+    local dropin="/etc/systemd/system/${unit}.d"
+    patch_applied "$ID" && return 0
+    if [ ! -f "/etc/systemd/system/$unit" ]; then
+        skip "WordPress recovery service is not installed; migration remains pending"
+        return 0
+    fi
+    if ! mkdir -p "$dropin"; then
+        fail "Cannot create WordPress recovery service override"
+        return 1
+    fi
+    if ! cat > "$dropin/10-recovery-output.conf" <<'EOF'
+[Service]
+ExecStart=
+ExecStart=/bin/bash /opt/shieldpress/modules/wordpress/wp-auto-recovery.sh --daemon
+StandardOutput=journal
+StandardError=journal
+WorkingDirectory=/opt/shieldpress
+EOF
+    then
+        fail "Cannot write WordPress recovery service override"
+        return 1
+    fi
+    if ! systemctl daemon-reload; then
+        fail "Cannot reload WordPress recovery service; migration remains pending"
+        return 1
+    fi
+    if systemctl is-enabled --quiet "$unit" || systemctl is-active --quiet "$unit"; then
+        if ! systemctl restart "$unit"; then
+            fail "WordPress recovery restart failed; migration remains pending"
+            return 1
+        fi
+        sleep 2
+        if ! systemctl is-active --quiet "$unit"; then
+            fail "WordPress recovery is not running; migration remains pending"
+            return 1
+        fi
+    fi
+    patch_mark_done "$ID"
+    ok "WordPress recovery service output repaired"
+}
+
 apply_all_patches(){
     local ssl_status=0
     echo ""
@@ -698,6 +742,7 @@ apply_all_patches(){
     patch_1331_service_resilience
     patch_1331_resize_php_pools
     patch_ssl_auto_renew || ssl_status=$?
+    patch_wp_recovery_output || ssl_status=$?
 
     # Add new patch calls here ↑
 
@@ -743,6 +788,7 @@ show_patch_status(){
     _status "SP_1331_RESIZE_PHP_POOLS"            "v1.3.31 Resize pm.max_children (prevent RAM overcommit)"
     _status "SP_20260928_BACKUP_JOBS"             "Repair existing database backup schedules"
     _status "SP_20261001_SSL_AUTO_RENEW"          "Repair SSL auto-renew and standalone mail certificates"
+    _status "SP_20261005_WP_RECOVERY_OUTPUT"      "Repair WordPress recovery daemon startup output"
 
     echo ""
     echo "  Registry: $PATCH_REGISTRY"

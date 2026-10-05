@@ -491,8 +491,10 @@ Type=simple
 ExecStart=/bin/bash /opt/shieldpress/modules/wordpress/wp-auto-recovery.sh --daemon
 Restart=always
 RestartSec=30
-StandardOutput=append:/var/shieldpress/logs/wp-auto-recovery.log
-StandardError=append:/var/shieldpress/logs/wp-auto-recovery.log
+# Let journald capture process output without opening a custom log path
+# before ExecStart. The script writes recovery events to its own LOG_FILE.
+StandardOutput=journal
+StandardError=journal
 User=root
 WorkingDirectory=/opt/shieldpress
 

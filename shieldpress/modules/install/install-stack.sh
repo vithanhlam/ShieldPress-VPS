@@ -1164,12 +1164,15 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/opt/shieldpress/modules/wordpress/wp-auto-recovery.sh --daemon
+ExecStart=/bin/bash /opt/shieldpress/modules/wordpress/wp-auto-recovery.sh --daemon
 Restart=always
 RestartSec=30
-StandardOutput=append:/var/shieldpress/logs/wp-auto-recovery.log
-StandardError=append:/var/shieldpress/logs/wp-auto-recovery.log
+# The script writes recovery events to its own log; capture process output
+# in journald so custom log permissions cannot prevent ExecStart.
+StandardOutput=journal
+StandardError=journal
 User=root
+WorkingDirectory=/opt/shieldpress
 
 [Install]
 WantedBy=multi-user.target
