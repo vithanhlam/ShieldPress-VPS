@@ -321,7 +321,7 @@ assert_node_port_available(){
 run_node_build(){
     local user="$1"
     local app_root="$2"
-    local timeout_value="${SHIELDPRESS_BUILD_TIMEOUT:-15m}"
+    local timeout_value="${SHIELDPRESS_BUILD_TIMEOUT:-30m}"
     local -a build_cmd=(npm run build)
     local dist_dir="${3:-}"
 
@@ -339,17 +339,47 @@ run_node_build(){
         "USER=$user"
         "LOGNAME=$user"
         "NPM_CONFIG_CACHE=$npm_cache"
+        "RAYON_NUM_THREADS=1"
+        "UV_THREADPOOL_SIZE=1"
+        "MALLOC_ARENA_MAX=2"
     )
     [ -n "$dist_dir" ] && build_env+=("NEXT_DIST_DIR=$dist_dir")
 
-    # Keep timeout in the terminal's foreground process group. Without
-    # --foreground, Ctrl-C can terminate the menu/runuser wrapper while a
-    # Next.js worker spawned by npm keeps running and leaves .next/lock behind.
-    # The same also makes TERM from the deploy timeout reach the build command
-    # more predictably when the build is waiting in a Next.js worker phase.
-    runuser -u "$user" -- env "${build_env[@]}" \
-        timeout --foreground --signal=TERM --kill-after=30s "$timeout_value" \
-        "${build_cmd[@]}" </dev/null
+    # A V8 heap limit alone does not bound native allocations or child workers.
+    # Keep all build children in one cgroup and reserve 40% of physical RAM
+    # for the live app, database and SSH. Refuse an unbounded fallback.
+    if ! command -v systemd-run >/dev/null 2>&1 || \
+       ! grep -qw memory /sys/fs/cgroup/cgroup.controllers 2>/dev/null; then
+        fail "Bounded builds require systemd and the cgroup v2 memory controller."
+        return 1
+    fi
+    local total_mb memory_mb memory_high_mb heap_mb
+    total_mb=$(awk '/^MemTotal:/ {print int($2 / 1024)}' /proc/meminfo)
+    memory_mb=$((total_mb * 60 / 100))
+    [ "$memory_mb" -ge 512 ] || { fail "Insufficient RAM for a production build"; return 1; }
+    memory_high_mb=$((memory_mb * 90 / 100))
+    # Round down to 64M increments; a 4G VPS uses the verified 1536M heap.
+    heap_mb=$((memory_mb * 2 / 3 / 64 * 64))
+    [ "$heap_mb" -le 2048 ] || heap_mb=2048
+    build_env+=("NODE_OPTIONS=--max-old-space-size=$heap_mb")
+
+    # A fixed unit name also prevents overlapping builds after a disconnected
+    # menu loses its deploy lock. RuntimeMaxSec and KillMode bound all children
+    # even when SSH disappears; --wait preserves the build's exit status.
+    local -a service_env=()
+    local item
+    for item in "${build_env[@]}"; do service_env+=("--setenv=$item"); done
+    local build_lock="$home/.shieldpress-build.lock"
+    touch "$build_lock" && chown "$user:$user" "$build_lock" || return 1
+    echo "Build limits: ${memory_mb}M RAM, 1024M swap, ${heap_mb}M V8 heap, 1 CPU"
+    echo "Memory reclaim starts at ${memory_high_mb}M; timeout: $timeout_value."
+    systemd-run --unit=shieldpress-node-build --collect --wait --pipe \
+        --property="User=$user" --property="WorkingDirectory=$app_root" \
+        --property="MemoryHigh=${memory_high_mb}M" \
+        --property="MemoryMax=${memory_mb}M" --property=MemorySwapMax=1024M \
+        --property=CPUQuota=100% --property="RuntimeMaxSec=$timeout_value" \
+        --property=TimeoutStopSec=30s --property=KillMode=control-group \
+        "${service_env[@]}" /usr/bin/flock -n "$build_lock" "${build_cmd[@]}" </dev/null
 }
 
 cleanup_stale_next_lock(){
@@ -834,6 +864,18 @@ restart_node_app(){
 # ==========================================
 
 deploy_node_app(){
+    # Serialize the entire deployment, including dependency installation and
+    # release handoff. The subshell releases the lock on every return path.
+    (
+        command -v flock >/dev/null 2>&1 || { fail "flock is required for deploy"; exit 1; }
+        mkdir -p /run/lock || exit 1
+        exec 9>/run/lock/shieldpress-node-deploy.lock || exit 1
+        flock -n 9 || { fail "Another Node.js deployment is running"; exit 1; }
+        deploy_node_app_locked
+    )
+}
+
+deploy_node_app_locked(){
     select_node_domain || return
     ensure_pm2 || return
     cd "$DOMAIN_PATH/public_html" || return
@@ -909,6 +951,13 @@ deploy_node_app(){
         local dist_dir_supported="no"
 
         if is_nextjs_app && next_app_supports_dist_dir; then
+            # Tailwind v4 scans source files automatically and respects
+            # .gitignore. Unignored candidate/rollback JS can make the next
+            # build scan its own generated output and exhaust memory.
+            if ! grep -qxF '/.next*/' .gitignore 2>/dev/null; then
+                printf '\n# ShieldPress Next.js candidate and rollback output\n/.next*/\n' >> .gitignore || return 1
+                chown "$sysuser:$sysuser" .gitignore || return 1
+            fi
             dist_dir_supported="yes"
             candidate_next=".next.candidate.$$"
             build_output="$candidate_next"

@@ -1,5 +1,19 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.80 — 2026-10-06 — Stable Node.js production builds
+
+- Run production builds in a systemd cgroup with a soft memory threshold,
+  a hard limit of 60% of physical RAM, at most 1 GB swap, one CPU and a
+  30-minute timeout. Bound native worker threads and Node's heap, and stop
+  all build children together when the service times out.
+- Serialize deployments and builds to prevent overlapping dependency changes
+  and release handoffs. Exclude Next.js candidate and rollback directories
+  from Tailwind's automatic source scanning.
+- Add regression checks for resource limits, build exit status and concurrent
+  deployment exclusion. Verified the manager's build function on the 4 GB
+  AlmaLinux VPS: completed in 3 minutes 50 seconds with a 2 GB memory peak,
+  while the live website continued responding with HTTPS 200.
+
 ## v1.3.79 — 2026-10-05 — Keep recovery menu accessible
 
 - Acquire the recovery lock only during each scan, releasing it when the
