@@ -44,7 +44,7 @@ case $opt in
 
     backup_domain_before_delete || { read -p "Press Enter..."; exit 1; }
 
-    delete_database
+    delete_database || { echo "[FAIL] Database deletion failed. Domain deletion stopped."; exit 1; }
     delete_source
     delete_configs
 
@@ -71,7 +71,7 @@ case $opt in
 3)
     read -p "Delete database for $SELECTED_DOMAIN? (y/n): " CONFIRM
     [ "$CONFIRM" != "y" ] && { echo "Cancelled."; read -p "Press Enter..."; exit 0; }
-    delete_database
+    delete_database || { echo "[FAIL] Database deletion failed."; exit 1; }
     echo "[OK] Database deleted"
     ;;
 0)

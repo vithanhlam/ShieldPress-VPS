@@ -32,10 +32,19 @@ chmod 755 "$BASE_DIR/bin/laravel-pg-backup"
 # Create global command
 ln -sf "$BASE_DIR/shieldpress.sh" /usr/bin/shieldpress
 
-# Remove single-digit shortcuts from older installs (e.g. /usr/bin/2 -> update,
+# Keep the shell shortcut for opening the admin menu. It only opens the UI.
+cat > /usr/local/bin/1 <<'SHORTCUT_EOF'
+#!/bin/bash
+exec /opt/shieldpress/shieldpress.sh menu "$@"
+SHORTCUT_EOF
+chmod 755 /usr/local/bin/1
+restorecon /usr/local/bin/1 2>/dev/null || true
+restorecon -RF "$BASE_DIR" 2>/dev/null || true
+
+# Remove action shortcuts from older installs (e.g. /usr/bin/2 -> update,
 # /usr/bin/6 -> backup): a single stray digit typed in any shell on the server
 # could silently trigger a full update/backup. Use `shieldpress <word>` instead.
-for NUM in 1 2 3 4 5 6; do
+for NUM in 2 3 4 5 6; do
     if [ -f "/usr/bin/$NUM" ] && grep -q "exec shieldpress" "/usr/bin/$NUM" 2>/dev/null; then
         rm -f "/usr/bin/$NUM"
     fi
@@ -54,9 +63,12 @@ if [ -z "$SHIELDPRESS_HELP_SHOWN" ] && [ -t 1 ] && [ "$(id -u)" -eq 0 ] && comma
     echo ""
     echo -e "\e[1m\e[97mShieldPress VPS v${_SP_VER} - Quick Commands\e[0m"
     echo -e "\e[36m──────────────────────────────────────\e[0m"
-    echo -e "  \e[36m[ 1]\e[0m Admin Menu              \e[33m[ 2]\e[0m Update"
-    echo -e "  \e[35m[ 3]\e[0m Clear All Cache         \e[32m[ 4]\e[0m Add Domain"
-    echo -e "  \e[34m[ 5]\e[0m Install SSL             \e[36m[ 6]\e[0m Backup"
+    echo -e "  \e[36m1\e[0m                    Admin Menu"
+    echo -e "  \e[33mshieldpress update\e[0m   Update"
+    echo -e "  \e[35mshieldpress cache\e[0m    Clear All Cache"
+    echo -e "  \e[32mshieldpress domain\e[0m   Add Domain"
+    echo -e "  \e[34mshieldpress ssl\e[0m      Install SSL"
+    echo -e "  \e[36mshieldpress backup\e[0m   Backup"
     echo -e "\e[36m──────────────────────────────────────\e[0m"
 
     # Check for update (quick, 3s timeout)

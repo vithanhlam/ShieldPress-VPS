@@ -531,9 +531,10 @@ if [ "$SHIELDPRESS_ACTION" != "menu" ]; then
 while true; do
 show_dashboard
 key=""
-    read -r -t 3 -p "Quick action [1-7, q]: " key
+    read -r -t 3 -p "Quick action [1-7, q] then Enter: " key
+    key="${key//[[:space:]]/}"
 case "$key" in
-1) break ;;
+1) echo "Opening Admin Menu..."; break ;;
 "" ) continue ;;
 2)
     if [ "$UPDATE_AVAILABLE" = "1" ]; then
@@ -575,7 +576,7 @@ STACK_LABEL="Install Stack"
 STACK_COLOR="$RED"
 INSTALL_OPTION=1
 else
-STACK_LABEL="Dashboard"
+STACK_LABEL="Back to Dashboard"
 STACK_COLOR="$GREEN"
 INSTALL_OPTION=0
 fi
@@ -604,6 +605,7 @@ printf "  "; menu_button 0 "Exit" "$RED"; echo ""
 hr
 
 read -r -p "Select: " choice
+choice="${choice//[[:space:]]/}"
 
 case $choice in
 1)

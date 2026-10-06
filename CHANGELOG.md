@@ -1,5 +1,21 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.81 — 2026-10-07 — Domain recreation and terminal menu access
+
+- Restore the shell command `1` to open Admin Menu on fresh installs and
+  upgrades. Clarify dashboard navigation and accept whitespace around menu
+  selections. Restore executable permissions and SELinux contexts on upgrade.
+- Remove MySQL registry entries after successful database deletion so a
+  deleted domain can be created again. Stop deletion when MySQL fails and
+  remove the domain home before cleaning up its Linux account.
+- Install Node.js 22 LTS in line with the upgrade policy. Temporarily unlock
+  Node.js packages, synchronize newer Current builds to the LTS repository,
+  verify the installed major and restore the package lock.
+- Accept both `y` and `Y` for core package updates and show cancellation.
+- Verified on AlmaLinux with SELinux enforcing: shell menu access through `1`
+  and `shieldpress`, domain recreation with HTTP 200, and Node.js 22.23.3
+  with the new version lock applied.
+
 ## v1.3.80 — 2026-10-06 — Stable Node.js production builds
 
 - Run production builds in a systemd cgroup with a soft memory threshold,

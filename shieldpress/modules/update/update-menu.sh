@@ -85,7 +85,7 @@ while true; do
         2)
             echo ""
             read -p "Update OS/core packages now? (y/n): " CONFIRM
-            if [ "$CONFIRM" = "y" ]; then
+            if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
                 dnf clean all
                 dnf makecache --refresh --setopt=skip_if_unavailable=true -y
                 # Loại trừ các gói do Upgrade Manager quản lý riêng (backup +
@@ -107,6 +107,9 @@ while true; do
                 echo "[OK] Core server packages updated."
                 echo ""
                 read -p "Press Enter..."
+            else
+                echo "Update cancelled."
+                sleep 1
             fi
             ;;
         0) break ;;

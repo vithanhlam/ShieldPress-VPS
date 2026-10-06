@@ -1265,9 +1265,23 @@ delete_database(){
         return 0
     fi
 
-    mysql -e "DROP DATABASE IF EXISTS \`$DB_NAME\`;"
-    mysql -e "DROP USER IF EXISTS '$DB_USER'@'localhost';"
-    mysql -e "FLUSH PRIVILEGES;"
+    mysql -e "DROP DATABASE IF EXISTS \`$DB_NAME\`;" || return 1
+    mysql -e "DROP USER IF EXISTS '$DB_USER'@'localhost';" || return 1
+    mysql -e "FLUSH PRIVILEGES;" || return 1
+
+    # Keep the ShieldPress database registry in sync with MySQL. A stale row
+    # blocks a later re-create even when the database and user were dropped.
+    local DATA_FILE="$DATA_DIR/databases.list"
+    if [ -f "$DATA_FILE" ]; then
+        local DATA_TMP
+        DATA_TMP=$(mktemp "${DATA_FILE}.XXXXXX") || return 1
+        if ! awk -F'|' -v prefix="DB_NAME=${DB_NAME} " 'index($1, prefix) != 1' "$DATA_FILE" > "$DATA_TMP"; then
+            rm -f "$DATA_TMP"
+            return 1
+        fi
+        chmod 600 "$DATA_TMP" || { rm -f "$DATA_TMP"; return 1; }
+        mv -f "$DATA_TMP" "$DATA_FILE" || { rm -f "$DATA_TMP"; return 1; }
+    fi
 }
 
 # ===============================
@@ -1299,15 +1313,22 @@ delete_configs(){
     [ -n "$PHP_VERSION" ] && systemctl restart "php${PS}-php-fpm" 2>/dev/null
     systemctl reload  nginx              2>/dev/null
 
-    # chỉ xoá user nếu không còn domain nào dùng
-    if [ -d "$DOMAINS_ROOT/$CLEAN_DOMAIN" ]; then
-        # vẫn còn domain → không xoá user
-        warn "User still in use → skip delete"
-    else
-        userdel -r "$CLEAN_DOMAIN" 2>/dev/null
-    fi
-
     rm -rf "$DOMAIN_PATH"
+
+    # Remove the domain home before checking whether the account is still in
+    # use. Checking first always sees the domain being deleted and leaves a
+    # stale Linux user with a home directory that no longer exists.
+    if [ -e "$DOMAIN_PATH" ]; then
+        warn "Domain directory remains → preserving Linux user"
+    elif id "$CLEAN_DOMAIN" &>/dev/null; then
+        local USER_HOME
+        USER_HOME=$(getent passwd "$CLEAN_DOMAIN" | cut -d: -f6)
+        if [ "$USER_HOME" = "$DOMAIN_PATH" ]; then
+            userdel -r "$CLEAN_DOMAIN" 2>/dev/null || warn "Could not remove Linux user: $CLEAN_DOMAIN"
+        else
+            warn "Linux user home differs from deleted domain → preserving user"
+        fi
+    fi
 }
 
 # ===============================

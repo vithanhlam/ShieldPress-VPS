@@ -333,12 +333,20 @@ create_compat_symlinks || fail "Cannot create ShieldPress compatibility symlinks
 log "Fixing permissions..."
 
 write_installed_version
-chmod +x "$BASE_DIR/shieldpress.sh" || fail "Cannot chmod shieldpress.sh"
+chmod 755 "$BASE_DIR/shieldpress.sh" || fail "Cannot chmod shieldpress.sh"
 find "$BASE_DIR/modules" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
 chmod +x "$BASE_DIR/bin/laravel-pg-backup" || fail "Cannot chmod PostgreSQL backup runner"
 chmod +x "$BASE_DIR/core"/*.sh 2>/dev/null || true
 ln -sf "$BASE_DIR/shieldpress.sh" /usr/bin/shieldpress
 ln -sf "$BASE_DIR/shieldpress.sh" /usr/local/bin/shieldpress
+cat > /usr/local/bin/1 <<'SHORTCUT_EOF'
+#!/bin/bash
+exec /opt/shieldpress/shieldpress.sh menu "$@"
+SHORTCUT_EOF
+chmod 755 /usr/local/bin/1 || fail "Cannot chmod admin menu shortcut"
+if command -v restorecon >/dev/null 2>&1; then
+    restorecon -RF "$BASE_DIR" /usr/local/bin/1 || fail "Cannot restore ShieldPress SELinux contexts"
+fi
 
 # =========================================
 # SERVICE HEALTH CHECK
