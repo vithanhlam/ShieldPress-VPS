@@ -118,6 +118,65 @@ Node.js Manager → `Deploy / Build` provides three choices:
 - **Dependencies + DB migration** installs dependencies, applies reviewed
   Prisma migrations, builds, and restarts the existing app.
 
+Builds run in a systemd service capped at 60% of physical RAM. Early memory
+throttling is disabled; the hard RAM cap still applies to all build children.
+The swap budget is the smallest of free swap minus a 512 MB reserve, twice the
+RAM budget, and 4096 MB, with a minimum of zero. ShieldPress never creates swap
+or changes database settings. Heap limits include a small swap allowance and
+are rounded down to 64 MB increments, with a maximum of 4096 MB.
+
+Example profiles with 4096 MB of **free** swap and at least four CPU cores:
+
+| Physical RAM | Build RAM cap | Build swap cap | V8 heap per process | CPU cap | Timeout |
+| --- | --- | --- | --- | --- | --- |
+| 1 GB | 614 MB | 1228 MB | 768 MB | 1 | 90 min |
+| 2 GB | 1228 MB | 2456 MB | 1152 MB | 1 | 90 min |
+| 3 GB | 1843 MB | 3584 MB | 1600 MB | 1 | 60 min |
+| 4 GB | 2457 MB | 3584 MB | 1984 MB | 1 | 60 min |
+| 8 GB | 4915 MB | 3584 MB | 3648 MB | 2 | 60 min |
+| 16 GB+ | 60% | up to 4096 MB | up to 4096 MB | up to 4 | 60 min |
+
+Actual values use reported RAM, free swap and available CPU cores. Next.js
+builds are refused before compilation if the combined RAM/swap budget is
+below 1536 MB. This is a minimum admission check, not a guarantee that a
+project will fit. Swap can make compilation considerably slower. For a large
+project on a 1–2 GB VPS, build on another machine and deploy its artifact.
+Set `SHIELDPRESS_BUILD_TIMEOUT=120m` in the environment launching ShieldPress
+to allow more time (positive integer with `s`, `m` or `h` suffix).
+
+For Next.js 15+ using webpack, merge these settings into the application's
+existing `next.config.*` (keep its other options):
+
+```ts
+const nextConfig = {
+  distDir: process.env.NEXT_DIST_DIR || ".next-release",
+  experimental: {
+    cpus: 1,
+    workerThreads: false,
+    webpackBuildWorker: true,
+    webpackMemoryOptimizations: true,
+  },
+};
+```
+
+Custom webpack hooks disable the build worker by default; explicitly enabling
+it and memory optimizations helped the Mythuatbui deployment fit within a
+2192 MB RAM cap. Check compatibility with custom plugins. ShieldPress warns
+when an existing Next.js config lacks memory optimizations; it does not rewrite
+application configuration automatically. See the
+[Next.js memory guide](https://nextjs.org/docs/app/guides/memory-usage).
+Ensure Tailwind ignores generated/candidate/rollback output; the candidate
+deployment path adds `/.next*/` to `.gitignore` automatically.
+
+Build output passes through a pipe so systemd does not receive a regular log
+file descriptor under SELinux. The original build exit status is preserved.
+On an OOM or timeout, the menu cleans up candidate output and retains the live
+release; it never stops the database to make room for the build.
+
+After dependencies and migrations
+succeed but a build fails, retry with **Standard update**; database migrations
+have already been applied and are not rolled back by a build failure.
+
 For Next.js projects whose `next.config.*` reads `NEXT_DIST_DIR` into `distDir`,
 Deploy / Build writes to a separate `.next.candidate.<pid>` directory and checks
 for `BUILD_ID` before replacing `.next-release`. The previous release is kept

@@ -1,5 +1,24 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.82 — 2026-10-13 — Adaptive Node.js build limits
+
+- Calculate RAM, free-swap, V8 heap and CPU budgets for small and large VPSes.
+  Reserve 40% of physical RAM and 512 MB of free swap for existing services;
+  use 90-minute timeouts below 3 GB RAM and 60 minutes on larger hosts.
+- Disable early memory reclaim while retaining a hard cgroup memory cap.
+  Reject Next.js builds with a combined budget below 1536 MB and report
+  build failures with guidance for OOM, timeouts and external builds.
+- Pipe build output before writing logs to avoid systemd file-descriptor
+  failures under SELinux; preserve the original build exit status.
+- Exclude generated Next.js output from Tailwind scanning for both candidate
+  and legacy deployment paths. Document webpack worker and memory settings.
+- Verified on the TEST.MD AlmaLinux VPS with SELinux enforcing: a real
+  Next.js 16.3.6 build and HTTP 200, six simulated host resource profiles
+  applied through real systemd services, exit-code 42 propagation and timeout
+  cleanup. MariaDB remained running with the same PID and start time.
+- Six local regression tests and repository smoke/shell syntax checks pass.
+  Small host profiles do not guarantee that every application fits in memory.
+
 ## v1.3.81 — 2026-10-07 — Domain recreation and terminal menu access
 
 - Restore the shell command `1` to open Admin Menu on fresh installs and

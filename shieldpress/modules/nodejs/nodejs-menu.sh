@@ -314,6 +314,31 @@ assert_node_port_available(){
     return 1
 }
 
+node_build_profile(){
+    local total_mb="$1" swap_free_mb="$2" cores="$3"
+    [[ "$total_mb" =~ ^[0-9]+$ && "$swap_free_mb" =~ ^[0-9]+$ && "$cores" =~ ^[0-9]+$ ]] || return 1
+    local ram_mb swap_mb heap_mb cpus=1 timeout=60m
+    ram_mb=$((total_mb * 60 / 100))
+    [ "$ram_mb" -ge 512 ] || return 1
+    # Leave swap for existing services; never create swap or change sysctls.
+    swap_mb=$((swap_free_mb - 512))
+    [ "$swap_mb" -ge 0 ] || swap_mb=0
+    [ "$swap_mb" -le $((ram_mb * 2)) ] || swap_mb=$((ram_mb * 2))
+    [ "$swap_mb" -le 4096 ] || swap_mb=4096
+    # Keep headroom for native allocations and all worker processes. Allow
+    # small hosts to use a limited part of swap for the JavaScript heap.
+    local heap_swap_mb="$swap_mb"
+    [ "$heap_swap_mb" -le 768 ] || heap_swap_mb=768
+    heap_mb=$(((ram_mb * 2 / 3 + heap_swap_mb / 2) / 64 * 64))
+    [ "$heap_mb" -le 4096 ] || heap_mb=4096
+    if [ "$total_mb" -lt 3072 ]; then timeout=90m; fi
+    if [ "$total_mb" -ge 8192 ]; then cpus=2; fi
+    if [ "$total_mb" -ge 16384 ]; then cpus=4; fi
+    [ "$cpus" -le "$cores" ] || cpus="$cores"
+    [ "$cpus" -ge 1 ] || cpus=1
+    printf '%s %s %s %s %s\n' "$ram_mb" "$swap_mb" "$heap_mb" "$cpus" "$timeout"
+}
+
 # Next 16 defaults to Turbopack for production builds. On small VPSes a
 # Turbopack build can stall while compiling, and an interrupted SSH/menu
 # session can leave .next/lock behind. Keep the build bounded and use the
@@ -321,7 +346,7 @@ assert_node_port_available(){
 run_node_build(){
     local user="$1"
     local app_root="$2"
-    local timeout_value="${SHIELDPRESS_BUILD_TIMEOUT:-30m}"
+    local timeout_value
     local -a build_cmd=(npm run build)
     local dist_dir="${3:-}"
 
@@ -353,14 +378,36 @@ run_node_build(){
         fail "Bounded builds require systemd and the cgroup v2 memory controller."
         return 1
     fi
-    local total_mb memory_mb memory_high_mb heap_mb
+    local total_mb swap_free_mb memory_mb swap_mb heap_mb build_cpus profile_timeout profile
     total_mb=$(awk '/^MemTotal:/ {print int($2 / 1024)}' /proc/meminfo)
-    memory_mb=$((total_mb * 60 / 100))
-    [ "$memory_mb" -ge 512 ] || { fail "Insufficient RAM for a production build"; return 1; }
-    memory_high_mb=$((memory_mb * 90 / 100))
-    # Round down to 64M increments; a 4G VPS uses the verified 1536M heap.
-    heap_mb=$((memory_mb * 2 / 3 / 64 * 64))
-    [ "$heap_mb" -le 2048 ] || heap_mb=2048
+    swap_free_mb=$(awk '/^SwapFree:/ {print int($2 / 1024)}' /proc/meminfo)
+    profile=$(node_build_profile "$total_mb" "$swap_free_mb" "$(nproc)") || {
+        fail "Insufficient RAM or invalid resource metrics for a bounded production build."
+        return 1
+    }
+    read -r memory_mb swap_mb heap_mb build_cpus profile_timeout <<< "$profile"
+    timeout_value="${SHIELDPRESS_BUILD_TIMEOUT:-$profile_timeout}"
+    if ! [[ "$timeout_value" =~ ^[1-9][0-9]*[smh]$ ]]; then
+        fail "SHIELDPRESS_BUILD_TIMEOUT must be a positive duration such as 60m."
+        return 1
+    fi
+    if grep -Eq '"next"[[:space:]]*:' "$app_root/package.json"; then
+        if [ $((memory_mb + swap_mb)) -lt 1536 ]; then
+            fail "Next.js build budget is below 1536M. Provision swap or build on another machine and deploy the artifact."
+            return 1
+        fi
+        local next_config
+        for next_config in "$app_root"/next.config.{js,mjs,ts,cjs}; do
+            [ -f "$next_config" ] || continue
+            if ! grep -Eq 'webpackMemoryOptimizations[[:space:]]*:[[:space:]]*true' "$next_config"; then
+                warn "For low-memory Next.js builds, enable experimental.webpackMemoryOptimizations and webpackBuildWorker in next.config (see ShieldPress GUIDE)."
+            fi
+            break
+        done
+    fi
+    # Compilation can sustain a working set near MemoryMax. A lower
+    # MemoryHigh repeatedly reclaims that working set and can turn a build
+    # into a timeout. Enforce the hard cap without early reclaim throttling.
     build_env+=("NODE_OPTIONS=--max-old-space-size=$heap_mb")
 
     # A fixed unit name also prevents overlapping builds after a disconnected
@@ -371,15 +418,25 @@ run_node_build(){
     for item in "${build_env[@]}"; do service_env+=("--setenv=$item"); done
     local build_lock="$home/.shieldpress-build.lock"
     touch "$build_lock" && chown "$user:$user" "$build_lock" || return 1
-    echo "Build limits: ${memory_mb}M RAM, 1024M swap, ${heap_mb}M V8 heap, 1 CPU"
-    echo "Memory reclaim starts at ${memory_high_mb}M; timeout: $timeout_value."
+    echo "Build limits: ${memory_mb}M RAM, ${swap_mb}M swap, ${heap_mb}M V8 heap, $build_cpus CPU(s)"
+    echo "Hard RAM limit enforced without early memory throttling; timeout: $timeout_value."
+    # Pipe output through cat: passing a regular log file directly to systemd
+    # via --pipe can fail under SELinux. Preserve systemd-run's exit status.
+    local -a build_status
     systemd-run --unit=shieldpress-node-build --collect --wait --pipe \
         --property="User=$user" --property="WorkingDirectory=$app_root" \
-        --property="MemoryHigh=${memory_high_mb}M" \
-        --property="MemoryMax=${memory_mb}M" --property=MemorySwapMax=1024M \
-        --property=CPUQuota=100% --property="RuntimeMaxSec=$timeout_value" \
+        --property=MemoryHigh=infinity \
+        --property="MemoryMax=${memory_mb}M" --property="MemorySwapMax=${swap_mb}M" \
+        --property="CPUQuota=$((build_cpus * 100))%" --property="RuntimeMaxSec=$timeout_value" \
         --property=TimeoutStopSec=30s --property=KillMode=control-group \
-        "${service_env[@]}" /usr/bin/flock -n "$build_lock" "${build_cmd[@]}" </dev/null
+        "${service_env[@]}" /usr/bin/flock -n "$build_lock" "${build_cmd[@]}" </dev/null 2>&1 | cat
+    build_status=("${PIPESTATUS[@]}")
+    if [ "${build_status[0]}" -ne 0 ]; then
+        warn "Build failed (exit ${build_status[0]}). Check the result above for oom-kill or timeout."
+        warn "For OOM, enable Next.js webpack memory optimizations or build externally; do not stop the database to free RAM."
+        return "${build_status[0]}"
+    fi
+    return "${build_status[1]}"
 }
 
 cleanup_stale_next_lock(){
@@ -950,7 +1007,7 @@ deploy_node_app_locked(){
         local candidate_next=""
         local dist_dir_supported="no"
 
-        if is_nextjs_app && next_app_supports_dist_dir; then
+        if is_nextjs_app; then
             # Tailwind v4 scans source files automatically and respects
             # .gitignore. Unignored candidate/rollback JS can make the next
             # build scan its own generated output and exhaust memory.
@@ -958,6 +1015,9 @@ deploy_node_app_locked(){
                 printf '\n# ShieldPress Next.js candidate and rollback output\n/.next*/\n' >> .gitignore || return 1
                 chown "$sysuser:$sysuser" .gitignore || return 1
             fi
+        fi
+
+        if is_nextjs_app && next_app_supports_dist_dir; then
             dist_dir_supported="yes"
             candidate_next=".next.candidate.$$"
             build_output="$candidate_next"
