@@ -1,5 +1,14 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.86 — 2026-10-18 — Meilisearch domain keys and setup
+
+- Rewrite the Meilisearch setup menu in concise English with install/update and
+  per-domain key management actions.
+- Create search-only keys scoped to a domain-specific index; save credentials
+  in the domain config for retrieval or revocation.
+- Preserve existing Meilisearch data during setup and explain how to connect an
+  application using the saved host, index and key.
+
 ## v1.3.85 — 2026-10-18 — Wait for Nginx HTTP-01 reload
 
 - Retry HTTP-01 preflight briefly after Nginx reload so old workers finishing a

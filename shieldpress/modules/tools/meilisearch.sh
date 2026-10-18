@@ -1,235 +1,158 @@
 #!/bin/bash
-# ============================================================
-#  Meilisearch Setup Script
-#  Support: AlmaLinux 8.x / 9.x, RHEL, CentOS Stream
-#  Chạy: bash meilisearch.sh
-# ============================================================
+# Meilisearch installer and per-domain search-key manager.
+set -euo pipefail
 
-set -e
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-log()    { echo -e "${GREEN}[✔]${NC} $1"; }
-warn()   { echo -e "${YELLOW}[!]${NC} $1"; }
-error()  { echo -e "${RED}[✘]${NC} $1"; exit 1; }
-header() { echo -e "\n${BLUE}══════════════════════════════════════${NC}"; echo -e "${BLUE}  $1${NC}"; echo -e "${BLUE}══════════════════════════════════════${NC}"; }
-
-# ── Kiểm tra root ────────────────────────────────────────────
-if [ "$EUID" -ne 0 ]; then
-    error "Vui lòng chạy script với quyền root: sudo bash meilisearch.sh"
-fi
-
-# ── Biến cấu hình ────────────────────────────────────────────
 MEILI_VERSION="v1.12.0"
 MEILI_BIN="/usr/local/bin/meilisearch"
 MEILI_DATA="/var/lib/meilisearch"
-MEILI_CONFIG="/etc/meilisearch.toml"   # để ở /etc, chạy bằng root nên không cần lo permission
+MEILI_CONFIG="/etc/meilisearch.toml"
 MEILI_SERVICE="/etc/systemd/system/meilisearch.service"
-MEILI_PORT="7700"
-MEILI_ADDR="127.0.0.1"
+MEILI_URL="http://127.0.0.1:7700"
+DOMAINS_ROOT="/home/domains"
 
-header "Meilisearch $MEILI_VERSION Installer"
+ok(){ printf '[OK] %s\n' "$*"; }
+fail(){ printf '[ERROR] %s\n' "$*" >&2; exit 1; }
+[[ $EUID -eq 0 ]] || fail "Run with sudo/root."
 
-# ── Bước 1: Thông tin hệ thống ───────────────────────────────
-header "Bước 1: Thông tin hệ thống"
+read_master_key(){
+    [[ -r "$MEILI_CONFIG" ]] || return 1
+    sed -nE 's/^[[:space:]]*master_key[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$MEILI_CONFIG" | head -n1
+}
 
-OS_NAME=$(grep PRETTY_NAME /etc/os-release | cut -d'"' -f2)
-GLIBC_VER=$(ldd --version | head -1 | grep -o '[0-9]\+\.[0-9]\+$')
-log "OS: $OS_NAME"
-log "GLIBC: $GLIBC_VER"
-log "Meilisearch version: $MEILI_VERSION"
+install_meili(){
+    local os glibc key current
+    os=$(sed -n 's/^PRETTY_NAME="\(.*\)"/\1/p' /etc/os-release | head -n1)
+    glibc=$(ldd --version 2>/dev/null | head -n1 | grep -oE '[0-9]+\.[0-9]+$' || true)
+    key=$(read_master_key 2>/dev/null || true)
+    if [[ -z "$key" ]]; then key=$(openssl rand -hex 32); fi
 
-# ── Bước 2: Dừng service cũ ──────────────────────────────────
-header "Bước 2: Dừng service cũ (nếu có)"
-systemctl stop meilisearch 2>/dev/null && warn "Đã dừng service cũ." || log "Không có service cũ."
-
-# ── Bước 3: Tạo master key ───────────────────────────────────
-header "Bước 3: Tạo Master Key"
-
-if [ -f "$MEILI_CONFIG" ] && grep -q 'master_key' "$MEILI_CONFIG"; then
-    MEILI_MASTER_KEY=$(grep 'master_key' "$MEILI_CONFIG" | cut -d'"' -f2)
-    warn "Giữ nguyên master key cũ."
-else
-    MEILI_MASTER_KEY=$(openssl rand -hex 32)
-    log "Đã tạo master key mới."
-fi
-
-echo -e "${YELLOW}  Master Key: ${MEILI_MASTER_KEY}${NC}"
-echo -e "${RED}  ⚠ Lưu lại key này! Cần dùng trong WordPress sau.${NC}"
-
-# ── Bước 4: Tải binary ───────────────────────────────────────
-header "Bước 4: Tải Meilisearch $MEILI_VERSION"
-
-DOWNLOAD_URL="https://github.com/meilisearch/meilisearch/releases/download/${MEILI_VERSION}/meilisearch-linux-amd64"
-
-if [ -f "$MEILI_BIN" ]; then
-    CURRENT_VER=$("$MEILI_BIN" --version 2>/dev/null | grep -o 'v[0-9.]*' || echo "unknown")
-    if [ "$CURRENT_VER" = "$MEILI_VERSION" ]; then
-        log "Meilisearch $MEILI_VERSION đã có, bỏ qua download."
-    else
-        warn "Cài đè version cũ ($CURRENT_VER) → $MEILI_VERSION"
-        curl -L "$DOWNLOAD_URL" -o "$MEILI_BIN"
-        chmod +x "$MEILI_BIN"
-        log "Đã tải xong."
+    mkdir -p "$MEILI_DATA"
+    chmod 755 "$MEILI_DATA"
+    current=$("$MEILI_BIN" --version 2>/dev/null | grep -oE 'v[0-9.]+' || true)
+    if [[ "$current" != "$MEILI_VERSION" ]]; then
+        curl -fsSL "https://github.com/meilisearch/meilisearch/releases/download/${MEILI_VERSION}/meilisearch-linux-amd64" -o "$MEILI_BIN"
+        chmod 755 "$MEILI_BIN"
     fi
-else
-    curl -L "$DOWNLOAD_URL" -o "$MEILI_BIN"
-    chmod +x "$MEILI_BIN"
-    log "Đã tải xong."
-fi
+    "$MEILI_BIN" --version >/dev/null || fail "Meilisearch binary check failed."
 
-# Verify binary chạy được
-"$MEILI_BIN" --version > /dev/null 2>&1 || error "Binary không chạy được!"
-log "Binary OK: $($MEILI_BIN --version)"
-
-# ── Bước 5: Chuẩn bị thư mục data ───────────────────────────
-header "Bước 5: Chuẩn bị thư mục data"
-
-# Xóa data cũ nếu bị corrupt
-if [ -d "$MEILI_DATA" ]; then
-    # Kiểm tra có file VERSION không, nếu có thể bị corrupt thì xóa
-    if [ -f "$MEILI_DATA/VERSION" ]; then
-        OLD_DB_VER=$(cat "$MEILI_DATA/VERSION" 2>/dev/null || echo "unknown")
-        warn "Phát hiện data cũ (version: $OLD_DB_VER), đang xóa để tránh conflict..."
-        rm -rf "$MEILI_DATA"
-        log "Đã xóa data cũ."
-    fi
-fi
-
-mkdir -p "$MEILI_DATA"
-# FIX: service chạy bằng root nên để root own
-chown root:root "$MEILI_DATA"
-chmod 755 "$MEILI_DATA"
-log "Thư mục data: $MEILI_DATA"
-
-# ── Bước 6: Tạo file config ──────────────────────────────────
-header "Bước 6: Tạo file cấu hình"
-
-cat > "$MEILI_CONFIG" << EOF
-# Meilisearch Configuration
-# Generated by meilisearch.sh
-# OS: ${OS_NAME} | GLIBC: ${GLIBC_VER} | Version: ${MEILI_VERSION}
-
-db_path      = "${MEILI_DATA}"
-env          = "production"
-http_addr    = "${MEILI_ADDR}:${MEILI_PORT}"
-master_key   = "${MEILI_MASTER_KEY}"
+    cat > "$MEILI_CONFIG" <<EOF
+# Managed by ShieldPress
+db_path = "$MEILI_DATA"
+env = "production"
+http_addr = "127.0.0.1:7700"
+master_key = "$key"
 no_analytics = true
-log_level    = "WARN"
+log_level = "WARN"
 EOF
-
-chmod 600 "$MEILI_CONFIG"
-log "Config: $MEILI_CONFIG"
-
-# ── Bước 7: Tạo systemd service ──────────────────────────────
-header "Bước 7: Cấu hình systemd service"
-
-# FIX: chạy bằng root để tránh mọi vấn đề permission trên AlmaLinux
-cat > "$MEILI_SERVICE" << EOF
+    chmod 600 "$MEILI_CONFIG"
+    cat > "$MEILI_SERVICE" <<EOF
 [Unit]
 Description=Meilisearch Search Engine
-Documentation=https://www.meilisearch.com/docs
 After=network.target
 
 [Service]
-ExecStart=${MEILI_BIN} --config-file-path=${MEILI_CONFIG}
+ExecStart=$MEILI_BIN --config-file-path=$MEILI_CONFIG
 Restart=on-failure
 RestartSec=5
-StandardOutput=journal
-StandardError=journal
 LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target
 EOF
+    systemctl daemon-reload
+    systemctl enable --now meilisearch
+    ok "Meilisearch $MEILI_VERSION is running ($os${glibc:+, glibc $glibc}). Existing data was preserved."
+    printf 'Endpoint: %s (local server access)\n' "$MEILI_URL"
+}
 
-systemctl daemon-reload
-systemctl enable meilisearch
-log "Systemd service đã tạo."
+select_domain(){
+    local -a dirs=() names=()
+    local d name i choice
+    echo "Configured domains:"
+    for d in "$DOMAINS_ROOT"/*/; do
+        [[ -f "$d/config/domain.env" ]] || continue
+        name=$(sed -n 's/^DOMAIN=//p' "$d/config/domain.env" | head -n1)
+        [[ -n "$name" ]] || continue
+        dirs+=("${d%/}"); names+=("$name")
+        printf ' %d) %s\n' "${#dirs[@]}" "$name"
+    done
+    ((${#dirs[@]})) || fail "No configured domains found."
+    read -r -p "Select domain: " choice
+    [[ "$choice" =~ ^[0-9]+$ ]] && ((choice >= 1 && choice <= ${#dirs[@]})) || fail "Invalid selection."
+    DOMAIN_PATH="${dirs[$((choice-1))]}"
+    DOMAIN_NAME="${names[$((choice-1))]}"
+    DOMAIN_ENV="$DOMAIN_PATH/config/domain.env"
+    DOMAIN_INDEX="products_$(printf '%s' "$DOMAIN_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/_/g' | cut -c1-200)"
+}
 
-# ── Bước 8: Test chạy thủ công trước ────────────────────────
-header "Bước 8: Test binary trước khi chạy service"
+save_domain_key(){
+    local uid="$1" value="$2" env_tmp
+    env_tmp=$(mktemp "${DOMAIN_ENV}.XXXXXX")
+    awk '!/^MEILI_(HOST|INDEX|KEY|KEY_UID)=/' "$DOMAIN_ENV" > "$env_tmp"
+    {
+        printf 'MEILI_HOST=%s\n' "$MEILI_URL"
+        printf 'MEILI_INDEX=%s\n' "$DOMAIN_INDEX"
+        printf 'MEILI_KEY=%s\n' "$value"
+        printf 'MEILI_KEY_UID=%s\n' "$uid"
+    } >> "$env_tmp"
+    cat "$env_tmp" > "$DOMAIN_ENV"
+    rm -f "$env_tmp"
+    chmod 600 "$DOMAIN_ENV"
+}
 
-# Thử chạy 3 giây rồi kill để xem có lỗi không
-timeout 3 "$MEILI_BIN" --config-file-path="$MEILI_CONFIG" > /tmp/meili_test.log 2>&1 || true
+manage_key(){
+    local action="$1" master response uid value status
+    select_domain
+    master=$(read_master_key)
+    curl -fsS "$MEILI_URL/health" >/dev/null || fail "Meilisearch is not responding at $MEILI_URL."
+    case "$action" in
+        create)
+            if grep -q '^MEILI_KEY_UID=' "$DOMAIN_ENV"; then
+                read -r -p "A key is already saved. Create and replace it? [y/N]: " confirm
+                [[ "$confirm" =~ ^[yY]$ ]] || return 0
+                uid=$(sed -n 's/^MEILI_KEY_UID=//p' "$DOMAIN_ENV" | head -n1)
+                curl -fsS -X DELETE "$MEILI_URL/keys/$uid" -H "Authorization: Bearer $master" >/dev/null || fail "Could not revoke the old key."
+            fi
+            curl -fsS -X POST "$MEILI_URL/indexes" -H "Authorization: Bearer $master" -H 'Content-Type: application/json' \
+                -d "{\"uid\":\"$DOMAIN_INDEX\",\"primaryKey\":\"post_id\"}" >/dev/null || true
+            response=$(curl -fsS -X POST "$MEILI_URL/keys" -H "Authorization: Bearer $master" -H 'Content-Type: application/json' \
+                -d "{\"name\":\"shieldpress-$DOMAIN_NAME\",\"description\":\"Search-only key for $DOMAIN_NAME\",\"actions\":[\"search\"],\"indexes\":[\"$DOMAIN_INDEX\"]}") || fail "Key creation failed."
+            uid=$(printf '%s' "$response" | sed -nE 's/.*"uid"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
+            value=$(printf '%s' "$response" | sed -nE 's/.*"key"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
+            [[ -n "$uid" && -n "$value" ]] || fail "Could not read the created key response. Install jq or check the Meilisearch API response."
+            save_domain_key "$uid" "$value"
+            ok "Search-only key created and saved to $DOMAIN_ENV"
+            ;;
+        show)
+            value=$(sed -n 's/^MEILI_KEY=//p' "$DOMAIN_ENV" | head -n1)
+            [[ -n "$value" ]] || fail "No key saved for $DOMAIN_NAME."
+            printf '\nDomain: %s\nEndpoint: %s\nIndex: %s\nKey: %s\n' "$DOMAIN_NAME" "$MEILI_URL" "$DOMAIN_INDEX" "$value"
+            ;;
+        revoke)
+            uid=$(sed -n 's/^MEILI_KEY_UID=//p' "$DOMAIN_ENV" | head -n1)
+            [[ -n "$uid" ]] || fail "No managed key found for $DOMAIN_NAME."
+            read -r -p "Revoke this domain's key? [y/N]: " confirm
+            [[ "$confirm" =~ ^[yY]$ ]] || return 0
+            curl -fsS -X DELETE "$MEILI_URL/keys/$uid" -H "Authorization: Bearer $master" >/dev/null || fail "Key revocation failed."
+            env_tmp=$(mktemp "${DOMAIN_ENV}.XXXXXX")
+            awk '!/^MEILI_(HOST|INDEX|KEY|KEY_UID)=/' "$DOMAIN_ENV" > "$env_tmp"
+            cat "$env_tmp" > "$DOMAIN_ENV"; rm -f "$env_tmp"; chmod 600 "$DOMAIN_ENV"
+            ok "Domain key revoked and removed from domain.env."
+            ;;
+    esac
+    echo
+    echo "Connect your app with MEILI_HOST, MEILI_INDEX, and MEILI_KEY from domain.env."
+    echo "The endpoint is localhost-only; connect through the app on this server or a private tunnel."
+}
 
-if grep -q "ERROR\|Error\|error" /tmp/meili_test.log 2>/dev/null; then
-    cat /tmp/meili_test.log
-    error "Binary lỗi khi chạy thử. Xem log ở trên."
-else
-    log "Binary test OK."
-fi
-
-# ── Bước 9: Khởi động service ────────────────────────────────
-header "Bước 9: Khởi động Meilisearch"
-
-systemctl start meilisearch
-sleep 3
-
-if systemctl is-active --quiet meilisearch; then
-    log "Meilisearch đang chạy!"
-else
-    journalctl -u meilisearch -n 30 --no-pager
-    error "Meilisearch không khởi động được."
-fi
-
-# ── Bước 10: Kiểm tra API ────────────────────────────────────
-header "Bước 10: Kiểm tra API"
-
-sleep 1
-HEALTH=$(curl -s "http://${MEILI_ADDR}:${MEILI_PORT}/health" 2>/dev/null)
-
-if echo "$HEALTH" | grep -q "available"; then
-    log "API OK: $HEALTH"
-else
-    warn "API chưa phản hồi: $HEALTH"
-fi
-
-# ── Bước 11: Tạo index products ──────────────────────────────
-header "Bước 11: Tạo index 'products'"
-
-curl -s -X POST "http://${MEILI_ADDR}:${MEILI_PORT}/indexes" \
-    -H "Authorization: Bearer ${MEILI_MASTER_KEY}" \
-    -H "Content-Type: application/json" \
-    -d '{"uid":"products","primaryKey":"post_id"}' > /dev/null
-log "Tạo index 'products'"
-
-curl -s -X PUT "http://${MEILI_ADDR}:${MEILI_PORT}/indexes/products/settings/searchable-attributes" \
-    -H "Authorization: Bearer ${MEILI_MASTER_KEY}" \
-    -H "Content-Type: application/json" \
-    -d '["title","sku","category"]' > /dev/null
-log "Searchable: title, sku, category"
-
-curl -s -X PUT "http://${MEILI_ADDR}:${MEILI_PORT}/indexes/products/settings/filterable-attributes" \
-    -H "Authorization: Bearer ${MEILI_MASTER_KEY}" \
-    -H "Content-Type: application/json" \
-    -d '["category","price","in_stock"]' > /dev/null
-log "Filterable: category, price, in_stock"
-
-curl -s -X PUT "http://${MEILI_ADDR}:${MEILI_PORT}/indexes/products/settings/sortable-attributes" \
-    -H "Authorization: Bearer ${MEILI_MASTER_KEY}" \
-    -H "Content-Type: application/json" \
-    -d '["price","post_id"]' > /dev/null
-log "Sortable: price, post_id"
-
-# ── Tóm tắt ──────────────────────────────────────────────────
-header "✅ Hoàn tất!"
-
-echo ""
-echo -e "  ${GREEN}OS:${NC}        $OS_NAME"
-echo -e "  ${GREEN}Version:${NC}   Meilisearch $MEILI_VERSION"
-echo -e "  ${GREEN}Status:${NC}    systemctl status meilisearch"
-echo -e "  ${GREEN}Logs:${NC}      journalctl -u meilisearch -f"
-echo -e "  ${GREEN}Config:${NC}    ${MEILI_CONFIG}"
-echo -e "  ${GREEN}Data:${NC}      ${MEILI_DATA}"
-echo ""
-echo -e "  ${YELLOW}━━━ Thông tin kết nối WordPress (lưu lại!) ━━━${NC}"
-echo -e "  ${YELLOW}MEILI_HOST:${NC}  http://127.0.0.1:${MEILI_PORT}"
-echo -e "  ${YELLOW}MEILI_KEY:${NC}   ${MEILI_MASTER_KEY}"
-echo ""
-echo -e "  ${BLUE}Bước tiếp theo:${NC} Chạy script bulk-index để đưa 300k sản phẩm vào Meilisearch."
-echo ""
+echo "Meilisearch: install/update, or manage a search-only key per domain."
+echo "1) Install / Update  2) Create domain key  3) Show saved key  4) Revoke domain key  0) Back"
+read -r -p "Select: " choice
+case "$choice" in
+    1) install_meili ;;
+    2) manage_key create ;;
+    3) manage_key show ;;
+    4) manage_key revoke ;;
+    0) exit 0 ;;
+    *) fail "Invalid selection." ;;
+esac
