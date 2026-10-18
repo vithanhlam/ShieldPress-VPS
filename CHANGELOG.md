@@ -1,5 +1,12 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.88 — 2026-10-18 — Fix Meilisearch API key creation
+
+- Include the required `expiresAt` field when creating Meilisearch 1.12 API
+  keys; save and display the ten-year expiration with the domain credentials.
+- Keep the previous key active until its replacement is created, and show the
+  Meilisearch API response when creation fails.
+
 ## v1.3.87 — 2026-10-18 — Meilisearch menu polish and download diagnostics
 
 - Match the Meilisearch submenu to the standard ShieldPress header and colored

@@ -104,14 +104,15 @@ select_domain(){
 }
 
 save_domain_key(){
-    local uid="$1" value="$2" env_tmp
+    local uid="$1" value="$2" expires_at="$3" env_tmp
     env_tmp=$(mktemp "${DOMAIN_ENV}.XXXXXX")
-    awk '!/^MEILI_(HOST|INDEX|KEY|KEY_UID)=/' "$DOMAIN_ENV" > "$env_tmp"
+    awk '!/^MEILI_(HOST|INDEX|KEY|KEY_UID|KEY_EXPIRES_AT)=/' "$DOMAIN_ENV" > "$env_tmp"
     {
         printf 'MEILI_HOST=%s\n' "$MEILI_URL"
         printf 'MEILI_INDEX=%s\n' "$DOMAIN_INDEX"
         printf 'MEILI_KEY=%s\n' "$value"
         printf 'MEILI_KEY_UID=%s\n' "$uid"
+        printf 'MEILI_KEY_EXPIRES_AT=%s\n' "$expires_at"
     } >> "$env_tmp"
     cat "$env_tmp" > "$DOMAIN_ENV"
     rm -f "$env_tmp"
@@ -119,7 +120,7 @@ save_domain_key(){
 }
 
 manage_key(){
-    local action="$1" master response uid value status
+    local action="$1" master response uid value expires_at old_uid="" confirm env_tmp
     select_domain
     master=$(read_master_key)
     curl -fsS "$MEILI_URL/health" >/dev/null || fail "Meilisearch is not responding at $MEILI_URL."
@@ -128,23 +129,28 @@ manage_key(){
             if grep -q '^MEILI_KEY_UID=' "$DOMAIN_ENV"; then
                 read -r -p "A key is already saved. Create and replace it? [y/N]: " confirm
                 [[ "$confirm" =~ ^[yY]$ ]] || return 0
-                uid=$(sed -n 's/^MEILI_KEY_UID=//p' "$DOMAIN_ENV" | head -n1)
-                curl -fsS -X DELETE "$MEILI_URL/keys/$uid" -H "Authorization: Bearer $master" >/dev/null || fail "Could not revoke the old key."
+                old_uid=$(sed -n 's/^MEILI_KEY_UID=//p' "$DOMAIN_ENV" | head -n1)
             fi
             curl -fsS -X POST "$MEILI_URL/indexes" -H "Authorization: Bearer $master" -H 'Content-Type: application/json' \
                 -d "{\"uid\":\"$DOMAIN_INDEX\",\"primaryKey\":\"post_id\"}" >/dev/null || true
-            response=$(curl -fsS -X POST "$MEILI_URL/keys" -H "Authorization: Bearer $master" -H 'Content-Type: application/json' \
-                -d "{\"name\":\"shieldpress-$DOMAIN_NAME\",\"description\":\"Search-only key for $DOMAIN_NAME\",\"actions\":[\"search\"],\"indexes\":[\"$DOMAIN_INDEX\"]}") || fail "Key creation failed."
+            expires_at=$(date -u -d '+10 years' '+%Y-%m-%dT%H:%M:%SZ')
+            response=$(curl -sS -X POST "$MEILI_URL/keys" -H "Authorization: Bearer $master" -H 'Content-Type: application/json' \
+                -d "{\"name\":\"shieldpress-$DOMAIN_NAME\",\"description\":\"Search-only key for $DOMAIN_NAME\",\"actions\":[\"search\"],\"indexes\":[\"$DOMAIN_INDEX\"],\"expiresAt\":\"$expires_at\"}") || fail "Could not connect to the Meilisearch key API."
             uid=$(printf '%s' "$response" | sed -nE 's/.*"uid"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
             value=$(printf '%s' "$response" | sed -nE 's/.*"key"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
-            [[ -n "$uid" && -n "$value" ]] || fail "Could not read the created key response. Install jq or check the Meilisearch API response."
-            save_domain_key "$uid" "$value"
-            ok "Search-only key created and saved to $DOMAIN_ENV"
+            [[ -n "$uid" && -n "$value" ]] || fail "Key creation failed: $response"
+            save_domain_key "$uid" "$value" "$expires_at"
+            if [[ -n "$old_uid" ]]; then
+                curl -fsS -X DELETE "$MEILI_URL/keys/$old_uid" -H "Authorization: Bearer $master" >/dev/null \
+                    && ok "Previous key revoked" || warn "Previous key could not be revoked; revoke it from the menu."
+            fi
+            ok "Search-only key created and saved to $DOMAIN_ENV (expires $expires_at)"
             ;;
         show)
             value=$(sed -n 's/^MEILI_KEY=//p' "$DOMAIN_ENV" | head -n1)
             [[ -n "$value" ]] || fail "No key saved for $DOMAIN_NAME."
-            printf '\nDomain: %s\nEndpoint: %s\nIndex: %s\nKey: %s\n' "$DOMAIN_NAME" "$MEILI_URL" "$DOMAIN_INDEX" "$value"
+            expires_at=$(sed -n 's/^MEILI_KEY_EXPIRES_AT=//p' "$DOMAIN_ENV" | head -n1)
+            printf '\nDomain: %s\nEndpoint: %s\nIndex: %s\nKey: %s\nExpires: %s\n' "$DOMAIN_NAME" "$MEILI_URL" "$DOMAIN_INDEX" "$value" "${expires_at:-unknown}"
             ;;
         revoke)
             uid=$(sed -n 's/^MEILI_KEY_UID=//p' "$DOMAIN_ENV" | head -n1)
@@ -153,7 +159,7 @@ manage_key(){
             [[ "$confirm" =~ ^[yY]$ ]] || return 0
             curl -fsS -X DELETE "$MEILI_URL/keys/$uid" -H "Authorization: Bearer $master" >/dev/null || fail "Key revocation failed."
             env_tmp=$(mktemp "${DOMAIN_ENV}.XXXXXX")
-            awk '!/^MEILI_(HOST|INDEX|KEY|KEY_UID)=/' "$DOMAIN_ENV" > "$env_tmp"
+            awk '!/^MEILI_(HOST|INDEX|KEY|KEY_UID|KEY_EXPIRES_AT)=/' "$DOMAIN_ENV" > "$env_tmp"
             cat "$env_tmp" > "$DOMAIN_ENV"; rm -f "$env_tmp"; chmod 600 "$DOMAIN_ENV"
             ok "Domain key revoked and removed from domain.env."
             ;;
