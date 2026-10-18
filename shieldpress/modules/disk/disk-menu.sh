@@ -33,14 +33,14 @@ disk_overview(){
     # Main disk
     echo -e "${BOLD}Filesystem Usage:${RESET}"
     echo "-------------------------------------------"
-    df -hT / | awk 'NR==1 {printf "  %-14s %-6s %-6s %-6s %-6s %s\n", $1,$2,$3,$4,$5,$6}
-                    NR==2 {printf "  %-14s %-6s %-6s %-6s %-6s %s\n", $1,$2,$3,$4,$5,$6}'
+    LC_ALL=C df -hPT / /home | awk 'NR==1 {printf "  %-20s %-6s %6s %6s %6s %5s %s\n", $1,$2,$3,$4,$5,$6,$7}
+        NR>1 && !seen[$1]++ {printf "  %-20s %-6s %6s %6s %6s %5s %s\n", $1,$2,$3,$4,$5,$6,$7}'
     echo ""
 
-    DISK_PERCENT=$(df / | awk 'NR==2 {print $5}' | tr -d '%')
-    DISK_USED=$(df -h / | awk 'NR==2 {print $3}')
-    DISK_TOTAL=$(df -h / | awk 'NR==2 {print $2}')
-    DISK_AVAIL=$(df -h / | awk 'NR==2 {print $4}')
+    DISK_PERCENT=$(df -P / | awk 'NR==2 {print $5}' | tr -d '%')
+    DISK_USED=$(df -Ph / | awk 'NR==2 {print $3}')
+    DISK_TOTAL=$(df -Ph / | awk 'NR==2 {print $2}')
+    DISK_AVAIL=$(df -Ph / | awk 'NR==2 {print $4}')
 
     # Color bar
     local COLOR="$GREEN"
@@ -64,7 +64,7 @@ disk_overview(){
     echo ""
     echo -e "${BOLD}All Mount Points:${RESET}"
     echo "-------------------------------------------"
-    df -hT -x tmpfs -x devtmpfs -x overlay 2>/dev/null | awk '
+    df -hPT -x tmpfs -x devtmpfs -x overlay 2>/dev/null | awk '
         NR==1 {printf "  %-20s %-6s %6s %6s %6s %5s  %s\n", "Filesystem","Type","Size","Used","Avail","Use%","Mount"}
         NR>1  {printf "  %-20s %-6s %6s %6s %6s %5s  %s\n", $1,$2,$3,$4,$5,$6,$7}'
 
@@ -72,9 +72,9 @@ disk_overview(){
     echo ""
     echo -e "${BOLD}Inode Usage (root):${RESET}"
     echo "-------------------------------------------"
-    INODE_PERCENT=$(df -i / | awk 'NR==2 {print $5}' | tr -d '%')
-    INODE_USED=$(df -i / | awk 'NR==2 {print $3}')
-    INODE_TOTAL=$(df -i / | awk 'NR==2 {print $2}')
+    INODE_PERCENT=$(df -Pi / | awk 'NR==2 {print $5}' | tr -d '%')
+    INODE_USED=$(df -Pi / | awk 'NR==2 {print $3}')
+    INODE_TOTAL=$(df -Pi / | awk 'NR==2 {print $2}')
     echo "  Used  : $INODE_USED / $INODE_TOTAL ($INODE_PERCENT%)"
 
     if [ "$INODE_PERCENT" -ge 80 ]; then

@@ -1,5 +1,13 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.83 — 2026-10-18 — Laravel dependencies, disk mounts and update access
+
+- Run Laravel Artisan with the domain PHP version and install Composer dependencies when `vendor/autoload.php` is missing.
+- Show `/home` separately from `/` in dashboard and disk usage views when it is a separate filesystem.
+- Force a fresh update check when the user selects update, add a direct update option to the admin menu and clarify network errors.
+- Create the safe Admin Menu shortcut `1` in both `/usr/bin` and `/usr/local/bin` on install and update.
+- GitHub release workflow publishes the package with MD5 and SHA-256 checksum assets.
+
 ## v1.3.82 — 2026-10-13 — Adaptive Node.js build limits
 
 - Calculate RAM, free-swap, V8 heap and CPU budgets for small and large VPSes.

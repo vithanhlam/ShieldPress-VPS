@@ -33,12 +33,14 @@ chmod 755 "$BASE_DIR/bin/laravel-pg-backup"
 ln -sf "$BASE_DIR/shieldpress.sh" /usr/bin/shieldpress
 
 # Keep the shell shortcut for opening the admin menu. It only opens the UI.
-cat > /usr/local/bin/1 <<'SHORTCUT_EOF'
+for shortcut in /usr/bin/1 /usr/local/bin/1; do
+    cat > "$shortcut" <<'SHORTCUT_EOF'
 #!/bin/bash
 exec /opt/shieldpress/shieldpress.sh menu "$@"
 SHORTCUT_EOF
-chmod 755 /usr/local/bin/1
-restorecon /usr/local/bin/1 2>/dev/null || true
+    chmod 755 "$shortcut"
+done
+restorecon /usr/bin/1 /usr/local/bin/1 2>/dev/null || true
 restorecon -RF "$BASE_DIR" 2>/dev/null || true
 
 # Remove action shortcuts from older installs (e.g. /usr/bin/2 -> update,

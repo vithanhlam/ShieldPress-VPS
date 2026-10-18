@@ -339,13 +339,15 @@ chmod +x "$BASE_DIR/bin/laravel-pg-backup" || fail "Cannot chmod PostgreSQL back
 chmod +x "$BASE_DIR/core"/*.sh 2>/dev/null || true
 ln -sf "$BASE_DIR/shieldpress.sh" /usr/bin/shieldpress
 ln -sf "$BASE_DIR/shieldpress.sh" /usr/local/bin/shieldpress
-cat > /usr/local/bin/1 <<'SHORTCUT_EOF'
+for shortcut in /usr/bin/1 /usr/local/bin/1; do
+    cat > "$shortcut" <<'SHORTCUT_EOF'
 #!/bin/bash
 exec /opt/shieldpress/shieldpress.sh menu "$@"
 SHORTCUT_EOF
-chmod 755 /usr/local/bin/1 || fail "Cannot chmod admin menu shortcut"
+    chmod 755 "$shortcut"
+done || fail "Cannot chmod admin menu shortcut"
 if command -v restorecon >/dev/null 2>&1; then
-    restorecon -RF "$BASE_DIR" /usr/local/bin/1 || fail "Cannot restore ShieldPress SELinux contexts"
+    restorecon -RF "$BASE_DIR" /usr/bin/1 /usr/local/bin/1 || fail "Cannot restore ShieldPress SELinux contexts"
 fi
 
 # =========================================

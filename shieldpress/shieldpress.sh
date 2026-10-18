@@ -68,9 +68,10 @@ UPDATE_CHECK_TTL=300
 LAST_UPDATE_CHECK=0
 
 check_shieldpress_update(){
+    local force="${1:-}"
     local now
     now=$(date +%s)
-    if [ "$UPDATE_CHECK_STATUS" != "not_checked" ] && [ $((now - LAST_UPDATE_CHECK)) -lt "$UPDATE_CHECK_TTL" ]; then
+    if [ "$force" != "force" ] && [ "$UPDATE_CHECK_STATUS" != "not_checked" ] && [ $((now - LAST_UPDATE_CHECK)) -lt "$UPDATE_CHECK_TTL" ]; then
         return
     fi
     LAST_UPDATE_CHECK="$now"
@@ -82,7 +83,7 @@ check_shieldpress_update(){
         return
     fi
 
-    REMOTE_SHIELDPRESS_VERSION=$(curl -fsS --connect-timeout 1 --max-time 2 "$UPDATE_VERSION_URL" 2>/dev/null | tr -d '[:space:]')
+    REMOTE_SHIELDPRESS_VERSION=$(sp_remote_version)
 
     if [ -z "$REMOTE_SHIELDPRESS_VERSION" ]; then
         UPDATE_CHECK_STATUS="failed"
@@ -121,7 +122,11 @@ show_update_status(){
 
 run_shieldpress_update(){
     if [ "$UPDATE_AVAILABLE" != "1" ]; then
-        echo "No ShieldPress VPS update is available."
+        if [ "$UPDATE_CHECK_STATUS" = "failed" ] || [ "$UPDATE_CHECK_STATUS" = "curl_missing" ]; then
+            echo "Cannot check for updates. Check network access to GitHub and retry."
+        else
+            echo "Already running the latest ShieldPress VPS version ($SHIELDPRESS_VERSION)."
+        fi
         sleep 1
         return
     fi
@@ -274,9 +279,9 @@ fi
 # ===== SYSTEM INFO =====
 get_system_info() {
 
-DISK_PERCENT=$(df / | awk 'NR==2 {print $5}' | tr -d '%')
-DISK_USED=$(df -h / | awk 'NR==2 {print $3}')
-DISK_TOTAL=$(df -h / | awk 'NR==2 {print $2}')
+DISK_PERCENT=$(df -P / | awk 'NR==2 {print $5}' | tr -d '%')
+DISK_USED=$(df -Ph / | awk 'NR==2 {print $3}')
+DISK_TOTAL=$(df -Ph / | awk 'NR==2 {print $2}')
 
 RAM_TOTAL=$(free -m | awk '/Mem:/ {print $2}')
 RAM_USED=$(free -m | awk '/Mem:/ {print $3}')
@@ -378,9 +383,9 @@ menu_button(){
 }
 
 collect_dashboard_metrics(){
-    DISK_PERCENT=$(df / | awk 'NR==2 {print $5}' | tr -d '%')
-    DISK_USED=$(df -h / | awk 'NR==2 {print $3}')
-    DISK_TOTAL=$(df -h / | awk 'NR==2 {print $2}')
+    DISK_PERCENT=$(df -P / | awk 'NR==2 {print $5}' | tr -d '%')
+    DISK_USED=$(df -Ph / | awk 'NR==2 {print $3}')
+    DISK_TOTAL=$(df -Ph / | awk 'NR==2 {print $2}')
 
     RAM_TOTAL=$(free -m | awk '/Mem:/ {print $2}')
     RAM_USED=$(free -m | awk '/Mem:/ {print $3}')
@@ -441,7 +446,13 @@ show_update_status
 echo ""
 
 section_title "Resource Usage"
-metric_bar "Disk" "$DISK_PERCENT" "$DISK_USED/$DISK_TOTAL"
+metric_bar "Disk /" "$DISK_PERCENT" "$DISK_USED/$DISK_TOTAL"
+# Show the filesystem holding domain data separately when /home is mounted elsewhere.
+if [ "$(df -P /home 2>/dev/null | awk 'NR==2 {print $1}')" != "$(df -P / | awk 'NR==2 {print $1}')" ]; then
+    local home_total home_used home_avail home_percent
+    read -r home_total home_used home_avail home_percent < <(LC_ALL=C df -Ph /home | awk 'NR==2 {print $2,$3,$4,$5}')
+    metric_bar "/home" "${home_percent%\%}" "$home_used/$home_total (free $home_avail)"
+fi
 metric_bar "RAM" "$RAM_PERCENT" "${RAM_USED}MB/${RAM_TOTAL}MB"
 printf "  %-8s ${BLUE}[%-30s]${RESET}      %s/%s MB\n" "Swap" "" "$SWAP_USED" "$SWAP_TOTAL"
 
@@ -511,7 +522,7 @@ if [ -n "$SHIELDPRESS_ACTION" ]; then
             exit 0
             ;;
         menu)   ;; # fall through to menu below
-        update) check_shieldpress_update; run_shieldpress_update; exit 0 ;;
+        update) check_shieldpress_update force; run_shieldpress_update; exit 0 ;;
         cache)  bash "$MODULE_DIR/cache/clear-all-cache.sh"; exit 0 ;;
         domain) bash "$MODULE_DIR/domain/add-domain.sh"; exit 0 ;;
         ssl)    bash "$MODULE_DIR/ssl/install-ssl.sh"; exit 0 ;;
@@ -537,17 +548,8 @@ case "$key" in
 1) echo "Opening Admin Menu..."; break ;;
 "" ) continue ;;
 2)
-    if [ "$UPDATE_AVAILABLE" = "1" ]; then
-        run_shieldpress_update
-    else
-        check_shieldpress_update
-        if [ "$UPDATE_AVAILABLE" = "1" ]; then
-            run_shieldpress_update
-        else
-            echo "No ShieldPress VPS update is available."
-            sleep 1
-        fi
-    fi
+    check_shieldpress_update force
+    run_shieldpress_update
     ;;
 3) bash "$MODULE_DIR/cache/clear-all-cache.sh" ;;
 4) bash "$MODULE_DIR/domain/add-domain.sh" ;;
@@ -601,6 +603,7 @@ section_title "Settings"
 printf "  "; menu_button 21 "Tools & Utilities" "$BLUE"; menu_button 22 "Telegram Notifications" "$GREEN"; echo ""
 printf "  "; menu_button 23 "ShieldPress Monitor" "$GREEN"; menu_button 24 "Email Server" "$MAGENTA"; echo ""
 printf "  "; menu_button 25 "About Us" "$CYAN"; menu_button 26 "Migration Patches" "$YELLOW"; echo ""
+printf "  "; menu_button 27 "Update ShieldPress VPS" "$YELLOW"; echo ""
 printf "  "; menu_button 0 "Exit" "$RED"; echo ""
 hr
 
@@ -641,6 +644,7 @@ fi
 24) bash "$MODULE_DIR/email/email-menu.sh" ;;
 25) bash "$MODULE_DIR/shieldpress/about.sh" ;;
 26) bash "$MODULE_DIR/patches/patches-menu.sh" ;;
+27) check_shieldpress_update force; run_shieldpress_update ;;
 0) exit 0 ;;
 esac
 

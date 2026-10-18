@@ -551,12 +551,32 @@ edit_laravel_env(){
     ${EDITOR:-nano} "$ENV"
 }
 
+# Artisan requires dependencies even for storage:link.
+prepare_laravel_artisan(){
+    local app_dir="$DOMAIN_PATH/public_html" composer_cmd status
+    [ -f "$app_dir/artisan" ] || { fail "Laravel artisan not found: $app_dir/artisan"; return 1; }
+    LARAVEL_PHP_BIN="/opt/remi/php${PHP_SHORT}/root/usr/bin/php"
+    [ -x "$LARAVEL_PHP_BIN" ] || { fail "Domain PHP runtime missing: $LARAVEL_PHP_BIN"; return 1; }
+    [ -f "$app_dir/vendor/autoload.php" ] && return 0
+    warn "Missing vendor/autoload.php. Installing Composer dependencies first."
+    [ -f "$app_dir/composer.json" ] || { fail "composer.json not found in $app_dir. Upload the complete Laravel project first."; return 1; }
+    composer_cmd=$(command -v composer) || { fail "Composer is missing. Install Laravel runtime/components first."; return 1; }
+    (cd "$app_dir" && COMPOSER_ALLOW_SUPERUSER=1 "$LARAVEL_PHP_BIN" "$composer_cmd" install --no-dev --optimize-autoloader)
+    status=$?
+    chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$app_dir/vendor" "$app_dir/storage" "$app_dir/bootstrap/cache" 2>/dev/null || true
+    if [ "$status" -ne 0 ] || [ ! -f "$app_dir/vendor/autoload.php" ]; then
+        fail "Composer install failed. Resolve the error above before running Artisan."
+        return 1
+    fi
+}
+
 run_artisan(){
     select_laravel_domain || return
     read -p "Artisan command (example: migrate --force): php artisan " ARTISAN_CMD
     [ -n "$ARTISAN_CMD" ] || return
     cd "$DOMAIN_PATH/public_html" || return
-    php artisan $ARTISAN_CMD
+    prepare_laravel_artisan || return 1
+    "$LARAVEL_PHP_BIN" artisan $ARTISAN_CMD
 }
 
 run_laravel_command(){
@@ -564,38 +584,43 @@ run_laravel_command(){
     cd "$DOMAIN_PATH/public_html" || return
 
     case "$1" in
-        migrate) php artisan migrate --force ;;
+        npm-install|npm-build|composer-install) ;;
+        *) prepare_laravel_artisan || return 1 ;;
+    esac
+
+    case "$1" in
+        migrate) "$LARAVEL_PHP_BIN" artisan migrate --force ;;
         rollback)
             echo -e "\e[31mWARNING: This can revert production schema!\e[0m"
             read -p "Continue? [y/N]: " CONFIRM
             CONFIRM="${CONFIRM:-n}"
             [[ "$CONFIRM" =~ ^[Yy]$ ]] || { warn "Cancelled"; return; }
-            php artisan migrate:rollback
+            "$LARAVEL_PHP_BIN" artisan migrate:rollback
             ;;
         seed)
             echo -e "\e[31mWARNING: This can change production data!\e[0m"
             read -p "Continue? [y/N]: " CONFIRM
             CONFIRM="${CONFIRM:-n}"
             [[ "$CONFIRM" =~ ^[Yy]$ ]] || { warn "Cancelled"; return; }
-            php artisan db:seed --force
+            "$LARAVEL_PHP_BIN" artisan db:seed --force
             ;;
-        storage) php artisan storage:link ;;
-        key) php artisan key:generate ;;
+        storage) "$LARAVEL_PHP_BIN" artisan storage:link ;;
+        key) "$LARAVEL_PHP_BIN" artisan key:generate ;;
         clear)
-            php artisan optimize:clear
+            "$LARAVEL_PHP_BIN" artisan optimize:clear
             ok "Laravel cache cleared"
             ;;
         optimize)
-            php artisan config:cache
-            php artisan route:cache
-            php artisan view:cache
+            "$LARAVEL_PHP_BIN" artisan config:cache
+            "$LARAVEL_PHP_BIN" artisan route:cache
+            "$LARAVEL_PHP_BIN" artisan view:cache
             ok "Laravel cache optimized"
             ;;
-        queue-once) php artisan queue:work --once ;;
-        queue-restart) php artisan queue:restart ;;
-        schedule) php artisan schedule:run ;;
-        about) php artisan about ;;
-        routes) php artisan route:list ;;
+        queue-once) "$LARAVEL_PHP_BIN" artisan queue:work --once ;;
+        queue-restart) "$LARAVEL_PHP_BIN" artisan queue:restart ;;
+        schedule) "$LARAVEL_PHP_BIN" artisan schedule:run ;;
+        about) "$LARAVEL_PHP_BIN" artisan about ;;
+        routes) "$LARAVEL_PHP_BIN" artisan route:list ;;
         npm-install) npm install ;;
         npm-build) npm install --include=dev && npm run build ;;
         composer-install) COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader ;;
