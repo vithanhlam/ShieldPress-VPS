@@ -1,5 +1,10 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.85 — 2026-10-18 — Wait for Nginx HTTP-01 reload
+
+- Retry HTTP-01 preflight briefly after Nginx reload so old workers finishing a
+  graceful shutdown cannot send the challenge request to the application.
+
 ## v1.3.84 — 2026-10-18 — Reliable SSL HTTP-01 validation
 
 - Serve new Let's Encrypt/ZeroSSL website challenges directly from a persistent

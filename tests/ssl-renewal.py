@@ -55,7 +55,11 @@ elif cmd == 'curl':
     host = url.split('/')[2]
     probe = Path(os.environ['SSL_ACME_ROOT']) / '.well-known/acme-challenge' / url.rsplit('/', 1)[-1]
     response = Path(args[args.index('--output') + 1])
-    fail = os.environ.get('HTTP_FAIL_HOST') == host
+    attempt_file = Path(os.environ['SSL_ACME_ROOT']) / 'curl-attempts'
+    attempt = int(attempt_file.read_text()) + 1 if attempt_file.exists() else 1
+    attempt_file.write_text(str(attempt))
+    fail = (os.environ.get('HTTP_FAIL_HOST') == host
+            or (os.environ.get('HTTP_FAIL_FIRST') and attempt == 1))
     response.write_text('Application error' if fail else
                         'wrong token' if os.environ.get('HTTP_WRONG_TOKEN') else probe.read_text())
     print('500' if fail else '200', end='')
@@ -117,6 +121,7 @@ class SSLRegression(unittest.TestCase):
                         SSL_LE_DIR=str(self.le), SSL_SYSTEMD_DIR=str(self.d / 'systemd'),
                         SSL_NGINX_DIR=str(self.nginx), CONF=str(self.conf),
                         SSL_ACME_ROOT=str(self.d / 'webroot'),
+                        SSL_HTTP01_RETRIES='2',
                         CALLS=str(self.d / 'calls'), STATE=str(self.d / 'state'),
                         DOMAIN=self.domain, NATIVE_TIMER='certbot-renew.timer')
 
@@ -180,10 +185,19 @@ class SSLRegression(unittest.TestCase):
         self.env['HTTP_FAIL_HOST'] = 'www.' + self.domain
         result = self.run_shell('ssl_install_nginx "$DOMAIN" "$CONF" -d "$DOMAIN" -d "www.$DOMAIN"', ok=False)
         self.assertIn('HTTP 500', result.stderr)
-        self.assertEqual(len(self.calls('curl')), 2)
+        self.assertEqual(len(self.calls('curl')), 3)
         self.assertFalse(self.calls('certbot'))
         self.assertEqual(self.conf.read_text(), self.original)
         self.assertFalse(list((self.d / 'webroot/.well-known/acme-challenge').iterdir()))
+
+    def test_http01_retries_transient_old_worker_500_after_reload(self):
+        self.env['HTTP_FAIL_FIRST'] = '1'
+        result = self.run_shell('ssl_install_nginx "$DOMAIN" "$CONF" -d "$DOMAIN"')
+        self.assertEqual(len(self.calls('curl')), 2)
+        self.assertIn('HTTP-01 ready: ' + self.domain, result.stdout)
+        certbot = self.calls('certbot')[0]
+        self.assertEqual(certbot[1], 'run')
+        self.assertIn('listen 443 ssl;', self.conf.read_text())
 
     def test_http_200_wrong_body_also_blocks_acme_request(self):
         self.env['HTTP_WRONG_TOKEN'] = '1'

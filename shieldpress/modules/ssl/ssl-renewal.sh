@@ -47,25 +47,38 @@ PY
 }
 
 ssl_check_http01(){
-    local probe token host response code status=0
+    local probe token host response code status=0 attempt max_attempts="${SSL_HTTP01_RETRIES:-5}"
     probe=$(mktemp "$SSL_ACME_ROOT/.well-known/acme-challenge/shieldpress-XXXXXXXXXXXX") || return 1
     token="${probe##*/}"
     printf '%s' "$token" > "$probe"
     chmod 644 "$probe" || { rm -f "$probe"; return 1; }
     response=$(mktemp) || { rm -f "$probe"; return 1; }
     for host in "$@"; do
-        code=$(curl --silent --show-error --noproxy '*' --connect-timeout 5 \
-            --max-time 20 --max-filesize 4096 --insecure --location --max-redirs 5 --proto '=http,https' \
-            --proto-redir '=http,https' --output "$response" --write-out '%{http_code}' \
-            "http://$host/.well-known/acme-challenge/$token")
-        if [ "$?" -ne 0 ] || [ "$code" != 200 ] || ! cmp -s "$probe" "$response"; then
+        attempt=1
+        while [ "$attempt" -le "$max_attempts" ]; do
+            code=$(curl --silent --noproxy '*' --connect-timeout 5 \
+                --max-time 20 --max-filesize 4096 --insecure --location --max-redirs 5 --proto '=http,https' \
+                --proto-redir '=http,https' --output "$response" --write-out '%{http_code}' \
+                "http://$host/.well-known/acme-challenge/$token") || code=000
+            if [ "$code" = 200 ] && cmp -s "$probe" "$response"; then
+                echo "HTTP-01 ready: $host"
+                break
+            fi
+            if [ "$attempt" -lt "$max_attempts" ]; then
+                # systemctl reload returns before every old Nginx worker has
+                # stopped accepting connections. Retry while the new vhost
+                # configuration takes over, instead of probing stale workers.
+                sleep 1
+            fi
+            ((attempt++))
+        done
+        if [ "$attempt" -gt "$max_attempts" ]; then
             echo "HTTP-01 preflight failed for $host (HTTP ${code:-000})." >&2
             echo "Check DNS A/AAAA, port 80, proxy forwarding, server-level redirects/access rules and the domain Nginx error log." >&2
             echo "No certificate request was submitted. The check runs from this server; public-IP loopback must also work." >&2
             status=1
             break
         fi
-        echo "HTTP-01 ready: $host"
     done
     rm -f "$probe" "$response"
     return "$status"
