@@ -9,8 +9,11 @@ MEILI_CONFIG="/etc/meilisearch.toml"
 MEILI_SERVICE="/etc/systemd/system/meilisearch.service"
 MEILI_URL="http://127.0.0.1:7700"
 DOMAINS_ROOT="/home/domains"
+UI_FILE="/opt/shieldpress/core/ui.sh"
+[[ -f "$UI_FILE" ]] && source "$UI_FILE"
 
 ok(){ printf '[OK] %s\n' "$*"; }
+warn(){ printf '[WARN] %s\n' "$*"; }
 fail(){ printf '[ERROR] %s\n' "$*" >&2; exit 1; }
 [[ $EUID -eq 0 ]] || fail "Run with sudo/root."
 
@@ -20,7 +23,7 @@ read_master_key(){
 }
 
 install_meili(){
-    local os glibc key current
+    local os glibc key current tmp curl_error
     os=$(sed -n 's/^PRETTY_NAME="\(.*\)"/\1/p' /etc/os-release | head -n1)
     glibc=$(ldd --version 2>/dev/null | head -n1 | grep -oE '[0-9]+\.[0-9]+$' || true)
     key=$(read_master_key 2>/dev/null || true)
@@ -30,8 +33,23 @@ install_meili(){
     chmod 755 "$MEILI_DATA"
     current=$("$MEILI_BIN" --version 2>/dev/null | grep -oE 'v[0-9.]+' || true)
     if [[ "$current" != "$MEILI_VERSION" ]]; then
-        curl -fsSL "https://github.com/meilisearch/meilisearch/releases/download/${MEILI_VERSION}/meilisearch-linux-amd64" -o "$MEILI_BIN"
-        chmod 755 "$MEILI_BIN"
+        tmp=$(mktemp /tmp/meilisearch.XXXXXX)
+        curl_error=$(mktemp /tmp/meilisearch-curl.XXXXXX)
+        if ! curl -fL --progress-bar "https://github.com/meilisearch/meilisearch/releases/download/${MEILI_VERSION}/meilisearch-linux-amd64" -o "$tmp" 2>"$curl_error"; then
+            warn "Could not download Meilisearch. Details:"
+            sed -n '1,3p' "$curl_error"
+            df -h /tmp /usr/local/bin 2>/dev/null || true
+            rm -f "$tmp" "$curl_error"
+            fail "Download failed. Check network access and free disk space, then retry."
+        fi
+        rm -f "$curl_error"
+        if ! install -m 0755 "$tmp" "$MEILI_BIN"; then
+            df -h /usr/local/bin /tmp 2>/dev/null || true
+            ls -ld /usr/local/bin 2>/dev/null || true
+            rm -f "$tmp"
+            fail "Downloaded successfully, but could not install to $MEILI_BIN. Check disk space and directory permissions."
+        fi
+        rm -f "$tmp"
     fi
     "$MEILI_BIN" --version >/dev/null || fail "Meilisearch binary check failed."
 
@@ -145,9 +163,20 @@ manage_key(){
     echo "The endpoint is localhost-only; connect through the app on this server or a private tunnel."
 }
 
-echo "Meilisearch: install/update, or manage a search-only key per domain."
-echo "1) Install / Update  2) Create domain key  3) Show saved key  4) Revoke domain key  0) Back"
-read -r -p "Select: " choice
+if declare -F sp_header >/dev/null; then
+    sp_header "Meilisearch" "Install and domain keys"
+    sp_menu_grid \
+        "1|Install / Update|blue" \
+        "2|Create Domain Key|green" \
+        "3|Show Saved Key|yellow" \
+        "4|Revoke Domain Key|red" \
+        "0|Back|white"
+    sp_prompt choice
+else
+    printf '\nMeilisearch — Install and domain keys\n'
+    printf '  [1] Install / Update\n  [2] Create Domain Key\n  [3] Show Saved Key\n  [4] Revoke Domain Key\n  [0] Back\n'
+    read -r -p "Select option: " choice
+fi
 case "$choice" in
     1) install_meili ;;
     2) manage_key create ;;

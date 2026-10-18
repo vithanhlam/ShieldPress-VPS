@@ -1,5 +1,12 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.87 — 2026-10-18 — Meilisearch menu polish and download diagnostics
+
+- Match the Meilisearch submenu to the standard ShieldPress header and colored
+  menu layout.
+- Download updates to a temporary file before installation and show disk-space
+  or permission guidance when the download or install cannot write its file.
+
 ## v1.3.86 — 2026-10-18 — Meilisearch domain keys and setup
 
 - Rewrite the Meilisearch setup menu in concise English with install/update and
