@@ -367,6 +367,21 @@ WAL; an inactive slot can retain WAL and fill the disk.
 
 ### SSL automatic renewal and existing certificates
 
+New website certificates use `/var/www/shieldpress-acme` for HTTP-01 files and
+the Nginx installer for HTTPS configuration. A persistent Nginx location serves
+these files directly, independently of PHP or Node.js. ShieldPress restores
+SELinux file contexts when SELinux is enabled and checks every requested
+hostname over HTTP before requesting a certificate. The check requires HTTP
+200 and the exact probe content; it removes the probe afterwards.
+
+If preflight reports HTTP 500, inspect the domain's Nginx error log, DNS A/AAAA,
+server-level rewrites/access rules and any reverse proxy. The probe runs from
+the VPS through public DNS, so public-IP loopback must work too. It does not
+guarantee reachability from every external network or every DNS address.
+Existing custom ACME locations require manual reconciliation; the installer
+restores the original vhost instead of overwriting them. Failed configuration,
+reload or validation restores the previous vhost before returning failure.
+
 Installing Let's Encrypt or ZeroSSL configures the available Certbot systemd
 timer. AlmaLinux/RHEL uses `certbot-renew.timer`; Debian and snap use their
 packaged timers. When none exists, ShieldPress creates

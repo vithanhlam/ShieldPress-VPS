@@ -1,5 +1,15 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.84 — 2026-10-18 — Reliable SSL HTTP-01 validation
+
+- Serve new Let's Encrypt/ZeroSSL website challenges directly from a persistent
+  Nginx webroot, bypassing PHP/Node.js application routing and dotfile rules.
+- Verify HTTP status and exact challenge content for every requested hostname
+  before submitting issuance; report routing/network failures and roll back
+  Nginx on failure. Keep the original backup if rollback itself fails.
+- Preserve custom ACME locations by refusing automatic replacement. Existing
+  certificate renewal flows and mail authentication remain as configured.
+
 ## v1.3.83 — 2026-10-18 — Laravel dependencies, disk mounts and update access
 
 - Run Laravel Artisan with the domain PHP version and install Composer dependencies when `vendor/autoload.php` is missing.

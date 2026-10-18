@@ -26,6 +26,12 @@ domain = os.environ['DOMAIN']
 state = Path(os.environ['STATE'])
 def install():
     cert = 'wrong.example' if os.environ.get('WRONG_CERT') else domain
+    existing = conf.read_text()
+    if '# BEGIN ShieldPress HTTP-01' in existing:
+        conf.write_text(existing.replace('listen 80;', 'listen 443 ssl;\n'
+            + '    ssl_certificate ' + str(le / 'live' / cert / 'fullchain.pem') + ';\n'
+            + '    ssl_certificate_key ' + str(le / 'live' / cert / 'privkey.pem') + ';'))
+        return
     conf.write_text('server {\n    server_name ' + domain + ';\n    listen 443 ssl;\n'
         + '    ssl_certificate ' + str(le / 'live' / cert / 'fullchain.pem') + ';\n'
         + '    ssl_certificate_key ' + str(le / 'live' / cert / 'privkey.pem') + ';\n}\n')
@@ -42,6 +48,17 @@ if cmd == 'systemctl':
         if unit in ('nginx', 'postfix', 'dovecot'):
             sys.exit(0)
         sys.exit(0 if state.exists() and state.read_text() == unit else 1)
+elif cmd == 'curl':
+    if os.environ.get('HTTP_UNREACHABLE'):
+        sys.exit(7)
+    url = args[-1]
+    host = url.split('/')[2]
+    probe = Path(os.environ['SSL_ACME_ROOT']) / '.well-known/acme-challenge' / url.rsplit('/', 1)[-1]
+    response = Path(args[args.index('--output') + 1])
+    fail = os.environ.get('HTTP_FAIL_HOST') == host
+    response.write_text('Application error' if fail else
+                        'wrong token' if os.environ.get('HTTP_WRONG_TOKEN') else probe.read_text())
+    print('500' if fail else '200', end='')
 elif cmd == 'nginx':
     if os.environ.get('NGINX_FAIL'):
         sys.exit(1)
@@ -58,7 +75,7 @@ elif cmd == 'certbot':
             sys.exit(1)
         if os.environ.get('DUE'):
             (le / 'live' / domain / 'fullchain.pem').write_text('renewed')
-    elif args[0] == 'install' or args[0] == '--nginx':
+    elif args[0] in ('install', '--nginx', 'run'):
         install()
         if os.environ.get('ISSUE_FAIL'):
             sys.exit(1)
@@ -91,7 +108,7 @@ class SSLRegression(unittest.TestCase):
         self.conf.write_text(self.original)
         self.bin = self.d / 'bin'
         self.bin.mkdir()
-        for name in ('certbot', 'systemctl', 'nginx', 'postconf', 'doveconf', 'dig'):
+        for name in ('certbot', 'systemctl', 'nginx', 'postconf', 'doveconf', 'dig', 'curl'):
             p = self.bin / name
             p.write_text(MOCK)
             p.chmod(0o755)
@@ -99,6 +116,7 @@ class SSLRegression(unittest.TestCase):
                         BASE_DIR=str(ROOT), LOG_DIR=str(self.d / 'logs'),
                         SSL_LE_DIR=str(self.le), SSL_SYSTEMD_DIR=str(self.d / 'systemd'),
                         SSL_NGINX_DIR=str(self.nginx), CONF=str(self.conf),
+                        SSL_ACME_ROOT=str(self.d / 'webroot'),
                         CALLS=str(self.d / 'calls'), STATE=str(self.d / 'state'),
                         DOMAIN=self.domain, NATIVE_TIMER='certbot-renew.timer')
 
@@ -157,6 +175,54 @@ class SSLRegression(unittest.TestCase):
         self.assertEqual(self.conf.read_text(), self.original)
         self.assertEqual((self.le / 'live' / self.domain / 'fullchain.pem').read_text(), 'valid-current')
         self.assertFalse(any('delete' in c for c in self.calls('certbot')))
+
+    def test_http_500_blocks_acme_request_and_restores_nginx(self):
+        self.env['HTTP_FAIL_HOST'] = 'www.' + self.domain
+        result = self.run_shell('ssl_install_nginx "$DOMAIN" "$CONF" -d "$DOMAIN" -d "www.$DOMAIN"', ok=False)
+        self.assertIn('HTTP 500', result.stderr)
+        self.assertEqual(len(self.calls('curl')), 2)
+        self.assertFalse(self.calls('certbot'))
+        self.assertEqual(self.conf.read_text(), self.original)
+        self.assertFalse(list((self.d / 'webroot/.well-known/acme-challenge').iterdir()))
+
+    def test_http_200_wrong_body_also_blocks_acme_request(self):
+        self.env['HTTP_WRONG_TOKEN'] = '1'
+        self.run_shell('ssl_install_nginx "$DOMAIN" "$CONF" -d "$DOMAIN"', ok=False)
+        self.assertFalse(self.calls('certbot'))
+        self.assertEqual(self.conf.read_text(), self.original)
+
+    def test_unreachable_http_blocks_acme_request_and_cleans_probe(self):
+        self.env['HTTP_UNREACHABLE'] = '1'
+        self.run_shell('ssl_install_nginx "$DOMAIN" "$CONF" -d "$DOMAIN"', ok=False)
+        self.assertFalse(self.calls('certbot'))
+        self.assertEqual(self.conf.read_text(), self.original)
+        self.assertFalse(list((self.d / 'webroot/.well-known/acme-challenge').iterdir()))
+
+    def test_http01_configuration_is_persistent_and_idempotent(self):
+        self.run_shell('ssl_prepare_http01 "$CONF"; ssl_prepare_http01 "$CONF"')
+        text = self.conf.read_text()
+        self.assertEqual(text.count('location ^~ /.well-known/acme-challenge/'), 1)
+        self.assertIn('try_files $uri =404;', text)
+        self.assertIn('auth_basic off;', text)
+        self.assertIn('listen 80;', text)
+
+    def test_existing_custom_acme_location_is_preserved(self):
+        original = self.original.replace('    listen 80;',
+            '    listen 80;\n    location ^~ /.well-known/acme-challenge/ { return 403; }')
+        self.conf.write_text(original)
+        self.run_shell('ssl_install_nginx "$DOMAIN" "$CONF" -d "$DOMAIN"', ok=False)
+        self.assertEqual(self.conf.read_text(), original)
+        self.assertFalse(self.calls('certbot'))
+
+    def test_webroot_authentication_keeps_nginx_installer_and_provider(self):
+        self.run_shell('ssl_install_nginx "$DOMAIN" "$CONF" -d "$DOMAIN" --server https://acme.example/directory')
+        call = self.calls('certbot')[0]
+        self.assertEqual(call[1], 'run')
+        self.assertEqual(call[call.index('--authenticator') + 1], 'webroot')
+        self.assertEqual(call[call.index('--installer') + 1], 'nginx')
+        self.assertEqual(call[call.index('--server') + 1], 'https://acme.example/directory')
+        self.assertEqual(call[call.index('--webroot-path') + 1], self.env['SSL_ACME_ROOT'])
+        self.assertIn('location ^~ /.well-known/acme-challenge/', self.conf.read_text())
 
     def test_existing_certificate_is_reused_and_missing_https_repaired(self):
         self.lineage()

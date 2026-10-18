@@ -3,6 +3,73 @@
 SSL_LE_DIR="${SSL_LE_DIR:-/etc/letsencrypt}"
 SSL_SYSTEMD_DIR="${SSL_SYSTEMD_DIR:-/etc/systemd/system}"
 SSL_NGINX_DIR="${SSL_NGINX_DIR:-/etc/nginx/conf.d}"
+SSL_ACME_ROOT="${SSL_ACME_ROOT:-/var/www/shieldpress-acme}"
+
+# Serve validation files without involving PHP, Node.js, application rewrites,
+# dotfile rules or inherited HTTP basic authentication. Keep this location for
+# subsequent unattended webroot renewals.
+ssl_prepare_http01(){
+    local conf="$1"
+    mkdir -p "$SSL_ACME_ROOT/.well-known/acme-challenge" || return 1
+    chmod 755 "$SSL_ACME_ROOT" "$SSL_ACME_ROOT/.well-known" \
+        "$SSL_ACME_ROOT/.well-known/acme-challenge" || return 1
+    if command -v selinuxenabled >/dev/null && selinuxenabled; then
+        restorecon -R "$SSL_ACME_ROOT" || return 1
+    fi
+    python3 - "$conf" "$SSL_ACME_ROOT" <<'PY'
+import pathlib, re, sys
+conf, root = pathlib.Path(sys.argv[1]), sys.argv[2]
+if not root.startswith('/') or any(c in root for c in '\n\r"\\$;{}'):
+    sys.exit('Invalid SSL_ACME_ROOT')
+text = conf.read_text()
+text = re.sub(r'    # BEGIN ShieldPress HTTP-01\n.*?    # END ShieldPress HTTP-01\n',
+              '', text, flags=re.S)
+if re.search(r'^\s*location\s+[^\n]*acme-challenge', text, re.M):
+    sys.exit('Existing ACME location found; reconcile it before installing SSL: ' + str(conf))
+block = f'''    # BEGIN ShieldPress HTTP-01
+    location ^~ /.well-known/acme-challenge/ {{
+        root "{root}";
+        default_type text/plain;
+        auth_basic off;
+        allow all;
+        try_files $uri =404;
+    }}
+    # END ShieldPress HTTP-01
+'''
+# ShieldPress vhosts have one complete server_name directive per line. Fail
+# safely on unsupported custom layouts instead of rewriting arbitrary syntax.
+text, count = re.subn(r'(^[ \t]*server_name[ \t]+[^;\n]+;[^\n]*\n)',
+                      lambda m: m[0] + block, text, flags=re.M)
+if not count:
+    sys.exit('No supported server_name directive in ' + str(conf))
+conf.write_text(text)
+PY
+}
+
+ssl_check_http01(){
+    local probe token host response code status=0
+    probe=$(mktemp "$SSL_ACME_ROOT/.well-known/acme-challenge/shieldpress-XXXXXXXXXXXX") || return 1
+    token="${probe##*/}"
+    printf '%s' "$token" > "$probe"
+    chmod 644 "$probe" || { rm -f "$probe"; return 1; }
+    response=$(mktemp) || { rm -f "$probe"; return 1; }
+    for host in "$@"; do
+        code=$(curl --silent --show-error --noproxy '*' --connect-timeout 5 \
+            --max-time 20 --max-filesize 4096 --insecure --location --max-redirs 5 --proto '=http,https' \
+            --proto-redir '=http,https' --output "$response" --write-out '%{http_code}' \
+            "http://$host/.well-known/acme-challenge/$token")
+        if [ "$?" -ne 0 ] || [ "$code" != 200 ] || ! cmp -s "$probe" "$response"; then
+            echo "HTTP-01 preflight failed for $host (HTTP ${code:-000})." >&2
+            echo "Check DNS A/AAAA, port 80, proxy forwarding, server-level redirects/access rules and the domain Nginx error log." >&2
+            echo "No certificate request was submitted. The check runs from this server; public-IP loopback must also work." >&2
+            status=1
+            break
+        fi
+        echo "HTTP-01 ready: $host"
+    done
+    rm -f "$probe" "$response"
+    return "$status"
+}
 
 # Certbot can wait indefinitely when an ACME HTTP-01 challenge cannot reach
 # the server (wrong DNS, broken IPv6, blocked port 80, or a proxy). Keep SSL
@@ -141,10 +208,25 @@ ssl_migrate_standalone(){
 ssl_install_nginx(){
     local domain="$1" conf="$2" backup status=0
     shift 2
+    local -a hosts=()
+    local previous='' argument
+    for argument in "$@"; do
+        if [ "$previous" = '-d' ] || [ "$previous" = '--domains' ]; then
+            local -a names=()
+            IFS=, read -r -a names <<< "$argument"
+            hosts+=("${names[@]}")
+        fi
+        previous="$argument"
+    done
+    [ "${#hosts[@]}" -gt 0 ] || hosts=("$domain")
     nginx -t || return 1
     backup=$(mktemp) || return 1
     cp -p "$conf" "$backup" || { rm -f "$backup"; return 1; }
-    if run_certbot --nginx --cert-name "$domain" --keep-until-expiring \
+    if ! ssl_prepare_http01 "$conf" || ! nginx -t || ! systemctl reload nginx ||
+        ! ssl_check_http01 "${hosts[@]}"; then
+        status=1
+    elif run_certbot run --authenticator webroot --webroot-path "$SSL_ACME_ROOT" \
+        --installer nginx --cert-name "$domain" --keep-until-expiring \
         --renew-with-new-domains --non-interactive --agree-tos --redirect "$@"; then
         if ! ssl_nginx_has_certificate "$domain" "$conf" || ! nginx -t || ! systemctl reload nginx; then
             status=1
@@ -153,8 +235,10 @@ ssl_install_nginx(){
         status=$?
     fi
     if [ "$status" -ne 0 ]; then
-        cp -p "$backup" "$conf"
-        nginx -t && systemctl reload nginx
+        if ! cp -p "$backup" "$conf" || ! nginx -t || ! systemctl reload nginx; then
+            echo "Nginx rollback failed; original configuration retained at $backup" >&2
+            return 1
+        fi
         echo "SSL installation failed; previous Nginx configuration restored." >&2
     fi
     rm -f "$backup"
