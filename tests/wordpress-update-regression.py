@@ -23,16 +23,21 @@ load_site() {
     DOMAIN_PATH="$1"
     ROOT="$1/public_html"
     SELECTED_DOMAIN="${1##*/}"
+    PHP_BIN=$(type -P php)
 }
 wp() {
     printf '%s: %s\n' "$SELECTED_DOMAIN" "$*" >> "$COMMANDS"
     case "$*" in
         'plugin list '*)
-            printf 'name,status\ncommon,active\n'
             case "$SELECTED_DOMAIN" in
-                alpha) printf 'alpha-only,inactive\nmu-file,must-use\nobject-cache.php,dropin\n' ;;
-                beta) printf 'beta-only,active-network\n' ;;
+                alpha) printf '%s\n' '[{"name":"common","status":"active","version":"1.0","update":"available","update_version":"1.2"},{"name":"alpha-only","status":"inactive","version":"2.0","update":"none","update_version":""},{"name":"mu-file","status":"must-use"},{"name":"object-cache.php","status":"dropin"}]' ;;
+                beta) printf '%s\n' '[{"name":"common","status":"active","version":"1.1","update":"available","update_version":"1.3"},{"name":"beta-only","status":"active-network","version":"3.0","update":"available","update_version":"3.1-beta"}]' ;;
             esac
+            ;;
+        'theme list '*) printf '%s\n' '[{"name":"demo-theme","status":"active","version":"2.0","update":"available","update_version":"2.1"}]' ;;
+        'core version') echo '6.8' ;;
+        'core check-update '*)
+            if [ -n "${CORE_UPDATES+x}" ]; then printf '%s\n' "$CORE_UPDATES"; else echo '[{"version":"6.9"}]'; fi
             ;;
         'core update') return "${CORE_FAIL:-0}" ;;
         'core update-db'*) return "${DB_FAIL:-0}" ;;
@@ -46,6 +51,7 @@ backup_site() {
     return "${BACKUP_FAIL:-0}"
 }
 purge_site_cache() { :; }
+cleanup_backup() { echo "$SELECTED_DOMAIN: cleanup" >> "$COMMANDS"; }
 '''
 
 with tempfile.TemporaryDirectory() as tmp:
@@ -78,7 +84,7 @@ choose_sites <<< $'1\n2' || exit 1
 
     # The combined catalog excludes drop-ins/MU plugins; numbers are validated,
     # duplicate choices are collapsed, and cancellation cannot choose --all.
-    run(MOCKS + r'''
+    output = run(MOCKS + r'''
 ACTION=2
 TARGET_PATHS=(alpha beta)
 choose_plugins <<< $'2\n1,3,1' || exit 1
@@ -87,6 +93,32 @@ choose_plugins <<< $'2\n1,3,1' || exit 1
 ! choose_plugins <<< $'2\n-1' || exit 1
 ! choose_plugins <<< $'2\n0' || exit 1
 ''', **common)
+    assert 'alpha: 1.0 -> 1.2 [update available]' in output
+    assert 'beta: 1.1 -> 1.3 [update available]' in output
+    assert 'alpha: 2.0 -> 2.0 [no update reported]' in output
+
+    # Version previews preserve per-site differences and prerelease versions,
+    # show core/theme versions, and only show selected plugins in the plan.
+    output = run(MOCKS + r'''
+ACTION=4; PLUGIN_MODE=selected; SELECTED_PLUGINS=(common beta-only)
+declare -A PLUGIN_PREVIEW_ROWS=()
+TARGET_PATHS=(alpha beta)
+show_update_preview
+''', **common)
+    assert 'WordPress core: 6.8 -> 6.9 [update available]' in output
+    assert '1.0 -> 1.2 [update available]' in output
+    assert '1.1 -> 1.3 [update available]' in output
+    assert '3.0 -> 3.1-beta [update available]' in output
+    assert '2.0 -> 2.1 [update available]' in output
+    assert 'alpha-only' not in output
+    output = run(MOCKS + r'''
+ACTION=2; CORE_UPDATES='[]'; load_site alpha
+show_core_preview
+CORE_UPDATES=invalid
+show_core_preview
+''', **common)
+    assert '6.8 -> 6.8 [no update reported] (not selected)' in output
+    assert 'unknown [invalid update response]' in output
 
     commands.write_text('')
     run(MOCKS + r'''
@@ -100,6 +132,15 @@ update_site beta || exit 1
     assert 'beta: plugin update common beta-only' in lines
     assert not any('--all' in line for line in lines)
     assert lines.index('alpha: backup') < lines.index('alpha: plugin update common')
+    assert 'alpha: cleanup' in lines and 'beta: cleanup' in lines
+
+    commands.write_text('')
+    run(MOCKS + r'''
+ACTION=2; PLUGIN_MODE=all; SELECTED_PLUGINS=(); BACKUP_ENABLED=0
+update_site alpha || exit 1
+''', **common)
+    assert 'alpha: backup' not in commands.read_text()
+    assert 'alpha: plugin update --all' in commands.read_text()
 
     commands.write_text('')
     run(MOCKS + r'''
@@ -152,6 +193,8 @@ CORE_FAIL=1
     assert 'alpha: core update-db --network' in text
     assert 'beta: core update-db --network' in text
     assert 'gamma: core update-db' not in text
+    assert 'alpha: cleanup' in text
+    assert 'beta: cleanup' not in text and 'gamma: cleanup' not in text
 
     # Failure of one website does not stop successful/skip results afterwards.
     output = run(r'''
@@ -194,6 +237,34 @@ backup_site || exit 1
 [[ "$(gzip -dc "$PRE_UPDATE_BACKUP/database.sql.gz")" == 'complete SQL' ]] || exit 1
 tar -tzf "$PRE_UPDATE_BACKUP/wordpress.tar.gz" | grep -Fx './wp-load.php' || exit 1
 tar -tzf "$PRE_UPDATE_BACKUP/wordpress.tar.gz" | grep -Fx './wp-content/plugin.php' || exit 1
+
+# A live-file-change warning is allowed only if the archive is readable.
+tar() {
+    if [[ "$1" == -czf ]]; then
+        command tar "$@" || return
+        echo 'tar: ./wp-content: file changed as we read it' >&2
+        [ "${MIXED_ERRORS:-0}" -eq 0 ] || echo 'tar: denied: Cannot open: Permission denied' >&2
+        if [ "${CORRUPT_ARCHIVE:-0}" -eq 1 ]; then printf 'broken' > "$2"; fi
+        return "${TAR_CODE:-1}"
+    fi
+    command tar "$@"
+}
+backup_site || exit 1
+[[ -f "$PRE_UPDATE_BACKUP/manifest.txt" ]] || exit 1
+cleanup_backup
+[[ ! -e "$PRE_UPDATE_BACKUP" ]] || exit 1
+TAR_CODE=2
+! backup_site || exit 1
+TAR_CODE=1; MIXED_ERRORS=1
+! backup_site || exit 1
+MIXED_ERRORS=0; CORRUPT_ARCHIVE=1
+! backup_site || exit 1
+
+# Cleanup is limited to the generated pre-update directory, not other backups.
+PRE_UPDATE_BACKUP="$DOMAIN_PATH/backup/files/permanent"
+mkdir -p "$PRE_UPDATE_BACKUP"
+cleanup_backup
+[[ -d "$PRE_UPDATE_BACKUP" ]] || exit 1
 ''', FIXTURE=tmp)
 
 print('WordPress update regression checks passed.')

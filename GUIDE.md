@@ -73,15 +73,26 @@ For plugins, choose all installed plugins or select one or more numbered plugins
 across the selected websites; sites without a selected plugin are skipped for
 plugin-only updates. Must-use plugins and drop-ins are excluded from selection.
 
+The numbered plugin list shows installed and available versions per website.
+Before confirmation, a version preview shows core and selected plugin/theme
+versions. Components with no reported update are labeled accordingly; failed
+version checks are shown as unknown rather than as up to date.
+
 Review the website/component selection and confirm before starting. The updater
 installs WP-CLI with SHA-512 verification if it is missing. Each website uses its
-configured PHP version and Unix account. Before updating, the updater saves a
-complete file archive and database dump in a private directory under
-`/home/domains/<site>/backup/files/pre-update_*`; if either backup fails, that
-website is not updated. Core updates also run the WordPress database upgrade.
+configured PHP version and Unix account. Choose whether to create a backup before
+updating (default: yes). When enabled, the updater saves a complete file archive
+and database dump in a private directory under
+`/home/domains/<site>/backup/files/pre-update_*`; failed backups stop that site's
+update. A tar exit-1 warning containing only live-file-change messages is allowed
+after archive integrity checks; real read, compression or archive errors still
+stop the update. Backups are automatically deleted after successful updates and
+retained after failed updates for manual restoration. Choosing no backup skips
+both the archive and database dump for that run.
+Core updates also run the WordPress database upgrade.
 Failed websites do not stop the batch. Review the final success/failure/skip
 counts and `/var/shieldpress/logs/wp-update.log` for details. Backups are retained
-for manual restoration; updates are not automatically rolled back.
+only after failures; updates are not automatically rolled back.
 
 Keep plugins/themes updated and review malware findings before deleting files.
 

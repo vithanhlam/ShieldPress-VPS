@@ -1,5 +1,18 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.90 — 2026-10-20 — Update previews and optional temporary backups
+
+- Display installed and available plugin versions in the numbered selector,
+  including differences between websites. Preview core and selected
+  plugin/theme versions before confirming updates.
+- Allow tar's live-file-change warning only when it is the sole exit-1 warning
+  and the resulting compressed archive passes integrity checks. Keep blocking
+  updates on real backup errors or corrupt archives.
+- Ask whether to back up before updating (default: yes); remove each temporary
+  backup after a successful update and retain it after failed updates.
+- Cover version previews, warning/error classification, corrupt archives,
+  backup opt-out and successful-only cleanup with isolated regression tests.
+
 ## v1.3.89 — 2026-10-20 — WordPress batch updates and admin password reset
 
 - Update core, plugins, themes, or all components for one website or all managed
