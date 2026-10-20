@@ -1,5 +1,19 @@
 # ShieldPress VPS - Changelog
 
+## v1.3.89 — 2026-10-20 — WordPress batch updates and admin password reset
+
+- Update core, plugins, themes, or all components for one website or all managed
+  WordPress websites; choose all plugins or a numbered selection across sites.
+- Skip sites missing selected plugins, keep failed sites from stopping the batch,
+  and report accurate per-site results in the update log and final summary.
+- Resolve/install verified WP-CLI, use each site's PHP and Unix account, and
+  require full file/database backups before updating. Run database migrations
+  after core upgrades, including multisite networks.
+- Reset admin passwords through WordPress APIs when WP-CLI is absent, and
+  distinguish failed account queries from websites with no administrators.
+- Add isolated WordPress update/reset regression coverage. Release assets
+  include the archive, SHA-256 checksum, and MD5 checksum.
+
 ## v1.3.88 — 2026-10-18 — Fix Meilisearch API key creation
 
 - Include the required `expiresAt` field when creating Meilisearch 1.12 API

@@ -8,7 +8,7 @@ clear
 sp_header "WordPress Manager" "Install, secure, optimize"
 sp_menu_grid \
     "1|Install WordPress|green" \
-    "2|Update WordPress|yellow" \
+    "2|Update Core / Plugins / Themes|yellow" \
     "3|Security Hardening|red" \
     "4|Performance Optimize|green" \
     "5|Security + Optimize|magenta" \

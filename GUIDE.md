@@ -66,8 +66,24 @@ Use `WordPress Manager` to install WordPress, update core/plugins/themes,
 harden security, optimize performance, reset an admin password, switch WP-Cron
 to system cron, scan malware and manage staging environments.
 
-Before major updates, create a full backup. Keep plugins/themes updated and
-review malware findings before deleting files.
+In `WordPress Manager > Update Core / Plugins / Themes`, choose one website or
+all managed WordPress websites, then core, plugins, themes, or all components.
+For plugins, choose all installed plugins or select one or more numbered plugins
+(separate numbers with spaces or commas). The selection list combines plugins
+across the selected websites; sites without a selected plugin are skipped for
+plugin-only updates. Must-use plugins and drop-ins are excluded from selection.
+
+Review the website/component selection and confirm before starting. The updater
+installs WP-CLI with SHA-512 verification if it is missing. Each website uses its
+configured PHP version and Unix account. Before updating, the updater saves a
+complete file archive and database dump in a private directory under
+`/home/domains/<site>/backup/files/pre-update_*`; if either backup fails, that
+website is not updated. Core updates also run the WordPress database upgrade.
+Failed websites do not stop the batch. Review the final success/failure/skip
+counts and `/var/shieldpress/logs/wp-update.log` for details. Backups are retained
+for manual restoration; updates are not automatically rolled back.
+
+Keep plugins/themes updated and review malware findings before deleting files.
 
 ## 5. Laravel
 

@@ -39,7 +39,16 @@ if [ ! -x "$PHP_BIN" ]; then
     exit 1
 fi
 
-WP_CMD=(sudo -u "$CLEAN_DOMAIN" "$PHP_BIN" -d error_reporting="E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED" -d display_errors=0 /usr/local/bin/wp)
+# WP-CLI is installed globally by ShieldPress, but its location can differ
+# between hosts. Prefer the PATH entry and retain the historical location as
+# a fallback. If it is absent, use WordPress' own APIs through PHP below.
+WP_CLI_BIN="$(command -v wp 2>/dev/null || true)"
+if [ -z "$WP_CLI_BIN" ] && [ -f /usr/local/bin/wp ]; then
+    WP_CLI_BIN=/usr/local/bin/wp
+fi
+
+WP_CMD=(sudo -u "$CLEAN_DOMAIN" "$PHP_BIN" -d 'error_reporting=E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED' -d display_errors=0)
+[ -n "$WP_CLI_BIN" ] && WP_CMD+=("$WP_CLI_BIN")
 
 # ==========================
 # GET ADMIN LIST
@@ -49,12 +58,30 @@ echo ""
 echo "Fetching administrator accounts..."
 echo ""
 
+if [ -n "$WP_CLI_BIN" ]; then
+    ADMIN_LIST_OUTPUT=$("${WP_CMD[@]}" user list --role=administrator --field=user_login --path="$ROOT" 2>>"$LOG_FILE")
+    ADMIN_LIST_STATUS=$?
+else
+    ADMIN_LIST_OUTPUT=$(sudo -u "$CLEAN_DOMAIN" "$PHP_BIN" -d 'error_reporting=E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED' -d display_errors=0 -r '
+        require $argv[1];
+        foreach (get_users(["role" => "administrator"]) as $user) {
+            echo $user->user_login, PHP_EOL;
+        }
+    ' "$ROOT/wp-load.php" 2>>"$LOG_FILE")
+    ADMIN_LIST_STATUS=$?
+fi
+
+if [ "$ADMIN_LIST_STATUS" -ne 0 ]; then
+    echo "Could not read WordPress administrator accounts. See $LOG_FILE for details."
+    exit 1
+fi
+
 ADMIN_USERS=()
 while IFS= read -r USER_LOGIN; do
     [ -n "$USER_LOGIN" ] || continue
     [[ "$USER_LOGIN" =~ ^[A-Za-z0-9._@-]+$ ]] || continue
     ADMIN_USERS+=("$USER_LOGIN")
-done < <("${WP_CMD[@]}" user list --role=administrator --field=user_login --path="$ROOT" 2>>"$LOG_FILE")
+done <<< "$ADMIN_LIST_OUTPUT"
 
 if [ ${#ADMIN_USERS[@]} -eq 0 ]; then
     echo "No administrator found!"
@@ -98,9 +125,22 @@ echo ""
 echo "Resetting password..."
 echo ""
 
-"${WP_CMD[@]}" user update "$SELECTED_USER" \
---user_pass="$NEW_PASS" \
---path="$ROOT" >> "$LOG_FILE" 2>&1
+if [ -n "$WP_CLI_BIN" ]; then
+    "${WP_CMD[@]}" user update "$SELECTED_USER" \
+    --user_pass="$NEW_PASS" \
+    --path="$ROOT" >> "$LOG_FILE" 2>&1
+else
+    sudo -u "$CLEAN_DOMAIN" env WP_RESET_LOGIN="$SELECTED_USER" WP_RESET_PASS="$NEW_PASS" \
+        "$PHP_BIN" -d 'error_reporting=E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED' -d display_errors=0 -r '
+            require $argv[1];
+            $user = get_user_by("login", getenv("WP_RESET_LOGIN"));
+            if (!$user) {
+                fwrite(STDERR, "Administrator account was not found." . PHP_EOL);
+                exit(2);
+            }
+            wp_set_password(getenv("WP_RESET_PASS"), $user->ID);
+        ' "$ROOT/wp-load.php" >> "$LOG_FILE" 2>&1
+fi
 
 if [ $? -ne 0 ]; then
     echo "Password reset failed!"
