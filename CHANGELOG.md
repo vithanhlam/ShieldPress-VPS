@@ -1,3 +1,9 @@
+## v1.3.96 — 2026-10-22 — Document release and regression test requirements
+
+- Document version, changelog, checksum, pre-push test, automatic migration,
+  English-only source, and supported-stack regression requirements in
+  `AGENTS.md`.
+
 ## v1.3.95 — 2026-10-22 — Apply PHP security updates during migration handoff
 
 - Run the PHP security updater from the newly installed migration script during
