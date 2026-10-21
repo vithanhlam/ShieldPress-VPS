@@ -1,3 +1,18 @@
+## v1.3.91 — 2026-10-21 — PHP 8.4 emergency security patching
+
+- Automatically apply the official PHP 8.4.27 source release when Remi does not
+  provide a verified security fix. Promote PHP CLI, CGI, phpdbg, phpize,
+  php-config and PHP-FPM together, retain original entrypoints, verify existing
+  extensions, and roll back failed promotions. Refuse to downgrade newer PHP.
+- Update supported Remi PHP branches to their CVE-2026-109618 and
+  CVE-2026-109619 fixed versions when available. Audit each installed branch
+  and report when its package repository has no verified fix.
+- Fix PHP package update detection, branch-specific package locks, policy file
+  parsing and upgrade lock handling.
+- Verify PHP 8.4.27 on the AlmaLinux 9 test VPS: CLI, CGI and PHP-FPM; two OOM
+  regressions; extension availability; Nginx; WordPress and Laravel HTTP checks.
+  PHP-FPM served 8.4.27 and both test sites returned HTTP 200.
+
 # ShieldPress VPS - Changelog
 
 ## v1.3.90 — 2026-10-20 — Update previews and optional temporary backups

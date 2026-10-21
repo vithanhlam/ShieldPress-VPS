@@ -279,6 +279,11 @@ if [ -d "$BASE_DIR/config" ]; then
         legacy_config="$legacy_config/config"
     done
 fi
+# Normalize legacy unquoted policy values preserved from older installations.
+if [ -f "$NEW_DIR/config/upgrade-policy.conf" ]; then
+    sed -i -E '/^[A-Z_]+=[^"[:space:]]/s/^([A-Z_]+)=(.*)$/\1="\2"/' "$NEW_DIR/config/upgrade-policy.conf"
+fi
+
 # Keep the old global retention for existing cron jobs when replacing the generator.
 if [ -f "$BASE_DIR/bin/laravel-pg-backup" ]; then
     legacy_keep=$(sed -n 's/^KEEP=\([0-9][0-9]*\)$/\1/p' "$BASE_DIR/bin/laravel-pg-backup" | head -1)
@@ -400,6 +405,13 @@ if [ -f "$PATCHES_SCRIPT" ]; then
     else
         log "[WARN] Some migration patches remain pending; review the errors and retry from Migration Patches"
     fi
+fi
+
+# Retry on every update: a repository may publish the PHP fix later.
+if bash "$BASE_DIR/modules/security/php-security-patch.sh" --apply 2>&1 | tee -a "$LOG_FILE"; then
+    ok "PHP security check completed"
+else
+    log "[WARN] PHP security patch remains pending. Review the log and rerun: bash $BASE_DIR/modules/security/php-security-patch.sh --apply"
 fi
 
 echo ""

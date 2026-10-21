@@ -40,7 +40,7 @@ check_upgrade(){
 
         local VER_DOT="${v:0:1}.${v:1}"
         local CURRENT=$("$BIN" -v 2>/dev/null | head -1 | awk '{print $2}')
-        local AVAILABLE=$(dnf info "php${v}-php-fpm" 2>/dev/null | grep "^Version" | awk '{print $3}' | head -1)
+        local AVAILABLE=$(LC_ALL=C dnf --refresh info --available "php${v}-php-fpm" 2>/dev/null | grep "^Version" | awk '{print $3}' | head -1)
 
         local POLICY_STATUS=""
         if [ -n "$AVAILABLE" ]; then
@@ -92,7 +92,7 @@ do_upgrade(){
 
         local VER_DOT="${v:0:1}.${v:1}"
         local CURRENT=$("$BIN" -v 2>/dev/null | head -1 | awk '{print $2}')
-        local AVAILABLE=$(dnf info "php${v}-php-fpm" 2>/dev/null | grep "^Version" | awk '{print $3}' | head -1)
+        local AVAILABLE=$(LC_ALL=C dnf --refresh info --available "php${v}-php-fpm" 2>/dev/null | grep "^Version" | awk '{print $3}' | head -1)
 
         if [ -n "$AVAILABLE" ] && [ "$CURRENT" != "$AVAILABLE" ]; then
             echo "  $IDX) PHP $VER_DOT  ($CURRENT → $AVAILABLE)"
@@ -132,7 +132,7 @@ do_upgrade(){
 
     for v in "${TARGETS[@]}"; do
         local VER_DOT="${v:0:1}.${v:1}"
-        local AVAILABLE=$(dnf info "php${v}-php-fpm" 2>/dev/null | grep "^Version" | awk '{print $3}' | head -1)
+        local AVAILABLE=$(LC_ALL=C dnf --refresh info --available "php${v}-php-fpm" 2>/dev/null | grep "^Version" | awk '{print $3}' | head -1)
 
         [ -z "$AVAILABLE" ] && continue
 

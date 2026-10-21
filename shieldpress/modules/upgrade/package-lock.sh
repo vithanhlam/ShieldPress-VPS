@@ -26,6 +26,10 @@ declare -A SERVICE_PACKAGES
 SERVICE_PACKAGES=(
     [nginx]="nginx nginx-core nginx-mod-*"
     [php]="php81-* php82-* php83-* php84-*"
+    [php81]="php81-*"
+    [php82]="php82-*"
+    [php83]="php83-*"
+    [php84]="php84-*"
     [mariadb]="mariadb-server mariadb mariadb-common mariadb-backup mariadb-gssapi-server"
     [postgresql]="postgresql-server postgresql postgresql-contrib postgresql-libs"
     [nodejs]="nodejs nodejs-libs npm"

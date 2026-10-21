@@ -144,7 +144,7 @@ get_available_version(){
             ;;
         php*)
             local VER="${SERVICE#php}"
-            dnf info "php${VER}-php-fpm" 2>/dev/null | grep "^Version" | awk '{print $3}' | head -1
+            LC_ALL=C dnf --refresh info --available "php${VER}-php-fpm" 2>/dev/null | grep "^Version" | awk '{print $3}' | head -1
             ;;
     esac
 }
@@ -717,7 +717,7 @@ upgrade_service(){
     echo ""
     echo -e "${BOLD}Unlocking package...${RESET}"
     if [ -f "$LOCK_SCRIPT" ]; then
-        bash "$LOCK_SCRIPT" unlock "$SERVICE" 2>/dev/null
+        bash "$LOCK_SCRIPT" unlock "$SERVICE" || return 1
     fi
 
     # Step 5: Execute upgrade
