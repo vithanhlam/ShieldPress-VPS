@@ -33,3 +33,8 @@ A subsequent read-only refresh of only `remi-safe` completed: latest available `
 - `/usr/bin/php`, `/opt/remi/php84/root/usr/bin/php`, `php-cgi`, `phpdbg`, `php-config` and the FPM entrypoint now execute the 8.4.27 source build; `phpize --version` reports the matching PHP 8.4 API. The previous CLI limitation above has been resolved.
 - Audit returned exit code 0. Uncached HTTP returned `version=8.4.27`, `sapi=fpm-fcgi`, PDO and OPcache enabled. WordPress and Laravel test roots returned HTTP 200; Nginx and FPM were active; SELinux remained Enforcing. The probe was removed.
 - Local smoke checks passed. This is a managed source overlay: RPM database versions still describe the preserved vendor packages. Re-running the update migration reapplies managed entrypoints after package transactions. Only the PHP 8.4 source fallback has been implemented; other branches retain package-based patching. Future return to vendor packages must account for the source FPM override.
+
+## KH CODEWP deployment preflight
+
+- MCP resource `SFTP — VPS KH CODEWP` resolves to AlmaLinux 9.8 with PHP-FPM 8.4.25, ten managed domains and active Nginx, MariaDB, PostgreSQL, Valkey and PHP-FPM. Imagick is loaded. The source patch now retains installed vendor extension modules such as Imagick and refuses promotion if any pre-existing extension fails to load.
+- This preflight was performed before the VPS update; update and post-deployment checks are recorded after release 1.3.92 is applied.

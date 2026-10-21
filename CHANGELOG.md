@@ -1,3 +1,11 @@
+## v1.3.92 — 2026-10-21 — Preserve installed PHP extensions in source patching
+
+- Retain existing vendor PHP extensions that are not built into PHP, such as
+  Imagick, by loading their ABI-compatible module files from the installed
+  PHP 8.4 branch. Verify every previously loaded extension before promotion.
+- Confirm the source patch against the KH CODEWP AlmaLinux VPS profile before
+  updating its ten managed sites.
+
 ## v1.3.91 — 2026-10-21 — PHP 8.4 emergency security patching
 
 - Automatically apply the official PHP 8.4.27 source release when Remi does not

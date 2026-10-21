@@ -37,11 +37,33 @@ for p in [src/'php.ini', *sorted((src/'php.d').glob('*.ini'))]:
 ext=subprocess.check_output([str(prefix/'bin/php'),'-n','-r','echo ini_get("extension_dir");'],text=True)
 (dst/'php.d/00-source-opcache.ini').write_text('zend_extension='+ext+'/opcache.so\n')
 env=dict(os.environ,PHP_INI_SCAN_DIR=str(dst/'php.d'))
-loaded=json.loads(subprocess.check_output([str(prefix/'bin/php'),'-c',str(dst/'php.ini'),'-r','echo json_encode(get_loaded_extensions());'],env=env,text=True))
 before=json.loads(pathlib.Path('/var/shieldpress/data/php-source-84/extensions-before.json').read_text())
+loaded=json.loads(subprocess.check_output([str(prefix/'bin/php'),'-c',str(dst/'php.ini'),'-r','echo json_encode(get_loaded_extensions());'],env=env,text=True))
 missing=sorted(set(before)-set(loaded))
-if missing: raise SystemExit('Missing extensions; promotion refused: '+', '.join(missing))
-print('All existing extensions available')
+if missing:
+    vendor_bin=pathlib.Path('/opt/remi/php84/root/usr/bin/php')
+    vendor_ext=pathlib.Path(subprocess.check_output([str(vendor_bin),'-n','-r','echo ini_get("extension_dir");'],text=True))
+    configured={}
+    for ini in sorted((src/'php.d').glob('*.ini')):
+        for kind,value in re.findall(r'(?m)^\s*(zend_extension|extension)\s*=\s*["\']?([^"\'\s;]+)',ini.read_text()):
+            configured[pathlib.Path(value).name.removesuffix('.so').lower()]=(kind,value)
+    lines=[]; unresolved=[]
+    for module in missing:
+        entry=configured.get(module.lower())
+        if not entry:
+            unresolved.append(module); continue
+        kind,value=entry
+        filename=pathlib.Path(value).name
+        candidate=pathlib.Path(value) if '/' in value else vendor_ext/filename
+        if not candidate.is_file():
+            unresolved.append(module); continue
+        lines.append(f'{kind}={candidate}\n')
+    if unresolved: raise SystemExit('Missing extensions; promotion refused: '+', '.join(unresolved))
+    (dst/'php.d/10-vendor-extensions.ini').write_text(''.join(lines))
+    loaded=json.loads(subprocess.check_output([str(prefix/'bin/php'),'-c',str(dst/'php.ini'),'-r','echo json_encode(get_loaded_extensions());'],env=env,text=True))
+    unresolved=sorted(set(before)-set(loaded))
+    if unresolved: raise SystemExit('Existing extensions failed to load: '+', '.join(unresolved))
+print('All existing extensions available, including vendor modules')
 PY
 export PHP_INI_SCAN_DIR="$prefix/etc/php.d"
 "$prefix/sbin/php-fpm" -c "$prefix/etc/php.ini" -y /etc/opt/remi/php84/php-fpm.conf -t
