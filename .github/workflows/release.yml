@@ -17,7 +17,7 @@ jobs:
 
       - name: Build release package and checksum
         run: |
-          tar -czf /tmp/shieldpress.tar.gz -C . shieldpress
+          tar -czf /tmp/shieldpress.tar.gz -C . AGENTS.md shieldpress
           sha256sum /tmp/shieldpress.tar.gz | awk '{print $1 "  shieldpress.tar.gz"}' > /tmp/shieldpress.sha256
           md5sum /tmp/shieldpress.tar.gz | awk '{print $1 "  shieldpress.tar.gz"}' > /tmp/shieldpress.md5
 

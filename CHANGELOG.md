@@ -1,3 +1,8 @@
+## v1.3.97 — 2026-10-22 — Include repository instructions in release archive
+
+- Include the root `AGENTS.md` file in the GitHub release source archive as well
+  as tracking it on the repository's `main` branch.
+
 ## v1.3.96 — 2026-10-22 — Document release and regression test requirements
 
 - Document version, changelog, checksum, pre-push test, automatic migration,
