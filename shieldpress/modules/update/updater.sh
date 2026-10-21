@@ -408,8 +408,9 @@ if [ -f "$PATCHES_SCRIPT" ]; then
 fi
 
 # Retry on every update: a repository may publish the PHP fix later.
+log "Applying PHP security updates..."
 if bash "$BASE_DIR/modules/security/php-security-patch.sh" --apply 2>&1 | tee -a "$LOG_FILE"; then
-    ok "PHP security check completed"
+    ok "PHP security update step completed"
 else
     log "[WARN] PHP security patch remains pending. Review the log and rerun: bash $BASE_DIR/modules/security/php-security-patch.sh --apply"
 fi

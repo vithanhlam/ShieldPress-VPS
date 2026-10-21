@@ -1,3 +1,9 @@
+## v1.3.94 — 2026-10-22 — Report automatic PHP security updates clearly
+
+- Log a distinct start and completion message for the PHP security update step
+  during ShieldPress upgrades, making it clear whether PHP package updates ran
+  and whether the security baseline was verified.
+
 ## v1.3.93 — 2026-10-22 — Preserve MySQL socket defaults in PHP source builds
 
 - Copy the active `mysqli` and `pdo_mysql` socket defaults from the installed
