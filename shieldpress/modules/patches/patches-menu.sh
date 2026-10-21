@@ -803,7 +803,22 @@ show_patch_status(){
 # Called by updater: bash patches-menu.sh --auto
 if [ "${1:-}" = "--auto" ]; then
     apply_all_patches
-    exit $?
+    patch_status=$?
+
+    # The updater process may still be executing the old release's code after
+    # atomically switching /opt/shieldpress. Run this hook from the newly
+    # installed migration script so PHP security updates also run on that first
+    # upgrade, including upgrades from releases without the updater hook.
+    echo ""
+    info "Applying PHP security updates..."
+    if bash "$BASE_DIR/modules/security/php-security-patch.sh" --apply; then
+        ok "PHP security update step completed"
+    else
+        fail "PHP security update remains pending; review the output and retry"
+        patch_status=1
+    fi
+
+    exit "$patch_status"
 fi
 
 # ==================================================

@@ -1,3 +1,11 @@
+## v1.3.95 — 2026-10-22 — Apply PHP security updates during migration handoff
+
+- Run the PHP security updater from the newly installed migration script during
+  automatic post-update migration. This covers upgrades launched by older
+  updater processes that continue executing their pre-update code after the
+  source switch.
+- Report PHP update success or pending status in the migration output.
+
 ## v1.3.94 — 2026-10-22 — Report automatic PHP security updates clearly
 
 - Log a distinct start and completion message for the PHP security update step
