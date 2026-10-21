@@ -36,6 +36,16 @@ for p in [src/'php.ini', *sorted((src/'php.d').glob('*.ini'))]:
     out.write_text(re.sub(r'(?m)^\s*(?:zend_extension|extension|extension_dir)\s*=.*$', '; Source runtime module loading is managed by ShieldPress.', p.read_text()))
 ext=subprocess.check_output([str(prefix/'bin/php'),'-n','-r','echo ini_get("extension_dir");'],text=True)
 (dst/'php.d/00-source-opcache.ini').write_text('zend_extension='+ext+'/opcache.so\n')
+# Match the vendor build's MySQL socket defaults. Source builds otherwise use
+# /tmp/mysql.sock, which makes WordPress fail when MariaDB listens elsewhere.
+vendor_bin='/opt/remi/php84/root/usr/bin/php'
+socket_lines=[]
+for key in ('mysqli.default_socket','pdo_mysql.default_socket'):
+    value=subprocess.check_output([vendor_bin,'-r',f'echo ini_get("{key}");'],text=True).strip()
+    if value:
+        socket_lines.append(f'{key}="{value}"\n')
+if socket_lines:
+    (dst/'php.d/99-vendor-runtime-defaults.ini').write_text(''.join(socket_lines))
 env=dict(os.environ,PHP_INI_SCAN_DIR=str(dst/'php.d'))
 before=json.loads(pathlib.Path('/var/shieldpress/data/php-source-84/extensions-before.json').read_text())
 loaded=json.loads(subprocess.check_output([str(prefix/'bin/php'),'-c',str(dst/'php.ini'),'-r','echo json_encode(get_loaded_extensions());'],env=env,text=True))

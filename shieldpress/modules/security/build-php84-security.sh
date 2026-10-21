@@ -19,7 +19,7 @@ sha256sum -c source.sha256
 dnf --disablerepo='pgdg*' --setopt=timeout=15 --setopt=retries=1 install -y gcc gcc-c++ make autoconf bison re2c pkgconf-pkg-config libxml2-devel openssl-devel sqlite-devel libcurl-devel oniguruma-devel libzip-devel libpng-devel libjpeg-turbo-devel freetype-devel libicu-devel libxslt-devel libsodium-devel readline-devel libpq-devel bzip2-devel zlib-devel systemd-devel
 tar -xf php-8.4.27.tar.xz
 cd php-8.4.27
-./configure --prefix=/opt/shieldpress-php/8.4.27 --with-config-file-path=/etc/opt/remi/php84 --with-config-file-scan-dir=/etc/opt/remi/php84/php.d --enable-fpm --with-fpm-systemd --with-fpm-user=nginx --with-fpm-group=nginx --enable-bcmath --with-bz2 --enable-calendar --with-curl --enable-exif --enable-ftp --enable-gd --with-freetype --with-jpeg --with-gettext --enable-intl --enable-mbstring --with-mysqli=mysqlnd --with-openssl --enable-pcntl --with-pdo-mysql=mysqlnd --with-pdo-pgsql --with-pgsql --with-readline --enable-soap --enable-sockets --with-sodium --with-xsl --with-zip --with-zlib
+./configure --prefix=/opt/shieldpress-php/8.4.27 --with-config-file-path=/opt/shieldpress-php/8.4.27/etc --with-config-file-scan-dir=/opt/shieldpress-php/8.4.27/etc/php.d --enable-fpm --with-fpm-systemd --with-fpm-user=nginx --with-fpm-group=nginx --enable-bcmath --with-bz2 --enable-calendar --with-curl --enable-exif --enable-ftp --enable-gd --with-freetype --with-jpeg --with-gettext --enable-intl --enable-mbstring --with-mysqli=mysqlnd --with-openssl --enable-pcntl --with-pdo-mysql=mysqlnd --with-pdo-pgsql --with-pgsql --with-readline --enable-soap --enable-sockets --with-sodium --with-xsl --with-zip --with-zlib
 make -j2
 make install
 /opt/shieldpress-php/8.4.27/bin/php -n -v

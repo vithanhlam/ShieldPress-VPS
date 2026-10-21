@@ -38,3 +38,19 @@ A subsequent read-only refresh of only `remi-safe` completed: latest available `
 
 - MCP resource `SFTP — VPS KH CODEWP` resolves to AlmaLinux 9.8 with PHP-FPM 8.4.25, ten managed domains and active Nginx, MariaDB, PostgreSQL, Valkey and PHP-FPM. Imagick is loaded. The source patch now retains installed vendor extension modules such as Imagick and refuses promotion if any pre-existing extension fails to load.
 - This preflight was performed before the VPS update; update and post-deployment checks are recorded after release 1.3.92 is applied.
+
+## KH CODEWP release 1.3.92 deployment result
+
+- Applied ShieldPress 1.3.92 through the authorized MCP VPS connection; the release SHA-256 verification and updater migrations succeeded.
+- The PHP 8.4.27 source migration completed, and the CLI/FPM runtime reported 8.4.27 with Imagick loaded. Application smoke checks then found HTTP 500 responses on six PHP sites.
+- Rolled back the PHP entrypoints and removed the source-FPM systemd override. At that time runtime returned to Remi PHP 8.4.25, the affected sites returned to HTTP 200, and Nginx/PHP-FPM/database/cache services were active.
+- Root cause: the Remi PHP runtime uses `/var/lib/mysql/mysql.sock`, while source-built PHP 8.4.27 defaulted MySQL client sockets to `/tmp/mysql.sock`. WordPress returned its database connection error page, which produced the HTTP 500s. Nginx and PHP-FPM remained healthy, so their logs did not record the application-level database failure.
+- Added a generated runtime INI that copies `mysqli.default_socket` and `pdo_mysql.default_socket` from the vendor PHP runtime, and changed future source builds to use their own configuration directory.
+- Reproduced the failure with PHP 8.4.27 through an isolated FPM pool using the original site pool settings. With the vendor socket defaults applied, bandatnghiatrang.com, congviennghiatrang.vn, congvienthienphuc.com and fitandcare.vn returned HTTP 200; erp.zvps.net returned its expected 302 dashboard redirect. backlink.zvps.net returned its pre-existing 404. Production remained on Remi PHP 8.4.25 during these isolated tests.
+
+## KH CODEWP deployment after socket fix
+
+- Installed the vendor-equivalent MySQL socket defaults in the already-built 8.4.27 prefix, then ran the source migration with its entrypoint backup and rollback handling.
+- PHP CLI and PHP-FPM now report 8.4.27, `/proc/<FPM PID>/exe` points to `/opt/shieldpress-php/8.4.27/sbin/php-fpm`, Imagick loads, and both MySQL socket settings resolve to `/var/lib/mysql/mysql.sock`.
+- Uncached HTTPS probes: 1618art.zvps.net, bandatnghiatrang.com, congviennghiatrang.vn, congvienthienphuc.com, fitandcare.vn, taxixanhlientinh.com and zvps.net returned HTTP 200; erp.zvps.net returned HTTP 302; backlink.zvps.net remained HTTP 404 as before. Nginx, PHP-FPM, MariaDB, PostgreSQL and Valkey are active, and `nginx -t` passes.
+- `php-security-patch.sh --audit` reports PHP 8.4.27 meets the upstream security baseline. The source fix is committed locally as 1.3.93; the GitHub push could not complete because the configured GitHub token is invalid. The VPS still reports the previously installed ShieldPress package version 1.3.92.

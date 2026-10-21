@@ -1,3 +1,13 @@
+## v1.3.93 — 2026-10-22 — Preserve MySQL socket defaults in PHP source builds
+
+- Copy the active `mysqli` and `pdo_mysql` socket defaults from the installed
+  vendor PHP runtime. This lets locally built PHP connect to MariaDB when its
+  socket is outside the source build's default `/tmp/mysql.sock` path.
+- Compile future source builds with their own configuration directory instead
+  of the Remi system configuration directory.
+- Diagnose the KH CODEWP HTTP 500 regression and test the fix against its
+  production WordPress and Laravel roots through an isolated PHP-FPM instance.
+
 ## v1.3.92 — 2026-10-21 — Preserve installed PHP extensions in source patching
 
 - Retain existing vendor PHP extensions that are not built into PHP, such as
