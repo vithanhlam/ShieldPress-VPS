@@ -1,3 +1,9 @@
+## v1.3.98 — 2026-10-22 — Fix Monitor service stdout startup failure
+
+- Send Monitor service stdout and stderr to journald instead of opening its
+  application log path before startup. The daemon already writes detailed logs
+  itself; this avoids systemd `209/STDOUT` failures under SELinux.
+
 ## v1.3.97 — 2026-10-22 — Include repository instructions in release archive
 
 - Include the root `AGENTS.md` file in the GitHub release source archive as well

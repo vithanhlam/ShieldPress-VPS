@@ -1405,8 +1405,11 @@ Type=simple
 ExecStart=/opt/shieldpress/modules/shieldpress/shieldpress-monitor.sh --daemon
 Restart=always
 RestartSec=30
-StandardOutput=append:/var/shieldpress/logs/shieldpress-monitor.log
-StandardError=append:/var/shieldpress/logs/shieldpress-monitor.log
+# The daemon writes detailed logs through its own log() function. Keep systemd
+# output in journald so SELinux labels on /var/shieldpress/logs cannot prevent
+# systemd from opening stdout before the process starts.
+StandardOutput=journal
+StandardError=journal
 User=root
 
 [Install]
