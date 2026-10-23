@@ -257,45 +257,12 @@ echo "User     : $DB_USER"
 echo "Backup to: $BACKUP_DIR"
 echo ""
 
-while true; do
-    read -p "Keep how many local DB backups? (1-60): " RETENTION
-    [[ "$RETENTION" =~ ^[0-9]+$ ]] && [ "$RETENTION" -ge 1 ] && [ "$RETENTION" -le 60 ] && break
-    echo "Enter a number between 1 and 60"
-done
-
-while true; do
-    read -p "Backup hour (0-23): " HOUR
-    [[ "$HOUR" =~ ^[0-9]+$ ]] && [ "$HOUR" -ge 0 ] && [ "$HOUR" -le 23 ] && break
-    echo "Enter a valid hour (0-23)"
-done
-
-echo ""
-echo "Frequency:"
-echo "1) Daily"
-echo "2) Weekly"
-echo "3) Monthly"
-read -p "Select: " FREQ
-
-case $FREQ in
-    1) CRON_TIME="0 $HOUR * * *" ;;
-    2)
-        while true; do
-            read -p "Day of week (0=Sun, 6=Sat): " DOW
-            [[ "$DOW" =~ ^[0-6]$ ]] && break
-            echo "Enter 0-6"
-        done
-        CRON_TIME="0 $HOUR * * $DOW"
-        ;;
-    3)
-        while true; do
-            read -p "Day of month (1-28): " DOM
-            [[ "$DOM" =~ ^[0-9]+$ ]] && [ "$DOM" -ge 1 ] && [ "$DOM" -le 28 ] && break
-            echo "Enter 1-28"
-        done
-        CRON_TIME="0 $HOUR $DOM * *"
-        ;;
-    *) echo "Invalid option"; pause; exit 1 ;;
-esac
+source "$BASE_DIR/modules/backup/_db_schedule_helper.sh"
+if [ "$#" -ge 5 ]; then
+    db_backup_schedule "${@:3}" || exit 1
+else
+    db_backup_schedule || exit 1
+fi
 
 # ==============================
 # GENERATE AUTO-BACKUP SCRIPT
@@ -411,4 +378,4 @@ echo "  Backup to: $BACKUP_DIR"
 echo "  Script   : $AUTO_SCRIPT"
 echo "===================================================="
 
-pause
+[ "$#" -ge 5 ] || pause

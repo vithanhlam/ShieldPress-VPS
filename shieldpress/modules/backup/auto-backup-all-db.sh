@@ -127,15 +127,31 @@ if [ "${#MISSING[@]}" -eq 0 ]; then
     exit 0
 fi
 echo "${#MISSING[@]} database(s) do not have an automatic schedule."
-read -rp "Configure each missing database now? (y/n): " CONFIRM
+read -rp "Configure missing databases now? (y/n): " CONFIRM
 [[ "$CONFIRM" =~ ^[Yy]$ ]] || { echo "No schedules changed."; pause; exit 0; }
+
+echo ""
+echo "Schedule settings:"
+echo "1) Use one configuration for all missing databases (default)"
+echo "2) Configure each database separately"
+source "$BASE_DIR/modules/backup/_db_schedule_helper.sh"
+db_backup_read_number SETUP_MODE "Select" 1 1 2 || exit 1
+declare -a SCHEDULE_ARGS=()
+if [ "$SETUP_MODE" = 1 ]; then
+    db_backup_schedule || exit 1
+    SCHEDULE_ARGS=("$RETENTION" "$HOUR" "$FREQ" "$DOW" "$DOM")
+fi
+FAILED=0
 
 for i in "${MISSING[@]}"; do
     echo ""
     echo "Configuring ${ENGINES[$i]} database ${DATABASES[$i]} (${LABELS[$i]})"
-    bash "$BASE_DIR/modules/backup/auto-backup-db.sh" "${ENGINES[$i]}" "${DATABASES[$i]}"
+    bash "$BASE_DIR/modules/backup/auto-backup-db.sh" "${ENGINES[$i]}" "${DATABASES[$i]}" "${SCHEDULE_ARGS[@]}" || {
+        echo "Failed to configure ${ENGINES[$i]} database ${DATABASES[$i]}"
+        ((FAILED+=1))
+    }
 done
 
 echo ""
-echo "Individual setup completed. Review schedules from Auto Backup Setup."
+echo "Setup completed: $((${#MISSING[@]} - FAILED)) configured, $FAILED failed. Review schedules from Auto Backup Setup."
 pause

@@ -727,6 +727,11 @@ apply_all_patches(){
     echo "======================================"
     echo ""
 
+    # Retry safely on every update, including orphaned schedules from older deletes.
+    if ! python3 "$BASE_DIR/modules/backup/cleanup-domain-jobs.py" --base "$BASE_DIR" --domains "$DOMAINS_ROOT"; then
+        fail "Orphaned backup schedule cleanup remains pending"
+        ssl_status=1
+    fi
     patch_recover_backup_config
     patch_backup_scheduled_jobs
     patch_134_fix_bin_perms

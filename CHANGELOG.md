@@ -1,3 +1,13 @@
+## v1.3.99 — 2026-10-23 — Simplify bulk database backup setup and domain cleanup
+
+- Use sensible defaults for local database backup retention and daily schedule,
+  and let operators apply one schedule to all missing database backups.
+- On full domain deletion, remove per-domain database backup schedules and scripts,
+  prune the domain from shared database and file backup jobs, and stop if crontab
+  cleanup fails.
+- Repair orphaned backup schedules during migration, including legacy domain cron
+  entries, while preserving jobs for active domains.
+
 ## v1.3.98 — 2026-10-22 — Fix Monitor service stdout startup failure
 
 - Send Monitor service stdout and stderr to journald instead of opening its

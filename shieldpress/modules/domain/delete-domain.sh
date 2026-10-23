@@ -44,16 +44,18 @@ case $opt in
 
     backup_domain_before_delete || { read -p "Press Enter..."; exit 1; }
 
+    ENGINE="$DB_CONNECTION"
+    case "$ENGINE" in mariadb) ENGINE=mysql ;; postgres|postgresql) ENGINE=pgsql ;; esac
+    python3 "$BASE_DIR/modules/backup/cleanup-domain-jobs.py" \
+        --base "$BASE_DIR" --domains "$DOMAINS_ROOT" --domain "$DOMAIN_PATH" \
+        --db "$DB_NAME" --engine "$ENGINE" || {
+        echo "[FAIL] Schedule cleanup failed. Domain deletion stopped."
+        exit 1
+    }
+
     delete_database || { echo "[FAIL] Database deletion failed. Domain deletion stopped."; exit 1; }
     delete_source
     delete_configs
-
-    # Remove cron jobs related to this domain.
-    CRON_BEFORE=$(crontab -l 2>/dev/null | wc -l)
-    crontab -l 2>/dev/null | grep -v "$DOMAIN_PATH" | crontab -
-    CRON_AFTER=$(crontab -l 2>/dev/null | wc -l)
-    CRON_REMOVED=$((CRON_BEFORE - CRON_AFTER))
-    [ "$CRON_REMOVED" -gt 0 ] && echo "[OK] Removed $CRON_REMOVED cron job(s)" || echo "[INFO] No cron jobs found"
 
     # Remove SFTP group membership if present.
     gpasswd -d "$CLEAN_DOMAIN" sftpusers &>/dev/null && echo "[OK] SFTP removed"
