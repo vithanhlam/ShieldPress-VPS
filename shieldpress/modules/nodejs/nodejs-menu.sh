@@ -6,6 +6,7 @@ DOMAINS_ROOT="/home/domains"
 
 source "$DOMAIN_MODULE/helpers.sh"
 source "$BASE_DIR/core/ui.sh"
+source "$BASE_DIR/modules/helpers/task-progress.sh"
 
 GREEN="\e[32m"
 RED="\e[31m"
@@ -343,6 +344,36 @@ node_build_profile(){
 # Turbopack build can stall while compiling, and an interrupted SSH/menu
 # session can leave .next/lock behind. Keep the build bounded and use the
 # more predictable webpack backend for Next applications.
+# Run only after activation and a successful local HTTP readiness check.
+# Also removes backups accumulated by older ShieldPress deployments.
+cleanup_next_deploy_backups(){
+    local app_root="$1" entry name removed=0 pending=0
+    [ -d "$app_root" ] && [ ! -L "$app_root" ] || return 1
+    for entry in "$app_root"/.next.deploy-backup.* "$app_root"/.next-release.deploy-backup.*; do
+        [ -d "$entry" ] && [ ! -L "$entry" ] || continue
+        name="${entry##*/}"
+        [[ "$name" =~ ^\.next(-release)?\.deploy-backup\.[0-9]+$ ]] || continue
+        if rm -rf -- "$entry"; then
+            removed=$((removed + 1))
+        else
+            pending=$((pending + 1))
+        fi
+    done
+    ok "Next.js deploy backup cleanup: $removed removed, $pending pending."
+    [ "$pending" -eq 0 ]
+}
+
+next_deploy_http_ready(){
+    local port="$1" attempt status_code
+    for attempt in 1 2 3 4 5; do
+        status_code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 2 --max-time 3 "http://127.0.0.1:$port/" 2>/dev/null) || status_code=000
+        # Authenticated apps and apps without a root route can return 4xx.
+        [[ "$status_code" =~ ^[234][0-9][0-9]$ ]] && return 0
+        [ "$attempt" -eq 5 ] || sleep 2
+    done
+    return 1
+}
+
 run_node_build(){
     local user="$1"
     local app_root="$2"
@@ -481,16 +512,20 @@ fix_node_app_permissions(){
     local app_root="$domain_path/public_html"
 
     chown -R "$user:$user" "$app_root"
-    find "$app_root" -path "$app_root/node_modules" -prune -o -path "$app_root/vendor" -prune -o -type d -exec chmod 755 {} \;
-    find "$app_root" -path "$app_root/node_modules" -prune -o -path "$app_root/vendor" -prune -o -type f -exec chmod 644 {} \;
+    # Preserve generated Next.js output modes, including candidate/rollback builds.
+    # Batch chmod calls so source trees do not spawn one process per entry.
+    local -a mode_prune=( -path "$app_root/node_modules" -o -path "$app_root/vendor" )
+    mode_prune+=( -o -path "$app_root/.next" -o -path "$app_root/.next.*" -o -path "$app_root/.next-release" -o -path "$app_root/.next-release.*" )
+    find "$app_root" \( "${mode_prune[@]}" \) -prune -o -type d -exec chmod 755 {} +
+    find "$app_root" \( "${mode_prune[@]}" \) -prune -o -type f -exec chmod 644 {} +
     [ -f "$app_root/.env" ] && chmod 600 "$app_root/.env"
     [ -f "$app_root/package.json" ] && chmod 644 "$app_root/package.json"
     [ -f "$app_root/package-lock.json" ] && chmod 644 "$app_root/package-lock.json"
 
     if [ -d "$app_root/node_modules" ]; then
         chown -R "$user:$user" "$app_root/node_modules"
-        find "$app_root/node_modules" -type d -exec chmod 755 {} \;
-        [ -d "$app_root/node_modules/.bin" ] && find -L "$app_root/node_modules/.bin" -type f -exec chmod 755 {} \;
+        find "$app_root/node_modules" -type d -exec chmod 755 {} +
+        [ -d "$app_root/node_modules/.bin" ] && find -L "$app_root/node_modules/.bin" -type f -exec chmod 755 {} +
     fi
 
     return 0
@@ -500,7 +535,7 @@ repair_selected_node_permissions(){
     local sysuser
     sysuser=$(grep "^SYSTEM_USER=" "$ENV_FILE" | cut -d= -f2 | tr -d '[:space:]')
     sysuser="${sysuser:-$CLEAN_DOMAIN}"
-    fix_node_app_permissions "$sysuser" "$DOMAIN_PATH"
+    run_with_progress "Repair Node.js permissions" "$DOMAIN_PATH/tmp/.node-permissions-time" fix_node_app_permissions "$sysuser" "$DOMAIN_PATH"
     ok "Permissions fixed before PM2 start/restart (owner: $sysuser)"
 }
 
@@ -968,7 +1003,7 @@ deploy_node_app_locked(){
     chmod 755 "$DOMAIN_PATH"
     [ -d "$DOMAIN_PATH/config" ] && chown -R "$sysuser:$sysuser" "$DOMAIN_PATH/config" && chmod 750 "$DOMAIN_PATH/config"
     [ -f "$DOMAIN_PATH/config/domain.env" ] && chmod 640 "$DOMAIN_PATH/config/domain.env"
-    fix_node_app_permissions "$sysuser" "$DOMAIN_PATH"
+    run_with_progress "Repair Node.js permissions" "$DOMAIN_PATH/tmp/.node-permissions-time" fix_node_app_permissions "$sysuser" "$DOMAIN_PATH"
     [ -d "$DOMAIN_PATH/backup" ] && chown -R "$sysuser:$sysuser" "$DOMAIN_PATH/backup" && chmod 750 "$DOMAIN_PATH/backup"
     [ -d "$DOMAIN_PATH/tmp" ] && chown -R "$sysuser:$sysuser" "$DOMAIN_PATH/tmp" && chmod 755 "$DOMAIN_PATH/tmp"
     ok "Permissions fixed before build/start (owner: $sysuser)"
@@ -978,11 +1013,11 @@ deploy_node_app_locked(){
 
     if [ "$NODE_DEPLOY_MODE" = "2" ] || [ "$NODE_DEPLOY_MODE" = "3" ]; then
         echo "Step $step: Installing dependencies..."
-        prepare_node_dependency_install "$sysuser" "$DOMAIN_PATH"
+        run_with_progress "Prepare dependencies" "$DOMAIN_PATH/tmp/.node-prepare-time" prepare_node_dependency_install "$sysuser" "$DOMAIN_PATH"
         if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
-            run_pm2 "$sysuser" npm ci --include=dev || { fail "npm ci failed"; return 1; }
+            run_with_progress "Install dependencies (npm ci)" "$DOMAIN_PATH/tmp/.node-ci-time" run_pm2 "$sysuser" npm ci --include=dev || { fail "npm ci failed"; return 1; }
         else
-            run_pm2 "$sysuser" npm install --include=dev || { fail "npm install failed"; return 1; }
+            run_with_progress "Install dependencies (npm install)" "$DOMAIN_PATH/tmp/.node-install-time" run_pm2 "$sysuser" npm install --include=dev || { fail "npm install failed"; return 1; }
         fi
         ok "Dependencies installed"
         ((step++))
@@ -1050,7 +1085,7 @@ deploy_node_app_locked(){
         fi
 
         echo "Running build as Linux user: $sysuser"
-        if ! run_node_build "$sysuser" "$DOMAIN_PATH/public_html" "$candidate_next"; then
+        if ! run_with_progress "Production build" "$DOMAIN_PATH/tmp/.node-build-time" run_node_build "$sysuser" "$DOMAIN_PATH/public_html" "$candidate_next"; then
             fail "Build failed"
             if [ "$dist_dir_supported" = "yes" ]; then
                 rm -rf "$candidate_next"
@@ -1058,7 +1093,7 @@ deploy_node_app_locked(){
                 rm -rf .next
                 if [ -n "$previous_next" ] && [ -d "$previous_next" ]; then
                     mv "$previous_next" .next
-                    fix_node_app_permissions "$sysuser" "$DOMAIN_PATH"
+                    run_with_progress "Repair Node.js permissions" "$DOMAIN_PATH/tmp/.node-permissions-time" fix_node_app_permissions "$sysuser" "$DOMAIN_PATH"
                     warn "Previous .next build restored; the running app was left untouched."
                 fi
             fi
@@ -1101,7 +1136,7 @@ deploy_node_app_locked(){
     fi
 
     # Build tools may have created new files; repair ownership before PM2.
-    fix_node_app_permissions "$sysuser" "$DOMAIN_PATH"
+    run_with_progress "Repair Node.js permissions" "$DOMAIN_PATH/tmp/.node-permissions-time" fix_node_app_permissions "$sysuser" "$DOMAIN_PATH"
 
     # Restart via PM2
     echo ""
@@ -1110,11 +1145,6 @@ deploy_node_app_locked(){
     if run_pm2 "$pm2_name" pm2 describe "$pm2_name" >/dev/null 2>&1; then
         if restart_pm2_app_with_config "$pm2_name"; then
             ok "App reloaded via PM2 (environment updated, PORT=$NODE_APP_PORT)"
-            if [ "$dist_dir_supported" = "yes" ] && [ -n "$previous_next" ]; then
-                ok "Previous Next.js release retained at $previous_next for rollback"
-            else
-                [ -n "$previous_next" ] && rm -rf "$previous_next"
-            fi
         else
                 fail "PM2 restart failed"
                 if [ "$dist_dir_supported" = "yes" ]; then
@@ -1160,6 +1190,16 @@ deploy_node_app_locked(){
 
         pm2_persist_startup "$pm2_name"
         ok "App started with PM2: $pm2_name (PORT=$NODE_APP_PORT)"
+    fi
+
+    if [ "$has_build_script" = "yes" ] && is_nextjs_app; then
+        if run_with_progress "Verify deployed app" "$DOMAIN_PATH/tmp/.node-ready-time" next_deploy_http_ready "$NODE_APP_PORT"; then
+            run_with_progress "Clean Next.js deploy backups" "$DOMAIN_PATH/tmp/.node-cleanup-time" cleanup_next_deploy_backups "$DOMAIN_PATH/public_html" || \
+                warn "Some deploy backups could not be removed; cleanup will retry after the next successful deploy."
+        else
+            warn "App did not pass the local HTTP readiness check; deploy backups retained for recovery."
+            return 1
+        fi
     fi
 
     echo ""

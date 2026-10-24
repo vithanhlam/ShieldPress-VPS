@@ -2,6 +2,7 @@
 
 BASE_DIR="${BASE_DIR:-/opt/shieldpress}"
 source "$BASE_DIR/core/helpers.sh"
+source "$BASE_DIR/modules/helpers/task-progress.sh"
 
 DOMAINS_ROOT="/home/domains"
 APP_FILTER="${FIX_APP_TYPE:-}"
@@ -19,8 +20,14 @@ chmod_app_tree(){
     [ -d "$root" ] || return 0
 
     chown -R "$SYSUSER:$SYSUSER" "$root"
-    find "$root" -path "$root/node_modules" -prune -o -path "$root/vendor" -prune -o -type d -exec chmod 755 {} \;
-    find "$root" -path "$root/node_modules" -prune -o -path "$root/vendor" -prune -o -type f -exec chmod 644 {} \;
+    # Preserve generated Next.js output modes, including candidate/rollback builds.
+    # Batch chmod calls so source trees do not spawn one process per entry.
+    local -a mode_prune=( -path "$root/node_modules" -o -path "$root/vendor" )
+    if [ "${APP_TYPE:-}" = "nodejs" ]; then
+        mode_prune+=( -o -path "$root/.next" -o -path "$root/.next.*" -o -path "$root/.next-release" -o -path "$root/.next-release.*" )
+    fi
+    find "$root" \( "${mode_prune[@]}" \) -prune -o -type d -exec chmod 755 {} +
+    find "$root" \( "${mode_prune[@]}" \) -prune -o -type f -exec chmod 644 {} +
 }
 
 fix_wordpress_permissions(){
@@ -139,7 +146,7 @@ fix_selected_domain_permissions(){
 
     case "$APP_TYPE" in
         laravel) fix_laravel_permissions ;;
-        nodejs) fix_nodejs_permissions ;;
+        nodejs) run_with_progress "Repair Node.js permissions" "$DOMAIN_PATH/tmp/.node-manual-permissions-time" fix_nodejs_permissions ;;
         *) fix_wordpress_permissions ;;
     esac
 
