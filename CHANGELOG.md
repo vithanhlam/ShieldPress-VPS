@@ -1,3 +1,10 @@
+## v1.3.100 — 2026-10-24 — Improve Node.js deploy feedback and cleanup
+
+- Show elapsed time and learned estimates for long Node.js deploy steps.
+- Skip generated Next.js output during permission mode changes and batch chmod calls.
+- Remove accumulated Next.js deploy backups after the restarted app passes a local HTTP check; retain backups when deployment validation fails.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.99 — 2026-10-23 — Simplify bulk database backup setup and domain cleanup
 
 - Use sensible defaults for local database backup retention and daily schedule,
