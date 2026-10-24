@@ -1,3 +1,8 @@
+## v1.3.101 — 2026-10-24 — Skip generated Node.js output during ownership repair
+
+- Exclude Next.js build and release directories from recursive chown as well as chmod, preventing permission repair from walking multi-gigabyte generated output.
+- Keep ownership repair for source files and handle node_modules separately.
+
 ## v1.3.100 — 2026-10-24 — Improve Node.js deploy feedback and cleanup
 
 - Show elapsed time and learned estimates for long Node.js deploy steps.

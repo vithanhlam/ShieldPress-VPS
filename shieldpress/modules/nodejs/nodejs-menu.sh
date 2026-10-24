@@ -511,11 +511,12 @@ fix_node_app_permissions(){
     local domain_path="$2"
     local app_root="$domain_path/public_html"
 
-    chown -R "$user:$user" "$app_root"
-    # Preserve generated Next.js output modes, including candidate/rollback builds.
-    # Batch chmod calls so source trees do not spawn one process per entry.
+    # Ownership and mode repair skip generated trees; Next.js creates these as
+    # the app user and npm install repairs node_modules separately below.
     local -a mode_prune=( -path "$app_root/node_modules" -o -path "$app_root/vendor" )
     mode_prune+=( -o -path "$app_root/.next" -o -path "$app_root/.next.*" -o -path "$app_root/.next-release" -o -path "$app_root/.next-release.*" )
+    find "$app_root" \( "${mode_prune[@]}" \) -prune -o -exec chown "$user:$user" {} +
+    # Batch chmod calls so source trees do not spawn one process per entry.
     find "$app_root" \( "${mode_prune[@]}" \) -prune -o -type d -exec chmod 755 {} +
     find "$app_root" \( "${mode_prune[@]}" \) -prune -o -type f -exec chmod 644 {} +
     [ -f "$app_root/.env" ] && chmod 600 "$app_root/.env"

@@ -9,6 +9,19 @@ MODULES = Path(__file__).resolve().parents[1] / 'shieldpress/modules'
 
 
 class NodePermissionsTests(unittest.TestCase):
+    def test_permission_repair_prunes_generated_trees_from_chown_and_chmod(self):
+        node_script = (MODULES / 'nodejs/nodejs-menu.sh').read_text()
+        domain_script = (MODULES / 'domain/fix-permission.sh').read_text()
+        for source, function, end in [
+            (node_script, 'fix_node_app_permissions(){', '\nrepair_selected_node_permissions(){'),
+            (domain_script, 'chmod_app_tree(){', '\nfix_wordpress_permissions(){'),
+        ]:
+            body = source.split(function, 1)[1].split(end, 1)[0]
+            self.assertIn('-exec chown', body)
+            self.assertIn('.next-release.*', body)
+            self.assertNotIn('chown -R "$user:$user" "$app_root"', body)
+            self.assertNotIn('chown -R "$SYSUSER:$SYSUSER" "$root"', body)
+
     def test_deploy_and_manual_repair(self):
         for module, function, following in [
             ('nodejs/nodejs-menu.sh', 'fix_node_app_permissions', 'repair_selected_node_permissions'),

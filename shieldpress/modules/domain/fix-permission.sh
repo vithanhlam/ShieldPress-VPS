@@ -19,13 +19,14 @@ chmod_app_tree(){
 
     [ -d "$root" ] || return 0
 
-    chown -R "$SYSUSER:$SYSUSER" "$root"
-    # Preserve generated Next.js output modes, including candidate/rollback builds.
-    # Batch chmod calls so source trees do not spawn one process per entry.
+    # Node-generated build output is already owned by the app user. Exclude
+    # it from recursive ownership and mode repair to keep large builds fast.
     local -a mode_prune=( -path "$root/node_modules" -o -path "$root/vendor" )
     if [ "${APP_TYPE:-}" = "nodejs" ]; then
         mode_prune+=( -o -path "$root/.next" -o -path "$root/.next.*" -o -path "$root/.next-release" -o -path "$root/.next-release.*" )
     fi
+    find "$root" \( "${mode_prune[@]}" \) -prune -o -exec chown "$SYSUSER:$SYSUSER" {} +
+    # Batch chmod calls so source trees do not spawn one process per entry.
     find "$root" \( "${mode_prune[@]}" \) -prune -o -type d -exec chmod 755 {} +
     find "$root" \( "${mode_prune[@]}" \) -prune -o -type f -exec chmod 644 {} +
 }
