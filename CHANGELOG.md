@@ -1,3 +1,8 @@
+## v1.3.102 — 2026-10-24 — Restore single-key dashboard actions
+
+- Register dashboard quick actions immediately when users press a number or q; Enter is no longer required.
+- Keep action 1 mapped to Admin Menu and action 2 mapped to Update.
+
 ## v1.3.101 — 2026-10-24 — Skip generated Node.js output during ownership repair
 
 - Exclude Next.js build and release directories from recursive chown as well as chmod, preventing permission repair from walking multi-gigabyte generated output.

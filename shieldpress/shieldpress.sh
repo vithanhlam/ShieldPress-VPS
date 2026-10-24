@@ -542,7 +542,9 @@ if [ "$SHIELDPRESS_ACTION" != "menu" ]; then
 while true; do
 show_dashboard
 key=""
-    read -r -t 3 -p "Quick action [1-7, q] then Enter: " key
+    printf "Quick action [1-7, q]: "
+    IFS= read -r -n 1 -s -t 3 key || key=""
+    printf "\n"
     key="${key//[[:space:]]/}"
 case "$key" in
 1) echo "Opening Admin Menu..."; break ;;
