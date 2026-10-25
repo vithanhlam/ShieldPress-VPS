@@ -53,7 +53,10 @@ def run(args, *, data=None, capture=True, env=None, timeout=120, stream_errors=F
                 log.write(f'[{datetime.datetime.now().isoformat()}] {Path(str(args[0])).name} failed\n'.encode())
                 log.write((result.stdout or b'') + (result.stderr or b'') + b'\n')
         # Commands can contain database passwords. Never include argv or SQL in errors.
-        raise ValueError(f'{Path(str(args[0])).name} failed (exit {result.returncode}); inspect the private migration log.')
+        detail = ''
+        if Path(str(args[0])).name == 'nginx' and result.stderr:
+            detail = ': ' + result.stderr.decode(errors='replace').strip()[-2000:]
+        raise ValueError(f'{Path(str(args[0])).name} failed (exit {result.returncode}){detail}; inspect the private migration log.')
     return result.stdout or b''
 
 
@@ -63,6 +66,13 @@ def digest(path):
         for block in iter(lambda: stream.read(1024 * 1024), b''):
             value.update(block)
     return value.hexdigest()
+
+
+def extract_validated(tar, destination, members=None):
+    # Archive validation runs first; use the explicit safe filter when supplied
+    # by upstream Python or the AlmaLinux security backport.
+    options = {'filter': 'data'} if hasattr(tarfile, 'data_filter') else {}
+    tar.extractall(destination, members=members, **options)
 
 
 def write_json(path, value):
@@ -85,6 +95,18 @@ def exists(path):
 def has_http_auth(text):
     text = re.sub(r'(?m)^\s*#.*$', '', text)
     return any(value.strip().strip('\"\'') != 'off' for value in re.findall(r'\bauth_basic\s+([^;]+);', text))
+
+
+IPV6_LISTEN = re.compile(r'(?m)^([ \t]*listen[ \t]+)(\[::\](?::[0-9]+)?)([^;\n]*);')
+
+
+def portable_ipv6_listeners(text):
+    # ipv6only=on is Nginx's default, but specifying it twice for one shared
+    # socket is an error. Leave the source and existing destination files intact.
+    def portable(match):
+        options = re.sub(r'(?<!\S)ipv6only=on(?!\S)', '', match[3])
+        return match[1] + match[2] + options.rstrip() + ';'
+    return IPV6_LISTEN.sub(portable, text)
 
 
 def nginx_probe(text, identifier):
@@ -635,7 +657,7 @@ class Engine:
                     raise ValueError('Links are not allowed in the outer migration package')
                 if sum(m.size for m in members) > shutil.disk_usage(stage).free - 128 * 1024 * 1024:
                     raise ValueError('Insufficient disk space to inspect the package')
-                tar.extractall(stage, members=members)
+                extract_validated(tar, stage, members)
             manifest = self.validate_manifest(read_json(stage / 'manifest.json'))
             checksums = manifest.get('checksums', {})
             actual = {str(p.relative_to(stage)) for p in stage.rglob('*') if p.is_file()} - {'manifest.json'}
@@ -761,6 +783,15 @@ class Engine:
             errors.append('Insufficient destination disk space (two website/database copies plus 512 MB required)')
         if stage:
             config_text = (stage / f'nginx/etc/nginx/conf.d/{folder}.conf').read_text()
+            ipv6 = list(IPV6_LISTEN.finditer(config_text))
+            if ipv6:
+                try:
+                    active = run(['nginx', '-T']).decode(errors='replace')
+                    dual_stack = {match[2] for match in IPV6_LISTEN.finditer(active) if 'ipv6only=off' in match[3].split()}
+                    if any('ipv6only=off' in match[3].split() or match[2] in dual_stack for match in ipv6):
+                        errors.append('Non-default IPv6 dual-stack listen policy requires review before copying')
+                except (OSError, ValueError):
+                    errors.append('Cannot inspect destination IPv6 listen policy')
             if 'auth-meta' in manifest['checksums'] and exists(self.path(f'/var/shieldpress/data/auth/{folder}.auth')):
                 errors.append('Destination HTTP authentication management metadata already exists')
             if has_http_auth(config_text):
@@ -1145,7 +1176,7 @@ WantedBy=multi-user.target
                 with tarfile.open(stage / 'files.tar.gz') as tar:
                     for member in tar.getmembers():
                         member.mode &= 0o777
-                    tar.extractall(target / 'public_html')
+                    extract_validated(tar, target / 'public_html')
                     # Python 3.14's default data filter leaves directory modes unset.
                     # Restore validated, non-privileged modes despite the private process umask.
                     for member in reversed(tar.getmembers()):
@@ -1171,7 +1202,7 @@ WantedBy=multi-user.target
                 www = 'www.' + values['DOMAIN']
                 if any(www in shlex.split(names) for names in server_names):
                     hosts.append(www)
-                main_config.write_text(nginx_probe(main_config.read_text(), manifest['id']))
+                main_config.write_text(nginx_probe(portable_ipv6_listeners(main_config.read_text()), manifest['id']))
                 write_json(target / 'config/migration.json', {'id': manifest['id'], 'tls': manifest.get('tls', False), 'hosts': hosts})
                 # Install files exclusively; preflight never authorizes replacement of existing files.
                 for source in sorted((stage / 'nginx').rglob('*')):
@@ -1236,7 +1267,7 @@ WantedBy=multi-user.target
                 report['error'] = str(error)
                 report['recovery'] = 'Destination copy retained. Review this report and repair it before using Domain Manager to remove any failed copy. Existing sites and the source remain intact.'
                 write_json(report_path, report)
-                raise ValueError(f'Migration failed; private recovery report: {report_path}') from error
+                raise ValueError(f'Migration failed: {error}\nPrivate recovery report: {report_path}') from error
             write_json(report_path, report)
             return {'report': str(report_path), 'status': report['status'], 'verification': report['verification'], 'pending': report['pending']}
 
@@ -1247,8 +1278,9 @@ Remote = ssh_support.Remote
 
 def choose_sites(inventory):
     sites = inventory['sites']
+    ssh_support.show_menu('Step 3: Select Websites', 'Original websites on A', [], clear=False)
     for index, site in enumerate(sites, 1):
-        print(f'  {index}) {site.get("domain", site["folder"])} [{site.get("app", "BLOCKED")}]' +
+        print(f'  [{index:2}] {site.get("domain", site["folder"])} [{site.get("app", "BLOCKED")}]' +
               (f' — {site["error"]}' if 'error' in site else ''))
     if not sites:
         raise ValueError('No registered websites were found')
@@ -1269,14 +1301,14 @@ def choose_sites(inventory):
 
 def show_route(route):
     local = route['client']
-    print('\nSERVER ROLES AND COPY DIRECTION')
-    print(f'  CLIENT / this VPS : {local["hostname"]} [{route["client_role"]}], ID {local["id"][:12]}')
+    details = [f'CLIENT / this VPS: {local["hostname"]} [{route["client_role"]}], ID {local["id"][:12]}']
     for key, label in (('source', 'A / SOURCE (original websites)'), ('destination', 'B / DESTINATION (new copies)')):
         server = route[key]
-        print(f'  {label}: {route[key + "_label"]} ({server["hostname"]}, ID {server["id"][:12]})')
-    print(f'  WEBSITE DATA : A -> B | {route["source_label"]} -> {route["destination_label"]}')
-    print(f'  SSH SESSION  : CLIENT (this VPS) -> {route["ssh_server"]} [{route["ssh_role"]}]')
-    print('  Client starts the operation. A supplies originals. B receives copies.')
+        endpoint = route[key + '_label']
+        host = f'{endpoint} / {server["hostname"]}' if endpoint != server['hostname'] else endpoint
+        details.append(f'{label}: {host}, ID {server["id"][:12]}')
+    details.extend(['WEBSITE DATA: A -> B', f'SSH: Client -> {route["ssh_server"]} [{route["ssh_role"]}]'])
+    ssh_support.show_menu('Step 2: Copy Direction', 'Check both VPS identities', [], details, clear=False)
 
 
 def show_migration_menu(identity):
@@ -1310,8 +1342,8 @@ def summary_plan(manifests, destination, source_label, destination_label, route=
     print('Existing destination websites, accounts and databases cannot be overwritten.')
     print('This is a point-in-time copy. Pause source writes before the final copy to avoid missing later orders/uploads.')
     print('Keep cron jobs and queue workers disabled on the destination until DNS cutover.')
-    expected = f'COPY {len(manifests)} TO {destination_label}'
-    return input(f'Type "{expected}" to continue: ').strip() == expected
+    print(ssh_support.message('WARNING: creates accounts, databases and web configuration on destination B.', 'yellow'))
+    return ssh_support.confirm('Create and verify this destination copy?')
 
 
 def wizard(engine, direction):
@@ -1325,6 +1357,8 @@ def wizard(engine, direction):
         if previous and previous['expires'] > time.time():
             raise ValueError('Saved connection failed. Verify the endpoint and fingerprint in Server Connections before pairing again.')
         remote_identity = remote.setup()
+        if remote_identity is None:
+            return
     if remote_identity['protocol'] != PROTOCOL:
         raise ValueError('Update ShieldPress on both VPSs before migrating')
     if remote_identity['id'] == engine.identity()['id']:
@@ -1344,85 +1378,85 @@ def wizard(engine, direction):
     selection = choose_sites(inventory)
     if not selection:
         return
-    # The first confirmation prevents exporting the wrong source selection.
-    print(f'\nSelected {len(selection)} website(s) from {source_label} for {destination_label}.')
-    for site in selection:
-        print('  ' + site['domain'])
-    if input('Create copy packages and check the destination? [y/N]: ').lower() != 'y':
-        return
-    packages = []
-    plans = []
+    print(f'\nSelected {len(selection)} website(s): {source_label} -> {destination_label}')
     for index, site in enumerate(selection, 1):
-        print(f'\n[{index}/{len(selection)}] Exporting {site["domain"]}; the source is retained...', flush=True)
-        exported = engine.export(site['folder']) if direction == 'push' else remote.call('export', site['folder'])
-        if direction == 'push':
-            # Remote receiver publishes the upload only after SHA-256 verification.
-            incoming = remote.call('incoming', exported['manifest']['id'])['path']
-            remote.transfer(exported['package'], incoming)
-            received = remote.call('receive', exported['manifest']['id'], exported['sha256'])
-            package = received['package']
-            plan = remote.call('inspect', package, exported['sha256'])
-        else:
-            package = engine.packages / Path(exported['package']).name
-            partial = package.with_name(package.name + '.partial')
-            remote.transfer(partial, exported['package'], download=True)
-            if digest(partial) != exported['sha256']:
-                raise ValueError('Download checksum mismatch; no import started')
-            os.replace(partial, package)
-            package.with_name(package.name + '.sha256').write_text(exported['sha256'] + '\n')
-            with engine.unpack(package, exported['sha256']) as (stage, manifest):
-                plan = engine.preflight(manifest, stage)
-        packages.append((str(package), exported['sha256'], exported['manifest']))
-        plans.append(plan)
-        for error in plan['errors']:
-            print(f'[BLOCKED] {site["domain"]}: {error}')
-        for pending in plan['pending']:
-            print(f'[CUTOVER ACTION] {site["domain"]}: {pending}')
-    # Detect collisions within the batch before importing the first website.
-    seen = {}
-    conflicts = []
-    for _, _, manifest in packages:
-        values = manifest['settings']
-        identifiers = [('folder', manifest['folder']), ('user', values['SYSTEM_USER'])]
-        if values['DB_CONNECTION'] != 'none':
-            family = 'mysql' if values['DB_CONNECTION'] in ('mysql', 'mariadb') else 'pgsql'
-            identifiers += [(family + ' database', values['DB_NAME']), (family + ' role', values['DB_USER'])]
-        if values['APP_TYPE'] == 'nodejs':
-            identifiers += [('Node.js port', values['NODE_APP_PORT'])]
-        for identifier in identifiers:
-            if identifier in seen:
-                conflicts.append(f'{identifier[0]} {identifier[1]} is shared by {seen[identifier]} and {values["DOMAIN"]}')
-            seen[identifier] = values['DOMAIN']
-    required = sum((item[2]['files_bytes'] + item[2]['db_bytes']) * 2 for item in packages) + 512 * 1024 * 1024
-    if plans and required > min(plan['free_bytes'] for plan in plans):
-        conflicts.append('The selected websites together exceed the available destination disk space')
-    if any(plan['errors'] for plan in plans) or conflicts:
-        for conflict in conflicts:
-            print('[BLOCKED] ' + conflict)
-        raise ValueError('Destination preflight failed; no website was imported. Packages were retained for retry.')
-    if not summary_plan([item[2] for item in packages], destination, source_label, destination_label, route):
-        print('Cancelled; no import was started. Copy packages were retained.')
+        print(f'  [{index:2}] {site["domain"]}')
+    print(ssh_support.message('WARNING: pause source writes before the final copy. Change DNS only after destination checks pass.', 'yellow'))
+    print('Each website is exported, transferred, checked and imported before the next starts.')
+    if not ssh_support.confirm('Continue with these websites?'):
         return
+    ssh_support.show_menu('Step 4: Copy Websites', 'One website at a time', [],
+                          [f'A: {source_label}', f'B: {destination_label}'], clear=False)
     results = []
-    for index, (package, checksum, manifest) in enumerate(packages, 1):
-        print(f'\n[{index}/{len(packages)}] Importing and checking {manifest["settings"]["DOMAIN"]}...', flush=True)
-        try:
-            result = remote.call('import', package, checksum, destination['id']) if direction == 'push' else engine.import_package(package, checksum, destination['id'])
-            results.append({'domain': manifest['settings']['DOMAIN'], **result})
-            print('[OK] Destination copy passed checks; DNS cutover is still required.')
-            print('  Private report: ' + result['report'])
-        except (OSError, ValueError, subprocess.SubprocessError) as error:
-            print(f'[FAILED] {manifest["settings"]["DOMAIN"]}: {error}')
-            print('  Destination recovery report: /var/shieldpress/data/server-migration/reports/' + manifest['id'] + '.json')
-            print('Batch stopped. Previously verified copies and all source websites are retained.')
-            results.append({'domain': manifest['settings']['DOMAIN'], 'status': 'FAILED', 'error': str(error)})
-            break
     batch = engine.reports / f'batch-{uuid.uuid4().hex}.json'
-    write_json(batch, {'source': source_label, 'destination': destination_label, 'results': results,
-                       'not_started': [item[2]['settings']['DOMAIN'] for item in packages[len(results):]]})
-    print('\nBatch report: ' + str(batch))
-    print('After checking the copies, point DNS to the destination, configure certificate renewal and enable reviewed jobs there.')
-    print('Keep the source until DNS propagation and application checks are complete.')
+    def save_batch():
+        write_json(batch, {'source': source_label, 'destination': destination_label, 'results': results,
+                          'not_started': [site['domain'] for site in selection[len(results):]]})
+    save_batch()
+    for index, site in enumerate(selection, 1):
+        manifest = None
+        print(ssh_support.message(f'\nWEBSITE {index}/{len(selection)}: {site["domain"]}', 'cyan'), flush=True)
+        try:
+            print('[1/4] Export application files and database from A', flush=True)
+            exported = engine.export(site['folder']) if direction == 'push' else remote.call('export', site['folder'])
+            manifest = exported['manifest']
+            print('[2/4] Transfer package to B and verify SHA-256', flush=True)
+            if direction == 'push':
+                incoming = remote.call('incoming', manifest['id'])['path']
+                remote.transfer(exported['package'], incoming)
+                package = remote.call('receive', manifest['id'], exported['sha256'])['package']
+                print('[3/4] Check destination conflicts and available resources', flush=True)
+                plan = remote.call('inspect', package, exported['sha256'])
+            else:
+                package = engine.packages / Path(exported['package']).name
+                partial = package.with_name(package.name + '.partial')
+                remote.transfer(partial, exported['package'], download=True)
+                if digest(partial) != exported['sha256']:
+                    raise ValueError('Download checksum mismatch; no import started')
+                os.replace(partial, package)
+                package.with_name(package.name + '.sha256').write_text(exported['sha256'] + '\n')
+                print('[3/4] Check destination conflicts and available resources', flush=True)
+                with engine.unpack(package, exported['sha256']) as (stage, unpacked):
+                    plan = engine.preflight(unpacked, stage)
+            for error in plan['errors']:
+                print(ssh_support.message('[BLOCKED] ' + error, 'red'))
+            for pending in plan['pending']:
+                print(ssh_support.message('[ACTION AFTER COPY] ' + pending, 'yellow'))
+            if plan['errors']:
+                raise ValueError('Destination preflight failed; this website was not imported. Its package is retained.')
+            if not summary_plan([manifest], destination, source_label, destination_label):
+                results.append({'domain': site['domain'], 'status': 'SKIPPED'})
+                save_batch()
+                print(ssh_support.message('[SKIPPED] No destination import was started.', 'yellow'))
+                continue
+            print('[4/4] Create destination website and verify database, runtime and HTTP/HTTPS', flush=True)
+            result = remote.call('import', str(package), exported['sha256'], destination['id']) if direction == 'push' else engine.import_package(package, exported['sha256'], destination['id'])
+            results.append({'domain': site['domain'], **result})
+            save_batch()
+            print(ssh_support.message('[OK] Website copy verified. DNS cutover is still required.', 'green'))
+            print('  Private report: ' + result['report'])
+        except (OSError, ValueError, subprocess.SubprocessError, tarfile.TarError) as error:
+            print(ssh_support.message(f'[FAILED] {site["domain"]}: {error}', 'red'))
+            if manifest:
+                print('  Destination recovery report: /var/shieldpress/data/server-migration/reports/' + manifest['id'] + '.json')
+            results.append({'domain': site['domain'], 'status': 'FAILED', 'error': str(error)})
+            save_batch()
+            print(ssh_support.message('Failed destination data is retained. Keep DNS on A for this website.', 'yellow'))
+            if index < len(selection) and ssh_support.confirm('Continue with the next website?'):
+                continue
+            break
+    print('\nCopy results:')
+    for index, result in enumerate(results, 1):
+        color = 'green' if result['status'] == 'COPIED_PENDING_CUTOVER' else 'red' if result['status'] == 'FAILED' else 'yellow'
+        print(ssh_support.message(f'  [{index:2}] {result["domain"]}: {result["status"]}', color))
+    remaining = selection[len(results):]
+    if remaining:
+        print('Not started: ' + ', '.join(site['domain'] for site in remaining))
+    print('Batch report: ' + str(batch))
+    if any(result['status'] == 'COPIED_PENDING_CUTOVER' for result in results):
+        print(ssh_support.message('For verified copies: review the websites, then change DNS, configure certificate renewal and enable reviewed jobs.', 'yellow'))
+    else:
+        print(ssh_support.message('No destination copy passed checks. Keep DNS on the source VPS.', 'yellow'))
 
 
 def menu(engine):

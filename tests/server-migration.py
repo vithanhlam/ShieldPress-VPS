@@ -35,7 +35,8 @@ for direction in ('push', 'pull'):
     peer.call.side_effect = lambda action: remote if action == 'identity' else remote_inventory
     output = io.StringIO()
     with mock.patch.object(m.ssh_support, 'choose_remote', return_value=peer), \
-         mock.patch.object(m, 'choose_sites', return_value=[]) as picker, contextlib.redirect_stdout(output):
+         mock.patch.object(m, 'choose_sites', return_value=[]) as picker, \
+         mock.patch.object(m.ssh_support, 'show_menu', side_effect=lambda title, subtitle, items, details, **kw: print('\n'.join(details))), contextlib.redirect_stdout(output):
         m.wizard(engine, direction)
     assert picker.call_args.args[0] is (local_inventory if direction == 'push' else remote_inventory)
     text = output.getvalue()
@@ -49,6 +50,58 @@ for direction in ('push', 'pull'):
     assert 'A -> B' in text and 'SSH port 2222' in text
     engine.export.assert_not_called()
     engine.import_package.assert_not_called()
+
+
+# Sequential processing must not export later websites before the current
+# website finishes. A failed import can stop or continue without hiding results.
+for scenario in ('success', 'stop', 'continue', 'skip'):
+    with tempfile.TemporaryDirectory() as tmp:
+        engine = mock.Mock(reports=Path(tmp))
+        engine.identity.return_value = {'hostname': 'source', 'id': 'a'*64, 'protocol': 2}
+        sites = [{'domain': f'site{i}.test', 'folder': f'site{i}_test'} for i in (1, 2)]
+        peer = mock.Mock(host='destination.test', port=22)
+        events = []
+        def export(folder):
+            events.append(('export', folder))
+            return {'package': '/source/' + folder, 'sha256': 'd'*64,
+                    'manifest': {'id': folder, 'settings': {'DOMAIN': folder, 'APP_TYPE': 'php'}}}
+        engine.export.side_effect = export
+        def rpc(action, *args):
+            if action == 'identity':
+                return {'hostname': 'destination', 'id': 'b'*64, 'protocol': 2}
+            if action == 'incoming':
+                return {'path': '/incoming/' + args[0]}
+            if action == 'receive':
+                return {'package': args[0]}
+            if action == 'inspect':
+                return {'errors': [], 'pending': [], 'free_bytes': 10**12}
+            if action == 'import':
+                events.append(('import', args[0]))
+                if scenario in ('stop', 'continue') and args[0] == 'site1_test':
+                    raise ValueError('nginx validation failed')
+                return {'status': 'COPIED_PENDING_CUTOVER', 'report': '/private/report.json'}
+            raise AssertionError(action)
+        peer.call.side_effect = rpc
+        answers = {'success': [True, True, True], 'stop': [True, True, False],
+                   'continue': [True, True, True, True], 'skip': [True, False, True]}[scenario]
+        output = io.StringIO()
+        with mock.patch.object(m.ssh_support, 'choose_remote', return_value=peer), \
+             mock.patch.object(m, 'choose_sites', return_value=sites), \
+             mock.patch.object(m.ssh_support, 'confirm', side_effect=answers), contextlib.redirect_stdout(output):
+            m.wizard(engine, 'push')
+        report = m.read_json(next(Path(tmp).glob('batch-*.json')))
+        if scenario == 'stop':
+            assert events == [('export', 'site1_test'), ('import', 'site1_test')]
+            assert report['not_started'] == ['site2.test']
+            assert 'No destination copy passed checks' in output.getvalue()
+            assert 'For verified copies:' not in output.getvalue()
+        elif scenario == 'skip':
+            assert report['results'][0]['status'] == 'SKIPPED'
+            assert events == [('export', 'site1_test'), ('export', 'site2_test'), ('import', 'site2_test')]
+        else:
+            assert events == [('export', 'site1_test'), ('import', 'site1_test'), ('export', 'site2_test'), ('import', 'site2_test')]
+            assert report['results'][0]['status'] == ('FAILED' if scenario == 'continue' else 'COPIED_PENDING_CUTOVER')
+        assert len(report['results']) == (1 if scenario == 'stop' else 2)
 
 
 def blocked(action, message=None):
@@ -103,6 +156,12 @@ with tempfile.TemporaryDirectory() as tmp:
     assert not list(root.glob('.migration-*.tmp'))
     assert not m.has_http_auth('auth_basic    off;')
     assert m.has_http_auth('auth_basic "Private";')
+    ipv6 = '    listen [::]:443 ssl ipv6only=on; # managed by Certbot\n'
+    portable = m.portable_ipv6_listeners(ipv6)
+    assert 'ipv6only' not in portable and 'listen [::]:443 ssl;' in portable
+    assert m.portable_ipv6_listeners(portable) == portable
+    assert m.portable_ipv6_listeners('listen [::]:443 ssl ipv6only=off;') == 'listen [::]:443 ssl ipv6only=off;'
+    assert m.portable_ipv6_listeners('# ' + ipv6) == '# ' + ipv6
     sample = '# server { ignored\nserver { set $x "server {"; } server { }\n'
     probed = m.nginx_probe(sample, 'a' * 32)
     assert probed.count('# ShieldPress migration probe BEGIN') == 2
@@ -216,7 +275,7 @@ with tempfile.TemporaryDirectory() as tmp:
              mock.patch.object(destination, 'database_login'), mock.patch.object(destination, 'reconnect_app'), \
              mock.patch.object(destination, 'selinux'), mock.patch.object(destination, 'php_pool', side_effect=ValueError('bad FPM')), \
              mock.patch.object(m.subprocess, 'run', return_value=mock.Mock(returncode=0)):
-            blocked(lambda: destination.import_package(package, exported['sha256'], destination.identity()['id']), 'private recovery report')
+            blocked(lambda: destination.import_package(package, exported['sha256'], destination.identity()['id']), 'Migration failed: bad FPM')
             report = m.read_json(destination.reports / (manifest['id'] + '.json'))
             assert report['status'] == 'FAILED_RETAINED'
             assert (destination.domains / 'demo_test/public_html/index.php').read_bytes() == original

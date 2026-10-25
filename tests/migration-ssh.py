@@ -28,6 +28,28 @@ def denied(action):
     raise AssertionError('Unsafe SSH operation accepted')
 
 
+# Application errors and transport errors carry different operator guidance.
+with mock.patch.object(s.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, b'', b'[FAILED] nginx configuration invalid\n')):
+    try:
+        s.checked(['ssh'])
+    except ValueError as error:
+        assert 'nginx configuration invalid' in str(error) and 'SSH connection failed' not in str(error)
+    else:
+        raise AssertionError('Remote failure was ignored')
+with mock.patch.object(s.subprocess, 'run', return_value=subprocess.CompletedProcess([], 255, b'', b'')):
+    try:
+        s.checked(['ssh'])
+    except ValueError as error:
+        assert 'SSH connection failed' in str(error)
+    else:
+        raise AssertionError('SSH failure was ignored')
+with mock.patch('builtins.input', side_effect=['COPY 1', 'no']):
+    assert not s.confirm('Create destination?')
+with mock.patch('builtins.input', return_value='Y'):
+    assert s.confirm('Create destination?')
+with mock.patch('builtins.input', return_value=''):
+    assert not s.confirm('Create destination?')
+
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp)
     original_directory = s.private_directory

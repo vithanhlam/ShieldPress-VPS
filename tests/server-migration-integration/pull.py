@@ -17,7 +17,7 @@ m.shutil.copyfile('/root/.ssh/known_hosts', remote.known)
 remote.setup(method='1')
 sites = remote.call('inventory')['sites']
 selection = ','.join(str(i) for i, row in enumerate(sites, 1) if row.get('app') in ('laravel', 'wordpress'))
-answers = iter(['1', selection, 'y', 'COPY 2 TO migration-destination'])
+answers = iter(['1', selection, 'y', 'y', 'y'])
 with mock.patch('builtins.input', side_effect=lambda _: next(answers)):
     m.wizard(e, 'pull')
 batch = m.read_json(next(e.reports.glob('batch-*.json')))
@@ -30,7 +30,7 @@ package = e.packages / Path(exported['package']).name
 remote.transfer(package, exported['package'], download=True)
 package.with_name(package.name + '.sha256').write_text(exported['sha256'] + '\n')
 index = sorted(e.packages.glob('*.spm.tar.gz')).index(package) + 1
-answers = iter(['4', str(index), 'COPY 1 TO migration-destination', '', '0'])
+answers = iter(['4', str(index), 'y', '', '0'])
 with mock.patch('builtins.input', side_effect=lambda _: next(answers)):
     m.menu(e)
 assert e.verify('php_test', tls=True)['ready']

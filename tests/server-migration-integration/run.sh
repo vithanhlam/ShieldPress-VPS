@@ -47,6 +47,7 @@ docker exec "$DESTINATION" pkill -x sshd
 docker exec "$DESTINATION" /usr/sbin/sshd -E /var/log/sshd-test.log
 docker exec "$DESTINATION" mkdir -p /etc/nginx/snippets
 docker exec "$DESTINATION" bash -c 'echo "# Existing destination policy" > /etc/nginx/snippets/migration-shared.conf; echo "existing-destination-dhparam" > /etc/nginx/ssl/shared-dhparam.pem'
+docker exec "$DESTINATION" bash -c 'printf "server {\n    listen [::]:8080 ipv6only=on;\n    server_name existing-ipv6.test;\n    return 200;\n}\n" > /etc/nginx/conf.d/existing-ipv6.conf; nginx -t && nginx -s reload'
 # Trust only the public host key obtained from this exact destination container.
 docker cp "$DESTINATION:/etc/ssh/ssh_host_ed25519_key.pub" "$TEMP/host.pub"
 awk '{print "migration-destination " $1 " " $2}' "$TEMP/host.pub" > "$TEMP/known_hosts"

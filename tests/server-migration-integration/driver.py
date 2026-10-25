@@ -23,13 +23,18 @@ probe = subprocess.run(['ssh', '-T', '-p', '22', *admin_options, 'root@migration
                         'python3 /opt/shieldpress/modules/tools/server-migration.py identity'], capture_output=True, text=True)
 assert probe.returncode == 0, probe.stderr
 before = {str(p): m.digest(p) for p in e.domains.rglob('*') if p.is_file() and not p.is_symlink()}
-answers = iter(['1', 'ALL', 'y', 'COPY 4 TO migration-destination'])
+answers = iter(['1', 'ALL', 'y', 'y', 'y', 'y', 'y'])
 with mock.patch('builtins.input', side_effect=lambda _: next(answers)):
     m.wizard(e, 'push')
 batch = m.read_json(next(e.reports.glob('batch-*.json')))
 assert len(batch['results']) == 4, batch
 assert all(row['status'] == 'COPIED_PENDING_CUTOVER' for row in batch['results']), batch
 assert not batch['not_started']
+existing_ipv6 = m.run(['ssh', '-T', '-p', '22', *admin_options, 'root@migration-destination', 'cat /etc/nginx/conf.d/existing-ipv6.conf'])
+imported_ipv6 = m.run(['ssh', '-T', '-p', '22', *admin_options, 'root@migration-destination', 'cat /etc/nginx/conf.d/laravel_test.conf'])
+assert b'listen [::]:8080 ipv6only=on;' in existing_ipv6
+assert b'listen [::]:8080;' in imported_ipv6 and b'ipv6only=on' not in imported_ipv6
+print('PASS: imported IPv6 listeners coexist with existing Certbot-style socket options without changing the existing site')
 for stack, expected in [('wordpress', 'wordpress-database-copied'), ('php', 'php-files-copied'),
                         ('laravel', 'laravel-database-copied'), ('nodejs', 'nodejs-files-copied')]:
     folder = stack + '_test'
@@ -53,13 +58,13 @@ shared = m.run(['ssh', '-T', '-p', '22', *admin_options, 'root@migration-destina
                 'cat /etc/nginx/snippets/migration-shared.conf /etc/nginx/ssl/shared-dhparam.pem'])
 assert shared == b'# Existing destination policy\nexisting-destination-dhparam\n', shared
 # All pre-existing destination resources must block a second batch without changing files.
-answers = iter(['migration-destination', '22', '1,3', 'y'])
-try:
-    with mock.patch('builtins.input', side_effect=lambda _: next(answers)):
-        m.wizard(e, 'push')
-    raise AssertionError('Existing destination websites were overwritten')
-except ValueError as error:
-    assert 'no website was imported' in str(error), error
+answers = iter(['1', '1,3', 'y', 'n'])
+with mock.patch('builtins.input', side_effect=lambda _: next(answers)):
+    m.wizard(e, 'push')
+latest = max(e.reports.glob('batch-*.json'), key=lambda p: p.stat().st_mtime_ns)
+blocked_batch = m.read_json(latest)
+assert blocked_batch['results'][0]['status'] == 'FAILED', blocked_batch
+assert len(blocked_batch['results']) == 1 and blocked_batch['not_started'], blocked_batch
 assert all(m.digest(Path(path)) == checksum for path, checksum in before.items())
 # Transport failures/checksum failures cannot activate any files.
 try:

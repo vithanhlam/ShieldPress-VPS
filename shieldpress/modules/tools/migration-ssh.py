@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import textwrap
 
 sys.dont_write_bytecode = True
 STATE = Path('/var/shieldpress/data/server-migration')
@@ -27,10 +28,10 @@ LIFETIME = 7 * 24 * 60 * 60
 ROLES = ('source', 'destination')
 
 
-def show_menu(title, subtitle, items, details=()):
+def show_menu(title, subtitle, items, details=(), clear=True):
     """Render Python menus with the shared ShieldPress shell UI."""
     ui = Path(__file__).resolve().parents[2] / 'core/ui.sh'
-    rows = [''.join(c for c in row if c.isprintable())[:74] for row in details]
+    rows = [part for row in details for part in textwrap.wrap(''.join(c for c in row if c.isprintable()), width=74)]
     script = '''source "$1"
 shift
 sp_header "$1" "$2"
@@ -41,10 +42,10 @@ for ((i=0; i<count; i++)); do
     sp_section "$1"
     shift
 done
-sp_hr
-sp_menu_grid "$@"
+if [ "$count" -gt 0 ]; then sp_hr; fi
+if [ "$#" -gt 0 ]; then sp_menu_grid "$@"; fi
 '''
-    if sys.stdout.isatty():
+    if clear and sys.stdout.isatty():
         print('\033[2J\033[H', end='')
     sys.stdout.flush()
     subprocess.run(['bash', '-c', script, 'shieldpress-menu', str(ui), title,
@@ -55,11 +56,31 @@ def server_role(role):
     return 'SSH SERVER A / SOURCE' if role == 'source' else 'SSH SERVER B / DESTINATION'
 
 
+def message(text, color='cyan'):
+    codes = {'cyan': '36', 'green': '32', 'yellow': '33', 'red': '31'}
+    return f'\033[{codes[color]}m{text}\033[0m' if sys.stdout.isatty() else text
+
+
+def confirm(prompt):
+    while True:
+        answer = input(message(prompt + ' [y/N]: ', 'yellow')).strip().lower()
+        if answer in ('y', 'yes'):
+            return True
+        if answer in ('', 'n', 'no'):
+            return False
+        print(message('Select Y or N.', 'yellow'))
+
+
 def checked(args, *, interactive=False, timeout=120):
     result = subprocess.run(list(map(str, args)), stdout=subprocess.PIPE,
                             stderr=None if interactive else subprocess.PIPE, timeout=timeout)
     if result.returncode:
-        raise ValueError('SSH migration connection failed. Check the endpoint, host fingerprint, key expiry and remote ShieldPress version.')
+        if result.returncode == 255:
+            raise ValueError('SSH connection failed. Check the endpoint, host fingerprint and migration key expiry.')
+        # A remote application failure must not be reported as an SSH failure.
+        failures = [line for line in (result.stderr or b'').decode(errors='replace').splitlines() if line.startswith('[FAILED] ')]
+        detail = failures[-1][9:] if failures else 'See the destination error above and its private recovery report.'
+        raise ValueError(f'Remote migration command failed (exit {result.returncode}): {detail}')
     return result.stdout
 
 
@@ -316,7 +337,16 @@ class Remote:
         print('Website data: ' + ('remote A -> this VPS B.' if self.role == 'source' else 'this VPS A -> remote B.'))
         print('A dedicated key is created locally. Only its public key is installed remotely; access expires after 7 days.')
         print('Compare the SSH host fingerprint with the remote VPS console before accepting it.')
-        method = method or input('Pair using 1) existing SSH access/password [Enter], or 2) a remote console command: ').strip() or '1'
+        if not method:
+            show_menu('Pair Migration SSH', 'Choose access method', [
+                '1|Existing SSH / root password|green',
+                '2|Remote console command|cyan',
+                '0|Cancel|white',
+            ], [f'Pair {server_role(self.role)}: {self.host}:{self.port}',
+                'WARNING: grants migration access for 7 days. Verify the host fingerprint.'])
+            method = input('Select: ').strip()
+            if method in ('', '0'):
+                return None
         authorize_command = shlex.join(['/usr/bin/python3', PROGRAM, 'authorize', encoded, self.role])
         local_id = hashlib.sha256(Path('/etc/machine-id').read_bytes().strip()).hexdigest()
         authorize_command += ' --exclude-id ' + local_id
@@ -431,20 +461,27 @@ def choose_remote(engine, direction):
     role = 'destination' if direction == 'push' else 'source'
     local = engine.identity()
     local_role = 'SOURCE A' if direction == 'push' else 'DESTINATION B'
-    print(f'\nCLIENT / this VPS: {local["hostname"]} [{local_role}], ID {local["id"][:12]}')
-    print('Select ' + server_role(role) + ': ' + ('provides original websites.' if role == 'source' else 'receives website copies.'))
-    print('Website data: ' + ('A (this VPS) -> B (remote).' if direction == 'push' else 'A (remote) -> B (this VPS).'))
     storage = engine.state / 'connections'
     saved = profiles(storage, role)
+    show_menu('Step 1: Select Remote VPS', server_role(role), [], [
+        f'Client: {local["hostname"]} [{local_role}], ID {local["id"][:12]}',
+        'Website data: ' + ('A (this VPS) -> B (remote)' if direction == 'push' else 'A (remote) -> B (this VPS)'),
+    ])
     for index, item in enumerate(saved, 1):
         expiry = datetime.datetime.fromtimestamp(item['expires'], datetime.timezone.utc).strftime('%Y-%m-%d UTC')
-        print(f'  {index}) {item["host"]}:{item["port"]} — {item["server"]["hostname"]} [{server_role(role)}], ID {item["server"]["id"][:12]} (key expires {expiry})')
-    host = input(f'Choose {server_role(role)} number or enter its hostname/IP; Enter cancels: ').strip()
+        print(f'  [{index:2}] {item["host"]}:{item["port"]} — {item["server"]["hostname"]} (expires {expiry})')
+    print(f'  [{len(saved) + 1:2}] Add a new VPS\n  [ 0] Back')
+    choice = input('Select: ').strip()
+    if choice in ('', '0'):
+        return None
+    if not choice.isdigit() or not 1 <= int(choice) <= len(saved) + 1:
+        raise ValueError('Select a listed VPS number')
+    if int(choice) <= len(saved):
+        item = saved[int(choice) - 1]
+        return Remote(item['host'], item['port'], role=role, storage=storage)
+    host = input('Remote VPS hostname/IP: ').strip()
     if not host:
         return None
-    if host.isdigit() and 1 <= int(host) <= len(saved):
-        item = saved[int(host) - 1]
-        return Remote(item['host'], item['port'], role=role, storage=storage)
     port = input('SSH port [22]: ').strip() or '22'
     if not port.isdigit():
         raise ValueError('Invalid SSH port')
@@ -475,14 +512,14 @@ def manage(engine):
         if not raw.isdigit() or not 1 <= int(raw) <= len(saved):
             raise ValueError('Invalid connection number')
         item = saved[int(raw) - 1]
-        if input(f'Revoke access to {server_role(item["role"])} at {item["host"]}:{item["port"]}? [y/N]: ').lower() == 'y':
+        if confirm(f'Revoke access to {server_role(item["role"])} at {item["host"]}:{item["port"]}?'):
             peer = Remote(item['host'], item['port'], role=item['role'], storage=engine.state / 'connections')
             try:
                 peer.disconnect()
             except (OSError, ValueError, subprocess.SubprocessError):
                 print('Remote revocation could not be confirmed. Run this in the remote root console:')
                 print(shlex.join(['/usr/bin/python3', PROGRAM, 'revoke', item['fingerprint']]))
-                if input('Remove only this local connection/key anyway? [y/N]: ').lower() == 'y':
+                if confirm('Remove only this local connection/key anyway?'):
                     peer.forget()
                     print('[OK] Local key removed. Remote permission was NOT confirmed revoked; it expires automatically.')
 

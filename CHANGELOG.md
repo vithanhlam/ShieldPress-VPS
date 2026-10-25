@@ -1,3 +1,12 @@
+## v1.3.111 — 2026-10-25 — Copy and confirm migration websites individually
+
+- Complete export, transfer, preflight, import and verification for one website before starting the next; save each result immediately and offer Y/N continuation after failures.
+- Replace typed copy phrases with default-No Y/N confirmations, highlight warnings and failures, and separate numbered VPS selection, pairing methods and website progress.
+- Show destination command errors without misclassifying them as SSH failures; include Nginx validation details and avoid DNS cutover advice when no copy passed checks.
+- Select the explicit safe archive extraction filter on Python versions and AlmaLinux security backports that provide it.
+- Omit redundant default IPv6 socket options from new imported virtual hosts to avoid Certbot `ipv6only=on` collisions with existing sites; block incompatible dual-stack policies during preflight.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.110 — 2026-10-25 — Align migration menus with the shared UI
 
 - Render Server Migration and SSH connection menus through the existing shared header, sections, colored two-column menu and Select prompt; shorten role guidance while retaining explicit source/destination labels and copy confirmations.

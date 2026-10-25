@@ -62,6 +62,8 @@ for stack in ('wordpress', 'php', 'laravel', 'nodejs'):
     run(['chown', 'nginx:nginx', str(home / 'logs')])
     root = values['ROOT']
     config = f'server {{ listen 80; server_name {domain}; root {root}; index index.php;\n'
+    if stack == 'laravel':
+        config += '    listen [::]:8080 ipv6only=on;\n'
     if stack == 'nodejs':
         config += 'location / { proxy_pass http://127.0.0.1:3301; }\n'
     else:
