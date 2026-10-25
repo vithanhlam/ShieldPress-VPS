@@ -759,13 +759,13 @@ patch_domain_privilege_boundary(){
 }
 
 patch_server_migration_storage(){
-    local ID="SP_20261025_SERVER_MIGRATION_STORAGE"
+    local ID="SP_20261025_SERVER_MIGRATION_STORAGE_V2"
     patch_applied "$ID" && return 0
     if python3 "$BASE_DIR/modules/tools/server-migration.py" upgrade; then
         patch_mark_done "$ID"
-        ok "Server Migration storage prepared; legacy packages preserved"
+        ok "Server Migration storage prepared; legacy packages and orphan recovery artifacts preserved"
     else
-        fail "Server Migration storage preparation remains pending; retry after reviewing legacy package permissions"
+        fail "Server Migration storage preparation remains pending; review storage permissions, recovery details and Nginx health before retrying"
         return 1
     fi
 }

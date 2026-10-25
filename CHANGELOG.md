@@ -1,3 +1,10 @@
+## v1.3.112 — 2026-10-25 — Recover orphan migration paths safely
+
+- Remove only unchanged log links and empty configuration directories created by a failed import, retaining website files, databases and recovery reports.
+- Automatically retain proven empty SSL directories and dangling log links from older failed imports in private recovery storage during updates and retry preparation. Require a matching failed destination report, removed domain/account, trusted paths and no active Nginx references; preserve nonempty TLS directories and unrelated resources.
+- Re-run storage preparation for installations with the older patch marker; cover repeated repair, skipped active sites, unrelated paths and real Nginx failure cleanup in regression and integration tests.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.111 — 2026-10-25 — Copy and confirm migration websites individually
 
 - Complete export, transfer, preflight, import and verification for one website before starting the next; save each result immediately and offer Y/N continuation after failures.

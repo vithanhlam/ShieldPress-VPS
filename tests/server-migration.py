@@ -281,6 +281,7 @@ with tempfile.TemporaryDirectory() as tmp:
             assert (destination.domains / 'demo_test/public_html/index.php').read_bytes() == original
             assert (source.domains / 'demo_test/public_html/index.php').read_bytes() == original
             assert not destination.path('/etc/nginx/conf.d/demo_test.conf').exists()
+            assert not m.exists(destination.path('/var/log/nginx/domains/demo_test'))
     # Selection parsing rejects expression injection and supports multi-select/all.
     inventory = {'sites': [{'folder': 'a', 'domain': 'a.test', 'app': 'php'}, {'folder': 'b', 'domain': 'b.test', 'app': 'nodejs'}]}
     for answer, count in [('ALL', 2), ('2,1,2', 2), ('1', 1), ('', 0)]:
@@ -318,6 +319,9 @@ skip(){ :; }; ok(){ :; }; fail(){ :; }
     assert not registry.exists()
     subprocess.run(['bash', '-ec', runner], env=env, check=True)
     assert registry.read_text().count('SERVER_MIGRATION_STORAGE') == 1
+    registry.write_text('SP_20261025_SERVER_MIGRATION_STORAGE\n')
+    subprocess.run(['bash', '-ec', runner], env=env, check=True)
+    assert registry.read_text().splitlines() == ['SP_20261025_SERVER_MIGRATION_STORAGE', 'SP_20261025_SERVER_MIGRATION_STORAGE_V2']
     updater = (ROOT / 'shieldpress/modules/update/updater.sh').read_text()
     gate = updater.split('if [ -f "$NEW_DIR/modules/tools/server-migration.py" ]; then', 1)[1].split('\nfi', 1)[0]
     gate = 'if [ -f "$NEW_DIR/modules/tools/server-migration.py" ]; then' + gate + '\nfi\n'
@@ -328,4 +332,51 @@ skip(){ :; }; ok(){ :; }; fail(){ :; }
     assert not switched.exists()
     subprocess.run(['bash', '-ec', handoff], env=switch_env, check=True)
     assert switched.exists()
+# Old-version repair preserves empty/dangling artifacts privately, refuses
+# active sites, and becomes a no-op on repeat execution.
+with tempfile.TemporaryDirectory() as tmp:
+    engine = m.Engine(Path(tmp))
+    engine.path('/etc').mkdir()
+    engine.path('/etc/machine-id').write_text('orphan-fixture')
+    engine.initialize()
+    ssl = engine.path('/etc/nginx/ssl/migration-orphan_test')
+    ssl.mkdir(parents=True)
+    log = engine.path('/var/log/nginx/domains/orphan_test')
+    log.parent.mkdir(parents=True)
+    log.symlink_to('/home/domains/orphan_test/logs')
+    report = {'folder': 'orphan_test', 'destination': engine.identity(), 'status': 'COPIED_PENDING_CUTOVER'}
+    path = engine.reports / 'old.json'
+    m.write_json(path, report)
+    with mock.patch.object(m.pwd, 'getpwnam', side_effect=KeyError), mock.patch.object(m, 'run', return_value=b''):
+        assert not engine.repair_orphans()  # Successful-copy resources are never moved.
+        report['status'] = 'FAILED_RETAINED'
+        m.write_json(path, report)
+        (engine.domains / 'orphan_test').mkdir(parents=True)
+        assert not engine.repair_orphans()
+        (engine.domains / 'orphan_test').rmdir()
+        report['destination'] = {'id': 'another-server'}
+        m.write_json(path, report)
+        assert not engine.repair_orphans()
+        report['destination'] = engine.identity()
+        m.write_json(path, report)
+        with mock.patch.object(m, 'run', return_value=b'server_name orphan_test;'):
+            assert not engine.repair_orphans()
+        with mock.patch.object(m.pwd, 'getpwnam', return_value=object()):
+            assert not engine.repair_orphans()
+        assert set(engine.upgrade_storage()['repaired_orphans']) == {str(ssl), str(log)}
+        assert not m.exists(ssl) and not m.exists(log)
+        assert not engine.upgrade_storage()['repaired_orphans']
+        recovery = next(engine.state.glob('orphan-recovery-*'))
+        assert (recovery / 'migration-orphan_test').is_dir()
+        assert (recovery / 'orphan_test').is_symlink()
+        assert (recovery / 'recovery.json').stat().st_mode & 0o777 == 0o600
+        assert recovery.stat().st_mode & 0o777 == 0o700
+        # A nonempty TLS directory and unrelated link must not be moved.
+        ssl.mkdir()
+        (ssl / 'private.key').write_text('retain-private-data')
+        log.symlink_to('/unrelated/logs')
+        assert not engine.repair_orphans()
+        assert (ssl / 'private.key').read_text() == 'retain-private-data'
+        assert log.readlink() == Path('/unrelated/logs')
+
 print('PASS: package integrity, complete files, internal/external symlinks, no source deletion, failed dump/import recovery, conflicts, same-server guard, selection/SSH input validation, legacy storage retry and update handoff')

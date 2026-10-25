@@ -71,6 +71,8 @@ Packages and reports live under `/var/shieldpress/data/server-migration/`, outsi
 
 During updates an idempotent migration preserves legacy packages from `/opt/shieldpress/migrate` and `/opt/shieldpress_old/migrate` in `packages/legacy`. Preservation failures remain pending for retry. Legacy-format packages are recovery artifacts; re-export websites using the current tool for validated imports.
 
+Failed imports also remove unchanged log links and empty configuration directories created by that attempt. Updates and retry preparation repair old empty SSL directories and dangling log links only when a trusted failed-import report identifies this destination, the domain and application account are absent, and active Nginx configuration does not reference the site. These old artifacts are moved into private `orphan-recovery-*` directories with an audit record. Nonempty certificate directories, unrelated links, existing websites, databases and application files are preserved. A retained failed website still needs operator review; this repair does not authorize overwriting it.
+
 ## Validation
 
 Run `python3 tests/migration-ssh.py` and `python3 tests/server-migration.py` for isolated regressions and `bash tests/smoke.sh` for repository checks.

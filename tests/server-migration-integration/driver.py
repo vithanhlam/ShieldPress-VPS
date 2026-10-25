@@ -83,7 +83,7 @@ values = {'DOMAIN': 'broken.test', 'CLEAN_DOMAIN': folder, 'SYSTEM_USER': folder
 e.write_settings(values)
 (home / 'public_html/index.php').write_text('<?php echo "retained-failed-copy";')
 Path('/etc/opt/remi/php85/php-fpm.d/broken_test.conf').write_text(Path('/etc/opt/remi/php85/php-fpm.d/php_test.conf').read_text().replace('php_test', folder))
-Path('/etc/nginx/conf.d/broken_test.conf').write_text('server { listen 80; server_name broken.test; invalid_migration_test_directive on; }')
+Path('/etc/nginx/conf.d/broken_test.conf').write_text('server { listen 80; server_name broken.test; ssl_certificate /etc/nginx/ssl/php.crt; ssl_certificate_key /etc/nginx/ssl/php.key; invalid_migration_test_directive on; }')
 exported = e.export(folder)
 incoming = remote.call('incoming', exported['manifest']['id'])['path']
 remote.transfer(exported['package'], incoming)
@@ -99,7 +99,7 @@ failed = json.loads(m.run(['ssh', '-T', '-p', '22', *admin_options, 'root@migrat
 assert failed['status'] == 'FAILED_RETAINED', failed
 assert remote.call('verify', 'php_test')['ready']
 check = m.run(['ssh', '-T', '-p', '22', *admin_options, 'root@migration-destination',
-               'test ! -e /etc/nginx/conf.d/broken_test.conf && test ! -e /etc/opt/remi/php85/php-fpm.d/broken_test.conf && cat /home/domains/broken_test/public_html/index.php'])
+               'test ! -e /etc/nginx/conf.d/broken_test.conf && test ! -e /etc/opt/remi/php85/php-fpm.d/broken_test.conf && test ! -e /etc/nginx/ssl/migration-broken_test && test ! -L /var/log/nginx/domains/broken_test && cat /home/domains/broken_test/public_html/index.php'])
 assert b'retained-failed-copy' in check
 print('PASS: real Nginx failure removes only new configuration, restores shared services and retains the failed website for recovery')
 # A fully password-protected website remains protected and can still pass guarded readiness checks.

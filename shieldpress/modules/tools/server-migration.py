@@ -209,6 +209,80 @@ class Engine:
             path.mkdir(mode=0o700, parents=True, exist_ok=True)
             os.chmod(path, 0o700)
 
+    def repair_orphans(self):
+        """Retain only proven empty/dangling leftovers from failed local imports."""
+        repaired = []
+        with self.lock():
+            identity = self.identity()['id']
+            active = None
+            for report_path in sorted(self.reports.glob('*.json')):
+                info = report_path.lstat()
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o022 or info.st_nlink != 1:
+                    continue
+                report = read_json(report_path)
+                folder = report.get('folder', '')
+                if (report.get('status') != 'FAILED_RETAINED' or not NAME_RE.fullmatch(folder)
+                        or report.get('destination', {}).get('id') != identity):
+                    continue
+                if exists(self.domains / folder) or exists(self.path(f'/etc/nginx/conf.d/{folder}.conf')):
+                    continue
+                user = report.get('system_user', folder)
+                if not NAME_RE.fullmatch(user):
+                    continue
+                try:
+                    pwd.getpwnam(user)
+                    continue
+                except KeyError:
+                    pass
+                ssl = self.path(f'/etc/nginx/ssl/migration-{folder}')
+                log = self.path(f'/var/log/nginx/domains/{folder}')
+                candidates = []
+                for path in (ssl, log):
+                    if not exists(path):
+                        continue
+                    for parent in path.parents:
+                        current = parent.lstat()
+                        if not stat.S_ISDIR(current.st_mode) or current.st_uid != os.geteuid() or current.st_mode & 0o022:
+                            break
+                        if parent == self.root:
+                            break
+                    else:
+                        continue
+                    if not stat.S_ISDIR(current.st_mode) or current.st_uid != os.geteuid() or current.st_mode & 0o022:
+                        continue
+                    current = path.lstat()
+                    if current.st_uid != os.geteuid():
+                        continue
+                    empty_ssl = path == ssl and stat.S_ISDIR(current.st_mode) and not current.st_mode & 0o022 and not any(path.iterdir())
+                    dead_log = path == log and stat.S_ISLNK(current.st_mode) and os.readlink(path) == f'/home/domains/{folder}/logs' and not path.exists()
+                    if empty_ssl or dead_log:
+                        candidates.append((path, current.st_dev, current.st_ino))
+                if not candidates:
+                    continue
+                if active is None:
+                    active = run(['nginx', '-T']).decode(errors='replace')
+                if folder in active:
+                    continue
+                recovery = self.state / ('orphan-recovery-' + uuid.uuid4().hex)
+                recovery.mkdir(mode=0o700)
+                audit = {'report': str(report_path), 'folder': folder, 'resources': []}
+                write_json(recovery / 'recovery.json', audit)
+                for path, device, inode in candidates:
+                    current = path.lstat()
+                    if (current.st_dev, current.st_ino) != (device, inode):
+                        raise ValueError('Orphan resource changed during repair; review the recovery report')
+                    if path == ssl and any(path.iterdir()):
+                        continue
+                    if path == log and (path.exists() or os.readlink(path) != f'/home/domains/{folder}/logs'):
+                        continue
+                    retained = recovery / path.name
+                    os.rename(path, retained)
+                    audit['resources'].append({'original': str(path), 'retained': str(retained)})
+                    write_json(recovery / 'recovery.json', audit)
+                    repaired.append(str(path))
+                print(f'[OK] Orphan migration paths retained in {recovery}')
+        return repaired
+
     def upgrade_storage(self):
         self.initialize()
         legacy = self.packages / 'legacy'
@@ -237,7 +311,7 @@ class Engine:
                     raise ValueError('Legacy package preservation failed; source retained')
                 os.replace(temp, target)
                 copied += 1
-        return {'copied': copied, 'legacy': str(legacy),
+        return {'copied': copied, 'legacy': str(legacy), 'repaired_orphans': self.repair_orphans(),
                 'note': 'Legacy packages are preserved for recovery. Re-export using Server Migration v2 before importing.'}
 
     @contextlib.contextmanager
@@ -1133,6 +1207,7 @@ WantedBy=multi-user.target
     def import_package(self, package, checksum, destination_id):
         if self.identity()['id'] != destination_id:
             raise ValueError('Destination identity changed; inspect the plan again')
+        self.repair_orphans()
         with self.lock(), self.unpack(package, checksum) as (stage, manifest):
             plan = self.preflight(manifest, stage)
             if plan['errors']:
@@ -1146,11 +1221,13 @@ WantedBy=multi-user.target
             report_path = self.reports / f'{manifest["id"]}.json'
             report = {'id': manifest['id'], 'source': manifest['source'], 'destination': self.identity(),
                       'created': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                      'domain': values['DOMAIN'], 'folder': folder, 'status': 'COPYING', 'completed': [],
+                      'domain': values['DOMAIN'], 'folder': folder, 'system_user': values['SYSTEM_USER'], 'status': 'COPYING', 'completed': [],
                       'pending': plan['pending'], 'supplemental': manifest.get('supplemental', []),
                       'package': str(package), 'sha256': checksum, 'tls': manifest.get('tls', False)}
             write_json(report_path, report)
             new_nginx = []
+            new_directories = []
+            log_identity = None
             pool = None
             def completed(step):
                 report['completed'].append(step)
@@ -1187,6 +1264,7 @@ WantedBy=multi-user.target
                 old_log = self.path(f'/var/log/nginx/domains/{folder}')
                 old_log.parent.mkdir(parents=True, exist_ok=True)
                 old_log.symlink_to(home + '/logs', target_is_directory=True)
+                log_identity = old_log.lstat()
                 os.chmod(target / 'tmp/sessions', 0o700)
                 os.chmod(target / 'sessions', 0o700)
                 self.reconnect_app(values)
@@ -1214,8 +1292,12 @@ WantedBy=multi-user.target
                         if not dest.is_file() or dest.is_symlink() or digest(dest) != digest(source):
                             raise ValueError(f'Dependency changed after preflight: {name}')
                         continue
+                    missing = [parent for parent in dest.parents if not exists(parent)]
                     new_parent = not dest.parent.exists()
                     dest.parent.mkdir(mode=0o700 if '/ssl/' in name else 0o755, parents=True, exist_ok=True)
+                    for parent in reversed(missing):
+                        current = parent.lstat()
+                        new_directories.append((parent, current.st_dev, current.st_ino))
                     if new_parent and '/auth/' in name:
                         os.chmod(dest.parent, 0o755)
                     mode = 0o600 if '/ssl/' in name else 0o640 if '/auth/' in name else 0o644
@@ -1258,6 +1340,22 @@ WantedBy=multi-user.target
                 for path, checksum_before in reversed(new_nginx):
                     if path.is_file() and not path.is_symlink() and digest(path) == checksum_before:
                         path.unlink()
+                cleanup_errors = []
+                for directory, device, inode in reversed(new_directories):
+                    try:
+                        current = directory.lstat()
+                        if stat.S_ISDIR(current.st_mode) and (current.st_dev, current.st_ino) == (device, inode) and not any(directory.iterdir()):
+                            directory.rmdir()
+                    except OSError as cleanup_error:
+                        cleanup_errors.append(str(cleanup_error))
+                if log_identity is not None:
+                    try:
+                        current = old_log.lstat()
+                        if (current.st_dev, current.st_ino) == (log_identity.st_dev, log_identity.st_ino) and old_log.is_symlink() and os.readlink(old_log) == home + '/logs':
+                            old_log.unlink()
+                    except OSError as cleanup_error:
+                        cleanup_errors.append(str(cleanup_error))
+                report['cleanup_errors'] = cleanup_errors
                 if pool and pool.is_file():
                     pool.unlink()
                     subprocess.run(['systemctl', 'reload-or-restart', f'php{values["PHP_VERSION"].replace(".", "")}-php-fpm'], capture_output=True)
@@ -1416,6 +1514,7 @@ def wizard(engine, direction):
                 os.replace(partial, package)
                 package.with_name(package.name + '.sha256').write_text(exported['sha256'] + '\n')
                 print('[3/4] Check destination conflicts and available resources', flush=True)
+                engine.repair_orphans()
                 with engine.unpack(package, exported['sha256']) as (stage, unpacked):
                     plan = engine.preflight(unpacked, stage)
             for error in plan['errors']:
@@ -1486,6 +1585,7 @@ def menu(engine):
                     raise ValueError('Invalid package number')
                 package = packages[int(raw) - 1]
                 checksum = package.with_name(package.name + '.sha256').read_text().strip()
+                engine.repair_orphans()
                 with engine.unpack(package, checksum) as (stage, manifest):
                     plan = engine.preflight(manifest, stage)
                 for message in plan['errors'] + plan['pending']:
@@ -1560,6 +1660,7 @@ def main():
                 with engine.lock():
                     result = engine.export(args.arguments[0])
             elif args.action == 'inspect':
+                engine.repair_orphans()
                 with engine.unpack(*args.arguments) as (stage, manifest):
                     result = engine.preflight(manifest, stage)
             elif args.action == 'import':
