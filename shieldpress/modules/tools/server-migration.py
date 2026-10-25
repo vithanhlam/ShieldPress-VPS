@@ -1280,21 +1280,17 @@ def show_route(route):
 
 
 def show_migration_menu(identity):
-    print('\nSERVER MIGRATION — COPY A -> B')
-    print(f'  THIS VPS / CLIENT: {identity["hostname"]}, server ID {identity["id"][:12]}')
-    print('  A / SOURCE      = VPS holding the original websites')
-    print('  B / DESTINATION = VPS receiving the new copies')
-    print('  CLIENT          = VPS where you start and control this operation')
-    print('  Choose based on where this menu is open:')
-    print('  1) On SOURCE A: SEND this VPS (A) -> remote DESTINATION (B)')
-    print('  2) On DESTINATION B: PULL remote SOURCE (A) -> this VPS (B)')
-    print('  3) On SOURCE A: export packages from this VPS (offline)')
-    print('  4) On DESTINATION B: import a package into this VPS')
-    print('  5) CLIENT: pair SSH servers / revoke migration access')
-    print('  6) Reports / verify destination copies stored on this VPS')
-    print('  0) Back')
-    print('  DNS controls the live/primary server; change DNS after checking B.')
-    print('Both VPSs need ShieldPress and compatible application/database runtimes.')
+    ssh_support.show_menu('Server Migration', 'Copy websites from A to B', [
+        '1|Send to VPS B (this VPS = A)|green',
+        '2|Pull from A (this VPS = B)|cyan',
+        '3|Export package (on A)|blue',
+        '4|Import package (on B)|blue',
+        '5|SSH connections / revoke|yellow',
+        '6|Reports / verify copies|magenta',
+        '0|Back|white',
+    ], [f'Client: {identity["hostname"][:43]} | ID: {identity["id"][:12]}',
+        'A = original source VPS | B = destination VPS',
+        'This VPS controls the copy. Source data is retained.'])
 
 
 def summary_plan(manifests, destination, source_label, destination_label, route=None):
@@ -1433,7 +1429,7 @@ def menu(engine):
     while True:
         show_migration_menu(engine.identity())
         try:
-            choice = input('Choose: ').strip()
+            choice = input('Select: ').strip()
             if choice == '0' or not choice:
                 return
             if choice in ('1', '2'):

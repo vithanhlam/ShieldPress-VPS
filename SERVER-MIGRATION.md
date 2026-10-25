@@ -11,8 +11,8 @@ Open **Tools & Utilities → 9) Server Migration**. The menu displays the hostna
 
 | Where you open the menu | Menu option | Website data | SSH connection |
 | --- | --- | --- | --- |
-| On original VPS A | **1) On SOURCE A: SEND** | A (this VPS) → B (remote) | Client A → SSH Server B |
-| On new VPS B | **2) On DESTINATION B: PULL** | A (remote) → B (this VPS) | Client B → SSH Server A |
+| On original VPS A | **1) Send to VPS B (this VPS = A)** | A (this VPS) → B (remote) | Client A → SSH Server B |
+| On new VPS B | **2) Pull from A (this VPS = B)** | A (remote) → B (this VPS) | Client B → SSH Server A |
 
 In both cases website data moves **A → B**. The pairing screen identifies which remote SSH server receives the public key: B for Send, A for Pull. Before website selection and again before the final confirmation, the wizard displays the actual A/B hostnames, server IDs, the current client's role and both arrows. Offline export is performed on A; offline import is performed on B.
 

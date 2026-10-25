@@ -1,3 +1,8 @@
+## v1.3.110 — 2026-10-25 — Align migration menus with the shared UI
+
+- Render Server Migration and SSH connection menus through the existing shared header, sections, colored two-column menu and Select prompt; shorten role guidance while retaining explicit source/destination labels and copy confirmations.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.109 — 2026-10-25 — Copy selected websites safely between VPSs
 
 - Label the local Client/controller, original Source A, new Destination B and remote SSH server throughout menus, pairing and copy confirmations; show both website-data and SSH directions with hostnames/server IDs before website selection.

@@ -27,6 +27,30 @@ LIFETIME = 7 * 24 * 60 * 60
 ROLES = ('source', 'destination')
 
 
+def show_menu(title, subtitle, items, details=()):
+    """Render Python menus with the shared ShieldPress shell UI."""
+    ui = Path(__file__).resolve().parents[2] / 'core/ui.sh'
+    rows = [''.join(c for c in row if c.isprintable())[:74] for row in details]
+    script = '''source "$1"
+shift
+sp_header "$1" "$2"
+shift 2
+count="$1"
+shift
+for ((i=0; i<count; i++)); do
+    sp_section "$1"
+    shift
+done
+sp_hr
+sp_menu_grid "$@"
+'''
+    if sys.stdout.isatty():
+        print('\033[2J\033[H', end='')
+    sys.stdout.flush()
+    subprocess.run(['bash', '-c', script, 'shieldpress-menu', str(ui), title,
+                    subtitle, str(len(rows)), *rows, *items], check=True)
+
+
 def server_role(role):
     return 'SSH SERVER A / SOURCE' if role == 'source' else 'SSH SERVER B / DESTINATION'
 
@@ -428,11 +452,15 @@ def choose_remote(engine, direction):
 
 
 def manage(engine):
-    print(f'\nCLIENT / this VPS: {engine.identity()["hostname"]}')
-    print('  1) This VPS is A: pair SSH SERVER B / DESTINATION (send copies to B)')
-    print('  2) This VPS is B: pair SSH SERVER A / SOURCE (read originals from A)')
-    print('  3) Revoke a saved SSH server connection')
-    choice = input('Choose; Enter cancels: ').strip()
+    show_menu('Server Connections', 'Migration SSH access', [
+        '1|Pair VPS B (this VPS = A)|green',
+        '2|Pair VPS A (this VPS = B)|cyan',
+        '3|Revoke migration access|yellow',
+        '0|Back|white',
+    ], [f'Client / this VPS: {engine.identity()["hostname"]}',
+        'A = original source VPS | B = destination VPS',
+        'Dedicated SSH keys expire after 7 days.'])
+    choice = input('Select: ').strip()
     if choice in ('1', '2'):
         peer = choose_remote(engine, 'push' if choice == '1' else 'pull')
         if peer:
