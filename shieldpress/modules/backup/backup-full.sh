@@ -52,16 +52,15 @@ DATE=$(date +%F_%H-%M-%S)
 TMP=$(mktemp -d /tmp/${FOLDER}_fullbak_XXXXXX)
 FINAL="$DOMAIN_PATH/backup/full/full_${DATE}.tar.gz"
 
-# Chỉ trap EXIT - bash tự chạy trap này cả khi bị INT/TERM chưa bắt (chuẩn
-# hành vi), trap thêm INT/TERM ở đây (handler không gọi `exit`) sẽ khiến
-# Ctrl+C/kill -TERM không dừng được script (bug thật đã tái hiện ở clone-menu.sh).
+# Keep signal termination intact; EXIT handles temporary directory cleanup.
 trap 'rm -rf "$TMP"' EXIT
 
 DB_SIZE_MB=$(get_db_size_mb)
 TOTAL_MB=$((SOURCE_MB + DB_SIZE_MB))
 EST_DB=$(estimate_seconds "$DB_SIZE_MB" "db_dump")
 EST_FILES=$(estimate_seconds "$SOURCE_MB" "tar_gz")
-EST_TOTAL=$((EST_DB + EST_FILES + 5))
+EST_PACKAGE=$(estimate_seconds "$TOTAL_MB" "package")
+EST_TOTAL=$((EST_DB + EST_FILES + EST_PACKAGE))
 EST_FMT=$(format_duration "$EST_TOTAL")
 
 echo ""
@@ -77,7 +76,6 @@ log "START FULL backup: $DOMAIN | DB: ${DB_SIZE_MB}MB + Files: ${SOURCE_MB}MB"
 
 FULL_START=$(date +%s)
 
-# 1. DB dump với --single-transaction để không lock bảng
 echo "[Step 1/3] Backing up database..."
 if [ -n "$DB_NAME" ] && [ "$DB_CONNECTION" != "none" ]; then
     backup_db_to_file "$TMP/db.sql.gz"
@@ -109,15 +107,26 @@ echo "[OK] Files archived"
 # 3. Final package
 echo ""
 echo "[Step 3/3] Creating final archive..."
-tar -czf "$FINAL" -C "$TMP" .
+PACKAGE_MB=$(du -sm "$TMP" | awk '{print $1}')
+PACKAGE_START=$(date +%s)
+show_operation_eta "Package compressed backups (tar.gz, fast compression)" "$PACKAGE_MB" "package"
+HB_PID=""
+[ -t 1 ] && { start_heartbeat "Creating final archive" "$FINAL"; HB_PID=$HEARTBEAT_PID; }
+# Preserve the restore-compatible nested gzip format, using fast compression.
+(set -o pipefail; tar -cf - -C "$TMP" . | gzip -1 > "$FINAL")
+PACKAGE_STATUS=$?
+[ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
 
-if [ $? -ne 0 ]; then
+if [ "$PACKAGE_STATUS" -ne 0 ]; then
+    rm -f "$FINAL"
     echo "[FAIL] Final archive failed!"
     log "FAILED FULL backup (final): $DOMAIN"
     shieldpress_notify_event "backup_fail" "Full backup failed" "$DOMAIN final archive step failed"
     rm -rf "$TMP"; pause; exit 1
 fi
 
+record_backup_timing package "$PACKAGE_MB" "$PACKAGE_START"
+show_elapsed "$PACKAGE_START"
 rm -rf "$TMP"
 FULL_END=$(date +%s)
 FULL_DURATION=$((FULL_END - FULL_START))
@@ -147,6 +156,10 @@ echo ""
 
 log "SUCCESS FULL backup: $DOMAIN ($APP_TYPE) | Size: $SIZE | Duration: $FULL_DURATION_FMT"
 shieldpress_notify_event "backup_success" "Full backup completed" "$DOMAIN ($APP_TYPE) | Size: $SIZE"
-remote_upload_backup "$FINAL" "full"
+if ! confirm_remote_upload_backup "$FINAL" "full"; then
+    warn "Local full backup completed, but remote upload failed or could not be verified."
+    pause
+    exit 1
+fi
 
 pause

@@ -1,5 +1,4 @@
 #!/bin/bash
-# Helper functions dùng chung cho backup module
 
 DOMAINS_ROOT="/home/domains"
 BASE_DIR="/opt/shieldpress"
@@ -14,7 +13,6 @@ fail(){  echo "[FAIL] $1";  log "[FAIL] $1"; }
 warn(){  echo "[WARN] $1";  log "[WARN] $1"; }
 pause(){ echo ""; read -p "Press Enter..."; }
 
-# Chọn domain - đọc thẳng từ file tránh variable leak
 select_domain_backup(){
     local -n _FOLDERS=$1   # nameref to caller's array
     _FOLDERS=()
@@ -40,7 +38,6 @@ select_domain_backup(){
     echo "$CHOICE"
 }
 
-# Đọc domain info từ file
 load_domain_info(){
     local DPATH=$1
     local ENV="$DPATH/config/domain.env"
@@ -195,7 +192,7 @@ database_exists_for_backup(){
 }
 
 # Estimate time based on size (MB) and operation type
-# DB dump: ~50MB/s, File tar.gz: ~30MB/s, DB import: ~20MB/s, Restore extract: ~40MB/s
+# Initial throughput defaults; successful runs calibrate archive and package estimates.
 estimate_seconds(){
     local SIZE_MB=$1
     local OP_TYPE=$2
@@ -204,12 +201,19 @@ estimate_seconds(){
     case "$OP_TYPE" in
         db_dump)    SPEED=50 ;;
         db_import)  SPEED=20 ;;
-        tar_gz)     SPEED=30 ;;
+        tar_gz)     SPEED=16 ;;
+        package)    SPEED=80 ;;
         extract)    SPEED=40 ;;
         *)          SPEED=30 ;;
     esac
 
-    local EST=$(( SIZE_MB / SPEED ))
+    local previous_size previous_seconds
+    if read -r previous_size previous_seconds 2>/dev/null < "${DATA_DIR:-/var/shieldpress/data}/backup-timing/$OP_TYPE" &&
+        [[ "$previous_size" =~ ^[1-9][0-9]*$ && "$previous_seconds" =~ ^[1-9][0-9]*$ ]]; then
+        local EST=$(( (SIZE_MB * previous_seconds + previous_size - 1) / previous_size ))
+    else
+        local EST=$(( (SIZE_MB + SPEED - 1) / SPEED ))
+    fi
     [ "$EST" -lt 1 ] && EST=1
     echo "$EST"
 }
@@ -263,6 +267,33 @@ write_mysql_defaults(){
     [ -n "$DB_PASS" ] && printf 'password=%s\n' "$DB_PASS" >> "$CNF"
 }
 
+# Stream progress measures input bytes, never compressed output size.
+backup_progress_available(){
+    command -v pv >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1
+}
+
+backup_stream_progress(){
+    local bytes="$1"
+    if command -v pv >/dev/null 2>&1; then
+        pv -s "$bytes" -p -t -e -r
+    else
+        python3 "$BASE_DIR/modules/backup/stream-progress.py" "$bytes"
+    fi
+}
+
+# Successful runs calibrate future estimates on this server. Code-only fixes
+# take effect on upgrade; existing installations need no config rewrite.
+record_backup_timing(){
+    local op="$1" size="$2" start="$3" elapsed dir temp
+    elapsed=$(( $(date +%s) - start ))
+    [ "$size" -gt 0 ] && [ "$elapsed" -gt 0 ] || return 0
+    dir="${DATA_DIR:-/var/shieldpress/data}/backup-timing"
+    mkdir -p "$dir" 2>/dev/null || return 0
+    temp=$(mktemp "$dir/.timing.XXXXXX") || return 0
+    printf '%s %s\n' "$size" "$elapsed" > "$temp"
+    mv -f "$temp" "$dir/$op"
+}
+
 # Run a command with pv progress if available (for piped data)
 # Usage: run_with_progress INPUT_SIZE_BYTES command...
 # For DB dump: pipe through pv
@@ -277,19 +308,11 @@ run_piped_with_progress(){
     fi
 }
 
-# Không phải server nào cũng có `pv` để hiện progress bar - khi thiếu, in
-# 1 dòng trạng thái định kỳ (kèm size file output nếu có) để người dùng biết
-# lệnh còn chạy, không tưởng nhầm là bị treo. Chỉ dùng khi KHÔNG có pv (nhánh
-# có pv đã tự hiện progress rồi, không cần heartbeat chồng lên).
 _heartbeat_loop(){
     local label="$1" outfile="$2" start="$3" parent_pid="$4"
     while :; do
-        sleep 5
-        # Lưới an toàn cuối: nếu ai đó kill đúng tiến trình backup (không phải
-        # đóng cả phiên SSH) thay vì để nó chạy xong tự gọi stop_heartbeat(),
-        # process cha biến mất nhưng vòng lặp nền này (không có SIGHUP vì
-        # terminal vẫn còn sống) sẽ chạy MÃI MÃI nếu không tự kiểm tra. Thoát
-        # ngay khi cha đã chết, không cần đợi ai kill mình.
+        sleep 1
+        # Stop if the calling backup process disappears.
         kill -0 "$parent_pid" 2>/dev/null || exit 0
         local elapsed fmt
         elapsed=$(( $(date +%s) - start ))
@@ -297,20 +320,17 @@ _heartbeat_loop(){
         if [ -n "$outfile" ] && [ -f "$outfile" ]; then
             local sz
             sz=$(du -h "$outfile" 2>/dev/null | cut -f1)
-            echo "  ... $label - đã chạy $fmt, dung lượng hiện tại: ${sz:-0}"
+            printf '\r\033[K  %s | Elapsed: %s | Output: %s' "$label" "$fmt" "${sz:-0}"
         else
-            echo "  ... $label - đã chạy $fmt, đang xử lý..."
+            printf '\r\033[K  %s | Elapsed: %s | Processing...' "$label" "$fmt"
         fi
     done
 }
 
+# Call directly and read HEARTBEAT_PID; command substitution would wait forever
+# for the background process to close its inherited stdout pipe.
 start_heartbeat(){
     local label="$1" outfile="$2"
-    # QUAN TRỌNG: không gọi hàm này qua command substitution $(...) - tiến
-    # trình nền bên dưới kế thừa fd 1 của lời gọi, nếu fd đó là pipe của
-    # $(...) thì lệnh đó sẽ TREO VĨNH VIỄN chờ EOF (không bao giờ có, vì
-    # heartbeat chạy tới khi bị kill). Gọi bình thường rồi đọc biến
-    # HEARTBEAT_PID ngay sau đó: `start_heartbeat "..."; HB_PID=$HEARTBEAT_PID`
     _heartbeat_loop "$label" "$outfile" "$(date +%s)" "$$" &
     disown
     HEARTBEAT_PID=$!
@@ -320,6 +340,7 @@ stop_heartbeat(){
     local pid="$1"
     [ -n "$pid" ] && kill "$pid" 2>/dev/null
     wait "$pid" 2>/dev/null
+    printf '\r\033[K'
     true
 }
 
@@ -360,9 +381,6 @@ backup_db_to_file(){
         }
     fi
 
-    # Không có `pv` (trường hợp phổ biến) thì dump DB lớn im lặng nhiều phút,
-    # dễ tưởng bị treo - bật heartbeat định kỳ, CHỈ khi chạy tương tác (có tty
-    # ở stdout), tránh làm rác log của auto-backup-*.sh chạy qua cron.
     case "$DB_CONNECTION" in
         mysql|mariadb)
             if command -v pv >/dev/null 2>&1 && [ "$DB_SIZE_BYTES" -gt 0 ]; then
@@ -562,12 +580,10 @@ archive_source_to_file(){
 
     show_operation_eta "Archive files - $APP_TYPE (tar.gz)" "$SRC_SIZE_MB" "tar_gz"
 
-    # Không có `pv` thì nén thư mục lớn im lặng, dễ tưởng bị treo - bật
-    # heartbeat định kỳ, CHỈ khi chạy tương tác (có tty ở stdout).
     if [ "$BACKUP_TARGET" = "custom" ]; then
         # Custom paths: tar specific dirs
-        if command -v pv >/dev/null 2>&1 && [ "$SRC_SIZE_BYTES" -gt 0 ]; then
-            (set -o pipefail; tar -cf - $EXCLUDE_OPTS -C "$DOMAIN_PATH/public_html" $TARGETS | pv -s "$SRC_SIZE_BYTES" -p -t -e -r | gzip > "$OUT_FILE")
+        if backup_progress_available && [ "$SRC_SIZE_BYTES" -gt 0 ]; then
+            (set -o pipefail; tar -cf - $EXCLUDE_OPTS -C "$DOMAIN_PATH/public_html" $TARGETS | backup_stream_progress "$SRC_SIZE_BYTES" | gzip > "$OUT_FILE")
         else
             local HB_PID=""
             [ -t 1 ] && { start_heartbeat "Archiving files" "$OUT_FILE"; HB_PID=$HEARTBEAT_PID; }
@@ -578,8 +594,8 @@ archive_source_to_file(){
         fi
     elif [ "$BACKUP_TARGET" = "." ]; then
         # Laravel/Node.js: backup from inside public_html
-        if command -v pv >/dev/null 2>&1 && [ "$SRC_SIZE_BYTES" -gt 0 ]; then
-            (set -o pipefail; tar -cf - $EXCLUDE_OPTS -C "$DOMAIN_PATH/public_html" . | pv -s "$SRC_SIZE_BYTES" -p -t -e -r | gzip > "$OUT_FILE")
+        if backup_progress_available && [ "$SRC_SIZE_BYTES" -gt 0 ]; then
+            (set -o pipefail; tar -cf - $EXCLUDE_OPTS -C "$DOMAIN_PATH/public_html" . | backup_stream_progress "$SRC_SIZE_BYTES" | gzip > "$OUT_FILE")
         else
             local HB_PID=""
             [ -t 1 ] && { start_heartbeat "Archiving files" "$OUT_FILE"; HB_PID=$HEARTBEAT_PID; }
@@ -590,8 +606,8 @@ archive_source_to_file(){
         fi
     else
         # WordPress/PHP: backup public_html directory
-        if command -v pv >/dev/null 2>&1 && [ "$SRC_SIZE_BYTES" -gt 0 ]; then
-            (set -o pipefail; tar -cf - $EXCLUDE_OPTS -C "$DOMAIN_PATH" public_html | pv -s "$SRC_SIZE_BYTES" -p -t -e -r | gzip > "$OUT_FILE")
+        if backup_progress_available && [ "$SRC_SIZE_BYTES" -gt 0 ]; then
+            (set -o pipefail; tar -cf - $EXCLUDE_OPTS -C "$DOMAIN_PATH" public_html | backup_stream_progress "$SRC_SIZE_BYTES" | gzip > "$OUT_FILE")
         else
             local HB_PID=""
             [ -t 1 ] && { start_heartbeat "Archiving files" "$OUT_FILE"; HB_PID=$HEARTBEAT_PID; }
@@ -604,6 +620,7 @@ archive_source_to_file(){
 
     local STATUS=$?
     if [ $STATUS -eq 0 ]; then
+        record_backup_timing tar_gz "$SRC_SIZE_MB" "$START_TIME"
         show_elapsed "$START_TIME"
     fi
     return $STATUS
@@ -814,6 +831,27 @@ load_remote_config(){
     DELETE_LOCAL_AFTER_UPLOAD="${DELETE_LOCAL_AFTER_UPLOAD:-0}"
 }
 
+# Manual backups ask only after the local archive has completed. Scheduled
+# jobs continue to call remote_upload_backup directly using their saved policy.
+confirm_remote_upload_backup(){
+    local file="$1" type="$2" domain="${3:-${DOMAIN:-}}" remote choice=""
+    load_remote_config
+    if [ "$REMOTE_ENABLED" != "1" ] || [ -z "$RCLONE_REMOTES" ]; then
+        echo "Remote backup is not configured or enabled; backup saved locally only."
+        return 0
+    fi
+    echo "Configured upload destinations:"
+    while IFS= read -r remote; do
+        remote="${remote%:}"
+        [ -n "$remote" ] && printf '  %s:%s/%s/%s\n' "$remote" "$RCLONE_PATH" "$domain" "$type"
+    done <<< "${RCLONE_REMOTES//,/$'\n'}"
+    read -r -p "Upload this backup to the configured destinations? [y/N]: " choice || choice=""
+    case "${choice,,}" in
+        y|yes) remote_upload_backup "$file" "$type" "$domain" ;;
+        *) echo "Remote upload skipped; local backup retained."; return 0 ;;
+    esac
+}
+
 remote_upload_backup(){
     local FILE="$1"
     local TYPE="$2"
@@ -937,7 +975,6 @@ shieldpress_notify_event(){
     bash "$NOTIFY_SCRIPT" send "$CATEGORY" "$TITLE" "$BODY" >/dev/null 2>&1 || true
 }
 
-# Kiểm tra disk space
 check_disk_space(){
     local MIN_MB=$1
     local REQUIRED_MB=${2:-0}

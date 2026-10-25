@@ -1,3 +1,12 @@
+## v1.3.103 — 2026-10-25 — Improve backup progress and confirm remote uploads
+
+- Show live archive input throughput and approximate ETA without requiring pv; refresh interactive progress on one line instead of printing periodic status messages.
+- Calibrate future archive and packaging estimates from successful runs, include final packaging in the full backup estimate, and use fast compression for the restore-compatible final package.
+- Use English backup progress messages and remove incomplete final archives when packaging fails.
+- Ask after successful manual Full, Files, and Database backups before uploading to configured remote destinations; default to No on Enter or end of input. Scheduled backups retain their configured upload policy.
+- Report failed or unverified full backup uploads separately from local backup success.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.102 — 2026-10-24 — Restore single-key dashboard actions
 
 - Register dashboard quick actions immediately when users press a number or q; Enter is no longer required.

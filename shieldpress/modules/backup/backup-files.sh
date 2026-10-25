@@ -131,6 +131,6 @@ echo ""
 
 log "SUCCESS backup FILES: $DOMAIN ($APP_TYPE) | Size: $SIZE | Duration: $DURATION_FMT"
 shieldpress_notify_event "backup_success" "Source backup completed" "$DOMAIN ($APP_TYPE) | Size: $SIZE"
-remote_upload_backup "$FILE" "files"
+confirm_remote_upload_backup "$FILE" "files"
 
 pause
