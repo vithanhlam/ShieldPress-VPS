@@ -44,7 +44,7 @@ class SecurityBoundaries(unittest.TestCase):
         for name in ('config', 'backup/db', 'public_html', 'tmp'):
             (self.home / name).mkdir(parents=True, exist_ok=True)
         self.env = self.home / 'config/domain.env'
-        self.env.write_text('DOMAIN=example.com\nSYSTEM_USER=example_com\nAPP_TYPE=wordpress\nDB_NAME=example_db\nDB_USER=example_user\nDB_PASS=literal$(touch SHOULD_NOT_EXIST)\n')
+        self.env.write_text('DOMAIN=example.com\nSYSTEM_USER=example_com\nAPP_TYPE=wordpress\nDB_NAME=example_db\nDB_USER=example_user\nDB_PASS=literal$(touch SHOULD_NOT_EXIST)\nSSL=enabled\nSSL_TYPE=letsencrypt\n')
 
     def repair(self):
         security.domain_control(self.domains, self.home.name, True, os.getuid(), os.getgid())
@@ -145,6 +145,33 @@ class SecurityBoundaries(unittest.TestCase):
             for _ in range(2):
                 self.assertFalse(migration.migrate(ROOT, self.domains, self.root / 'etc', os.getuid(), os.getgid()))
         self.assertTrue(cron[0].startswith('# ShieldPress disabled'))
+
+    def test_disabled_legacy_job_recovers_after_metadata_compatibility_fix(self):
+        old = self.home / 'config/auto-backup-db.sh'
+        old.write_text('RETENTION=7\nBACKUP_MODE="incremental"\n')
+        original = f'15 3 * * 1 {old}'
+        cron = [f'# ShieldPress disabled unsafe legacy backup: {original}\n']
+
+        def run(argv, **kwargs):
+            if argv[-1] == '-l':
+                return subprocess.CompletedProcess(argv, 0, cron[0], '')
+            cron[0] = kwargs['input']
+            return subprocess.CompletedProcess(argv, 0, '', '')
+
+        with patch.object(migration.subprocess, 'run', side_effect=run):
+            self.assertTrue(migration.migrate(ROOT, self.domains, self.root / 'etc', os.getuid(), os.getgid()))
+        job = self.root / 'etc/jobs/example_com-backup-db.sh'
+        self.assertIn('15 3 * * 1', cron[0])
+        self.assertIn(str(job), cron[0])
+        self.assertNotIn('disabled unsafe legacy', cron[0])
+        self.assertIn('db incremental 7', job.read_text())
+
+    def test_ssl_provider_metadata_is_supported_and_validated(self):
+        self.env.write_text(self.env.read_text().replace('letsencrypt', 'cloudflare'))
+        self.assertEqual(security.read_settings(self.env)['SSL_TYPE'], 'cloudflare')
+        self.env.write_text(self.env.read_text().replace('cloudflare', 'arbitrary-command'))
+        with self.assertRaisesRegex(ValueError, 'SSL provider'):
+            security.read_settings(self.env)
 
     def test_all_stack_legacy_schedules_preserve_schedule_and_mode(self):
         lines = []

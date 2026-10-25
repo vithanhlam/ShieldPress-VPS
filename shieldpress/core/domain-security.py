@@ -8,7 +8,7 @@ import pwd
 import stat
 import sys
 
-KEYS = set('DOMAIN CLEAN_DOMAIN SYSTEM_USER APP_TYPE ROOT DB_CONNECTION DB_NAME DB_USER DB_PASS PHP_VERSION NODE_APP_PORT NODE_ENTRY SSL CREATED SFTP SFTP_PORT SFTP_USER SFTP_PASS NODE_PORT PM2_NAME NODE_VERSION NODE_START_COMMAND NODE_PACKAGE_MANAGER NODE_ENV DOCUMENT_ROOT'.split())
+KEYS = set('DOMAIN CLEAN_DOMAIN SYSTEM_USER APP_TYPE ROOT DB_CONNECTION DB_NAME DB_USER DB_PASS PHP_VERSION NODE_APP_PORT NODE_ENTRY SSL SSL_TYPE CREATED SFTP SFTP_PORT SFTP_USER SFTP_PASS NODE_PORT PM2_NAME NODE_VERSION NODE_START_COMMAND NODE_PACKAGE_MANAGER NODE_ENV DOCUMENT_ROOT'.split())
 
 
 def directory(path):
@@ -119,6 +119,8 @@ def read_settings(path):
         raise ValueError('Unsupported application stack')
     if result.get('DB_CONNECTION', '') not in ('', 'none', 'mysql', 'mariadb', 'pgsql', 'postgres', 'postgresql'):
         raise ValueError('Unsupported database engine')
+    if result.get('SSL_TYPE', '') not in ('', 'letsencrypt', 'zerossl', 'cloudflare', 'custom'):
+        raise ValueError('Unsupported SSL provider')
     if result.get('PHP_VERSION') and not re.fullmatch(r'[0-9]+\.[0-9]+', result['PHP_VERSION']):
         raise ValueError('Invalid PHP version')
     if result.get('ROOT'):

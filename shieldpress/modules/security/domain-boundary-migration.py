@@ -61,12 +61,33 @@ def migrate(base, domains, etc, uid=0, gid=0):
     lines = []
     for line in cron.stdout.splitlines(keepends=True):
         if line.startswith('# ShieldPress disabled unsafe legacy backup: '):
-            old_match = pattern.search(line)
-            if old_match:
-                replacement = str(jobs / f'{old_match[1]}-backup-{old_match[2]}.sh')
-                if not any(not entry.lstrip().startswith("#") and replacement in shlex.split(entry, comments=True) for entry in cron.stdout.splitlines()):
-                    pending.append(f'{old_match[1]}/{old_match[2]}: disabled legacy job needs reconfiguration')
-            lines.append(line)
+            original = line.removeprefix('# ShieldPress disabled unsafe legacy backup: ').rstrip('\n')
+            old_match = pattern.search(original)
+            if not old_match:
+                lines.append(line)
+                continue
+            folder, kind = old_match.groups()
+            try:
+                words = shlex.split(original, comments=True)
+                if folder not in safe or len(words) != 6 or words[5] != old_match.group(0):
+                    raise ValueError('Disabled legacy job still needs reconfiguration')
+                if any(not re.fullmatch(r'[0-9*/,-]+', word) for word in words[:5]):
+                    raise ValueError('Invalid cron schedule')
+                old = domains / folder / 'config' / f'auto-backup-{kind}.sh'
+                text = old.read_text()
+                keep = re.search(r'^RETENTION=([0-9]+)$', text, re.M)
+                keep = int(keep[1]) if keep else 1
+                if not 1 <= keep <= 60:
+                    raise ValueError('Invalid retention')
+                mode = re.search(r'^BACKUP_MODE=["\x27]?(full|incremental)["\x27]?$', text, re.M)
+                mode = mode[1] if mode else 'full'
+                target = jobs / f'{folder}-backup-{kind}.sh'
+                command = ['/bin/bash', str(base / 'bin/domain-backup'), folder, kind, mode, str(keep)]
+                atomic_write(target, '#!/bin/bash\nexec ' + shlex.join(command) + '\n')
+                lines.append(' '.join(words[:5]) + ' ' + shlex.quote(str(target)) + '\n')
+            except (OSError, ValueError) as error:
+                pending.append(f'{folder}/{kind}: {error}; reconfigure this schedule')
+                lines.append(line)
             continue
         if line.lstrip().startswith('#'):
             lines.append(line)

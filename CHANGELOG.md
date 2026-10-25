@@ -1,3 +1,10 @@
+## v1.3.108 — 2026-10-25 — Retry domain boundary migration safely
+
+- Accept and validate the `SSL_TYPE` setting written by ShieldPress SSL installers so existing domains with certificates pass the root-boundary migration.
+- Restore recognized backup schedules that were safely disabled by an earlier failed migration attempt, rebuilding root-owned wrappers from literal settings while preserving their schedules.
+- Add regressions for supported SSL provider metadata and recovery of disabled legacy backup jobs.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.107 — 2026-10-25 — Protect application-to-root boundaries
 
 - Protect domain parents, control configuration and managed backups consistently across creation, isolation, deployment and repair; parse domain settings as literal data with identity and path validation.
