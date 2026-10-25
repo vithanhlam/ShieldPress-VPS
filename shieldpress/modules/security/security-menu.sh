@@ -1786,6 +1786,7 @@ while true; do
         "18|Auto-Guard (Scheduled)|magenta" \
         "19|Security Audit|magenta" \
         "20|CVE / Dependency Audit|red" \
+        "21|YARA Malware Scan|magenta" \
         "0|Back|white"
 
     sp_prompt choice
@@ -1811,6 +1812,7 @@ while true; do
         18) manage_auto_guard ;;
         19) security_audit ;;
         20) bash "$BASE_DIR/modules/security/cve-audit.sh" ;;
+        21) bash "$BASE_DIR/modules/security/yara-menu.sh" ;;
         0)  break ;;
         *)  sp_invalid; continue ;;
     esac

@@ -1,3 +1,12 @@
+## v1.3.104 — 2026-10-25 — Add report-only YARA malware scanning
+
+- Add Security Center option 21 to install/check YARA, scan a selected registered domain or all domains, configure daily/weekly scheduled scans, and review the latest JSON report.
+- Bundle conservative starter rules for selected PHP webshell patterns and the harmless EICAR marker. Scans never modify, delete, quarantine, execute, or upload website files.
+- Bound file size, engine memory, per-file and overall time; skip symlinks and non-regular files; limit scheduled scans to low CPU/I/O priority and 25% CPU. Report skipped files, errors, matches, and incomplete scans distinctly.
+- Store configuration under `/etc/shieldpress` and restricted reports under `/var/shieldpress/logs`; retain 30 reports. Optional Telegram summaries use existing Security Alert settings.
+- Verify on the AlmaLinux 9.8 test VM: YARA 4.5.2, 9 regression tests, 15 registered domains / 27,626 files scanned in 126.90s at 17,932 KiB peak process RSS, timer execution, incomplete-on-error reporting, rule restoration, and healthy HTTP/services. Scheduled scanning is left disabled after testing.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.103 — 2026-10-25 — Improve backup progress and confirm remote uploads
 
 - Show live archive input throughput and approximate ETA without requiring pv; refresh interactive progress on one line instead of printing periodic status messages.

@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.103`
+**Current version:** `1.3.104`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -505,6 +505,9 @@ Source: `modules/security/`
 - **Auto-Guard** — Automated scheduled blocking via systemd timer. Configurable thresholds for total requests, 4xx errors and wp-login/xmlrpc hits per 10 minutes. Triggers `auto_block_attackers` and sends Telegram notification when thresholds are exceeded.
 - Security audit.
 - CVE/dependency audit for system security advisories, Laravel Composer packages, Node.js npm packages, WordPress core checksums, plugins and themes.
+- **YARA Malware Scan (option 21)**: install/check the YARA CLI, scan one or all registered domain `public_html` trees, configure daily/weekly scans, and view the latest JSON report. Scanning is report-only: website files are never deleted, modified, quarantined, or uploaded.
+- Scheduled YARA scans use one engine at a time, low CPU/I/O priority, a 25% CPU quota and a 384 MiB service memory limit. Defaults: 16 MiB maximum file size, 256 MiB per engine, 5-second per-file timeout, 15-minute run deadline, and 30 retained reports. Symlinks and non-regular files are skipped; errors and timeouts produce an `INCOMPLETE` report. No archive extraction or process-memory scanning is performed.
+- YARA configuration lives in `/etc/shieldpress/yara.json`; reports live in `/var/shieldpress/logs/yara/` with restricted permissions. Schedules use server local time, with up to 10 minutes of jitter. Automatic scans stay disabled until configured. Optional Telegram summaries use the existing enabled Telegram/Security Alert settings and do not include file content. A `NO_MATCHES` report is not a clean bill of health: bundled starter rules cover selected PHP webshell patterns and the harmless EICAR test marker, and update with ShieldPress source releases.
 
 ### 10. Monitoring & Logs
 
