@@ -6,6 +6,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+source "$BASE_DIR/core/domain-security.sh"
 LOG_FILE="$LOG_DIR/integrity.log"
 DOMAINS_ROOT="/home/domains"
 
@@ -352,11 +353,11 @@ check_domains(){
 
         # Permissions
         local OWNER=$(stat -c '%U' "$d" 2>/dev/null)
-        if [ "$OWNER" = "$SYSUSER" ]; then
+        if [ "$OWNER" = root ]; then
             check_pass "Ownership OK: $DN"
         else
-            try_fix "Wrong ownership: $DN (is $OWNER, should be $SYSUSER)" \
-                "chown -R $SYSUSER:$SYSUSER $d"
+            try_fix "Wrong control ownership: $DN (is $OWNER, should be root)" \
+                "sp_secure_domain_control '$d'"
         fi
 
         ((DOMAIN_COUNT++))

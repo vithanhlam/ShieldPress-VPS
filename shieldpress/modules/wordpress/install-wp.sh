@@ -169,9 +169,9 @@ if [ ! -f "$DOMAIN_PATH/config/domain.env" ]; then
     exit 1
 fi
 
-source "$DOMAIN_PATH/config/domain.env"
+sp_load_domain_env "$DOMAIN_PATH" || exit 1
 
-# Recalculate ROOT after source (domain.env may override it)
+# Derive the document root from the registered domain directory.
 ROOT="$DOMAIN_PATH/public_html"
 
 log "Installing WordPress for: $SELECTED_DOMAIN"

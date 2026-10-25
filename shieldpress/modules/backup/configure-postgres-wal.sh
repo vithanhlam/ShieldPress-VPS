@@ -47,7 +47,7 @@ select_pg_database(){
         fi
     done
     [ -n "$DOMAIN_PATH" ] || { echo "Selected database is not linked to a PostgreSQL domain.env."; return 1; }
-    load_domain_info "$DOMAIN_PATH"
+    load_domain_info "$DOMAIN_PATH" || { echo "[FAIL] Untrusted domain configuration" >&2; exit 1; }
 }
 
 set_cfg(){

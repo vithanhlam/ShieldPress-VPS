@@ -238,7 +238,7 @@ while IFS= read -r CANDIDATE_URL; do
         ok "Integrity verified"
     fi
 
-    if ! tar -xzf shieldpress.tar.gz -C "$EXTRACT_DIR" 2>/dev/null; then
+    if ! tar --no-same-owner -xzf shieldpress.tar.gz -C "$EXTRACT_DIR" 2>/dev/null; then
         log "Extraction failed, trying next source"
         continue
     fi
@@ -305,6 +305,12 @@ for dir in data logs backups-global; do
         esac
     fi
 done
+
+# Never activate root-executed code owned by the release builder's UID/GID.
+# Do not follow compatibility symlinks into runtime data while normalizing.
+chown -hR root:root "$NEW_DIR" || fail "Cannot secure staged source ownership"
+find "$NEW_DIR" -type d -exec chmod go-w {} + || fail "Cannot secure source directories"
+find "$NEW_DIR" -type f -exec chmod go-w {} + || fail "Cannot secure source files"
 
 # Ensure symlinks for backward compat in new install dir
 if [ -f "$NEW_DIR/core/paths.sh" ]; then

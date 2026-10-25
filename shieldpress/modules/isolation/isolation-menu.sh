@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+source "$BASE_DIR/core/domain-security.sh"
 
 DOMAINS_ROOT="/home/domains"
 LOG_FILE="$LOG_DIR/isolation.log"
@@ -45,9 +46,8 @@ fix_permissions_all(){
 
         echo "  Processing: $DOMAIN ($SYSUSER)..."
 
-        # Domain root
-        chown "$SYSUSER:$SYSUSER" "$d"
-        chmod 755 "$d"
+        # Protect every ancestor of root control files.
+        sp_secure_domain_control "$d" || { warn "$DOMAIN: control directory repair failed"; continue; }
 
         # public_html - files 644, dirs 755
         # node_modules/.bin và .git không đổi permission (giữ nguyên execute bit)
@@ -65,8 +65,8 @@ fix_permissions_all(){
 
         # backup folder - private
         if [ -d "$d/backup" ]; then
-            chown -R "$SYSUSER:$SYSUSER" "$d/backup"
-            chmod 750 "$d/backup"
+            chown -R root:root "$d/backup"
+            chmod 700 "$d/backup"
         fi
 
         # config/ — chỉ root đọc được (chứa domain.env với DB_PASS, SFTP_PASS)

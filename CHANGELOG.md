@@ -1,3 +1,12 @@
+## v1.3.107 — 2026-10-25 — Protect application-to-root boundaries
+
+- Protect domain parents, control configuration and managed backups consistently across creation, isolation, deployment and repair; parse domain settings as literal data with identity and path validation.
+- Package releases with numeric root ownership and normalize staged source before loading it, preventing build UID/GID ownership from reaching root-executed code.
+- Replace per-domain generated backup implementations with a fixed runner and private centralized wrappers; migrate existing schedules without executing old script bodies and report unsupported jobs as pending.
+- Remove backup `eval` and argument splitting, constrain custom targets, preserve arbitrary filenames with null-delimited lists, and validate restore archives before replacing website files. Full website packages contain complete source snapshots so restore cannot discard unchanged files from an incremental package.
+- Restrict cache signals and callers to their originating domain, protect executable uploads and sensitive source paths before PHP routing, and extend report-only YARA coverage for indirect loaders.
+- Add isolated security and upgrade regressions; document migration behavior, compatibility changes and attribution limits in `SECURITY-BOUNDARY-REVIEW.md`.
+
 ## v1.3.106 — 2026-10-25 — Check Node.js updates and prevent automatic downgrades
 
 - Show the installed Node.js version, repository candidate, and configured Node.js 22 LTS recommendation before offering a runtime update.

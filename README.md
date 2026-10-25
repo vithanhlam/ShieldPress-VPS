@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.106`
+**Current version:** `1.3.107`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -210,6 +210,8 @@ ShieldPress-VPS/
 - `shieldpress/modules/` — All feature modules.
 - `shieldpress/core/` — Terminal UI, helpers, validators, logger and system info.
 - `shieldpress/version.txt` — Installed version. Must be synced with release version.
+- `shieldpress/core/domain-security.py` and `shieldpress/modules/security/domain-boundary-migration.py` — Validate domain control boundaries and migrate existing installations.
+- `shieldpress/bin/domain-backup` and `shieldpress/modules/backup/validate-archive.py` — Run fixed backup jobs and validate restore archives.
 - `tests/smoke.sh` — Layout and Bash syntax smoke tests.
 
 ## Dashboard
@@ -460,6 +462,8 @@ Source: `modules/backup/`
 - Backup source files.
 - Full backup (database + files).
 - Auto backup scheduling: database, files or full.
+- Store managed backup jobs in root-owned wrappers and keep backup archives private to root.
+- Validate backup targets and archive contents before restore; full website archives contain a complete source snapshot.
 - Configure remote backup.
 - Upload existing backup to remote.
 - Restore website.
@@ -504,6 +508,7 @@ Source: `modules/security/`
 - Auto-block attackers from access logs.
 - **Auto-Guard** — Automated scheduled blocking via systemd timer. Configurable thresholds for total requests, 4xx errors and wp-login/xmlrpc hits per 10 minutes. Triggers `auto_block_attackers` and sends Telegram notification when thresholds are exceeded.
 - Security audit.
+- Automatically migrate existing domain controls, backup schedules and Nginx upload/source guards to enforce the root/application ownership boundary; unsupported legacy schedules are reported for reconfiguration.
 - CVE/dependency audit for system security advisories, Laravel Composer packages, Node.js npm packages, WordPress core checksums, plugins and themes.
 - **YARA Malware Scan (option 21)**: install/check the YARA CLI, scan one or all registered domain `public_html` trees, configure daily/weekly scans, and view the latest JSON report. Scanning is report-only: website files are never deleted, modified, quarantined, or uploaded.
 - Scheduled YARA scans use one engine at a time, low CPU/I/O priority, a 25% CPU quota and a 384 MiB service memory limit. Defaults: 16 MiB maximum file size, 256 MiB per engine, 5-second per-file timeout, 15-minute run deadline, and 30 retained reports. Symlinks and non-regular files are skipped; errors and timeouts produce an `INCOMPLETE` report. No archive extraction or process-memory scanning is performed.
@@ -632,6 +637,8 @@ Source: `modules/isolation/`
 - Apply `open_basedir` to restrict PHP access scope.
 - Audit isolation status.
 - Repair all isolation.
+- Keep domain parents, control configuration and managed backups root-owned; application users own application files and temporary data.
+- Rebuild legacy domain backup schedules through an automatic, retryable security migration. See [the boundary review](SECURITY-BOUNDARY-REVIEW.md) for compatibility changes and local validation.
 
 ### 16. Telegram Notifications
 

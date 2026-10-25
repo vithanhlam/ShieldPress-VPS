@@ -1002,10 +1002,9 @@ deploy_node_app_locked(){
     local pm2_name="$CLEAN_DOMAIN"
     chown root:root "$DOMAIN_PATH"
     chmod 755 "$DOMAIN_PATH"
-    [ -d "$DOMAIN_PATH/config" ] && chown -R "$sysuser:$sysuser" "$DOMAIN_PATH/config" && chmod 750 "$DOMAIN_PATH/config"
-    [ -f "$DOMAIN_PATH/config/domain.env" ] && chmod 640 "$DOMAIN_PATH/config/domain.env"
+    sp_secure_domain_control "$DOMAIN_PATH" || return 1
     run_with_progress "Repair Node.js permissions" "$DOMAIN_PATH/tmp/.node-permissions-time" fix_node_app_permissions "$sysuser" "$DOMAIN_PATH"
-    [ -d "$DOMAIN_PATH/backup" ] && chown -R "$sysuser:$sysuser" "$DOMAIN_PATH/backup" && chmod 750 "$DOMAIN_PATH/backup"
+    [ -d "$DOMAIN_PATH/backup" ] && chown -R root:root "$DOMAIN_PATH/backup" && chmod 700 "$DOMAIN_PATH/backup"
     [ -d "$DOMAIN_PATH/tmp" ] && chown -R "$sysuser:$sysuser" "$DOMAIN_PATH/tmp" && chmod 755 "$DOMAIN_PATH/tmp"
     ok "Permissions fixed before build/start (owner: $sysuser)"
 

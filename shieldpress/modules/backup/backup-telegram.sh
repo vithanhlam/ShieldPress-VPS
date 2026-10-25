@@ -67,7 +67,7 @@ create_backup(){
     }
 
     DOMAIN_NAME="$DOMAIN"
-    load_domain_info "$DOMAIN_PATH"
+    load_domain_info "$DOMAIN_PATH" || { echo "[FAIL] Untrusted domain configuration" >&2; exit 1; }
 
     # ===== LOG DOMAIN =====
     local DOMAIN_LOG_DIR="$DOMAIN_PATH/logs"
@@ -600,7 +600,7 @@ run_cron(){
     DOMAIN_PATH="$DOMAINS_ROOT/$DOMAIN_FOLDER"
     DOMAIN="$DOMAIN_NAME"
 
-    load_domain_info "$DOMAIN_PATH"
+    load_domain_info "$DOMAIN_PATH" || { echo "[FAIL] Untrusted domain configuration" >&2; exit 1; }
 
     local CRON_BACKUP_DIR="$DOMAIN_PATH/backup/telegram"
     mkdir -p "$CRON_BACKUP_DIR"

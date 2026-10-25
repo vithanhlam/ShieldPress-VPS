@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+source "$BASE_DIR/core/domain-security.sh"
 source "$BASE_DIR/core/helpers.sh"
 
 LOG_FILE="$LOG_DIR/database.log"
@@ -50,7 +51,7 @@ declare -A DOMAIN_MAP
 for d in "$DOMAINS_ROOT"/*; do
     [ -d "$d" ] || continue
     if [ -f "$d/config/domain.env" ]; then
-        source "$d/config/domain.env"
+        sp_load_domain_env "$d" || continue
         echo "$i) $DOMAIN"
         DOMAIN_MAP[$i]="$d"
         ((i++))
@@ -68,7 +69,7 @@ if [[ -z "$DOMAIN_PATH" ]]; then
     exit 1
 fi
 
-source "$DOMAIN_PATH/config/domain.env"
+sp_load_domain_env "$DOMAIN_PATH" || exit 1
 
 echo ""
 echo "Domain   : $DOMAIN"

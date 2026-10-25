@@ -15,6 +15,18 @@ fi
 
 CACHE_DIR="$CACHE_BASE/$DOMAIN_DIR"
 
+# A web account may purge its own cache only. Root timers remain supported.
+if [ "$EUID" -ne 0 ]; then
+    echo "Root privilege is required" >&2
+    exit 1
+fi
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
+    ENV_FILE="/home/domains/$DOMAIN_DIR/config/domain.env"
+    [ ! -L "$ENV_FILE" ] && [ -f "$ENV_FILE" ] || exit 1
+    SYSTEM_USER=$(sed -n 's/^SYSTEM_USER=//p' "$ENV_FILE")
+    [ "$SYSTEM_USER" = "$SUDO_USER" ] || { echo "Cache purge denied for this domain" >&2; exit 1; }
+fi
+
 if [ ! -d "$CACHE_DIR" ]; then
     exit 0
 fi

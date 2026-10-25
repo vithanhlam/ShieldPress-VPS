@@ -51,7 +51,7 @@ case "$SELECT_MODE" in
     [ -z "$FOLDER" ] && { echo "Invalid selection!"; pause; exit 1; }
 
     DOMAIN_PATH="$DOMAINS_ROOT/$FOLDER"
-    load_domain_info "$DOMAIN_PATH"
+    load_domain_info "$DOMAIN_PATH" || { echo "[FAIL] Untrusted domain configuration" >&2; exit 1; }
 
     if [ -z "$DB_NAME" ] || [ "$DB_CONNECTION" = "none" ]; then
         echo "This domain has no database configured."

@@ -25,7 +25,7 @@ def tokens(line):
     return shlex.split(line, comments=True)
 
 
-def cleanup(base, domains, domain=None, db='', engine=''):
+def cleanup(base, domains, domain=None, db='', engine='', etc=Path('/etc/shieldpress')):
     domain = str(Path(domain)) if domain else ''
     removed = set()
     updates = {}
@@ -79,6 +79,15 @@ def cleanup(base, domains, domain=None, db='', engine=''):
             if (backup_path and (backup_path == domain or backup_path.startswith(domain + '/'))) or (db and settings.get('DB_NAME') == db and saved_engine == engine):
                 removed.add(script)
 
+    # Centralized domain wrappers contain no embedded credentials or site code.
+    for script in (etc / 'jobs').glob('*-backup-*.sh'):
+        match = re.fullmatch(r'([A-Za-z0-9_][A-Za-z0-9_-]*)-backup-(db|files|full)\.sh', script.name)
+        if not match:
+            continue
+        home = domains / match[1]
+        if (domain and str(home) == domain) or not (home / 'config/domain.env').is_file():
+            removed.add(script)
+
     cron = subprocess.run(['crontab', '-l'], capture_output=True, text=True)
     if cron.returncode and 'no crontab for' not in cron.stderr.lower():
         raise RuntimeError(f'Cannot read crontab: {cron.stderr.strip()}')
@@ -117,10 +126,11 @@ if __name__ == '__main__':
     parser.add_argument('--base', type=Path, required=True)
     parser.add_argument('--domains', type=Path, required=True)
     parser.add_argument('--domain')
+    parser.add_argument('--etc', type=Path, default=Path(os.environ.get('ETC_DIR', '/etc/shieldpress')))
     parser.add_argument('--db', default='')
     parser.add_argument('--engine', default='')
     args = parser.parse_args()
     try:
-        cleanup(args.base, args.domains, args.domain, args.db, args.engine)
+        cleanup(args.base, args.domains, args.domain, args.db, args.engine, args.etc)
     except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
         parser.exit(1, f'[FAIL] Backup cleanup: {error}\n')

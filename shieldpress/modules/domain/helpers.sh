@@ -2,6 +2,7 @@
 
 BASE_DIR="${BASE_DIR:-/opt/shieldpress}"
 source "$BASE_DIR/core/paths.sh"
+source "$BASE_DIR/core/domain-security.sh"
 
 LOG_FILE="$LOG_DIR/domain.log"
 SLOW_LOG_DIR="$LOG_DIR_PHP_SLOW"
@@ -203,17 +204,8 @@ select_domain(){
     DOMAIN_PATH="${_PATHS[$choice]}"
     [ -z "$DOMAIN_PATH" ] && { echo "Invalid selection"; return 1; }
 
-    local ENV="$DOMAIN_PATH/config/domain.env"
-    DOMAIN=$(grep      "^DOMAIN="      "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-    SYSTEM_USER=$(grep "^SYSTEM_USER=" "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-    DB_NAME=$(grep     "^DB_NAME="     "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-    DB_USER=$(grep     "^DB_USER="     "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-    DB_PASS=$(grep     "^DB_PASS="     "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-    DB_CONNECTION=$(grep "^DB_CONNECTION=" "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-    APP_TYPE=$(grep    "^APP_TYPE="    "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-    ROOT=$(grep        "^ROOT="        "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-    PHP_VERSION=$(grep "^PHP_VERSION=" "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-    SSL=$(grep         "^SSL="         "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
+    DOMAIN_PATH="${DOMAIN_PATH%/}"
+    sp_load_domain_env "$DOMAIN_PATH" || return 1
     DB_CONNECTION="${DB_CONNECTION:-mysql}"
     APP_TYPE="${APP_TYPE:-wordpress}"
     ROOT="${ROOT:-$DOMAIN_PATH/public_html}"
@@ -314,10 +306,11 @@ create_directory_structure(){
     # ===== DOMAIN STRUCTURE =====
     mkdir -p "$DOMAIN_PATH"/{public_html,backup/db,backup/files,backup/full,config,logs,tmp/sessions} || return 1
 
-    chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$DOMAIN_PATH" || return 1
+    chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$DOMAIN_PATH/public_html" "$DOMAIN_PATH/tmp" || return 1
+    sp_secure_domain_control "$DOMAIN_PATH" || return 1
     chmod 755 "$DOMAIN_PATH" || return 1
     chmod 755 "$DOMAIN_PATH/public_html" || return 1
-    chmod 750 "$DOMAIN_PATH/backup" || return 1
+    chmod 700 "$DOMAIN_PATH/backup" || return 1
 
     # config/ chỉ root đọc được — chứa domain.env với DB_PASS, SFTP_PASS
     chown root:root "$DOMAIN_PATH/config"
@@ -681,6 +674,10 @@ server {
         try_files \$uri \$uri/ /index.php?\$args;
     }
 
+    # ShieldPress application source boundary
+    location ~* /(?:\.|wp-config\.php|composer\.(?:json|lock)) { deny all; }
+    location ~* ^/wp-content/(?:uploads|cache)/.*\.(?:php[0-9]*|phtml|phar)(?:/|$) { deny all; }
+
     location ~ \.php\$ {
         try_files \$uri =404;
 
@@ -811,6 +808,10 @@ server {
     location / {
         try_files \$uri \$uri/ /index.php?\$query_string;
     }
+
+    # ShieldPress application source boundary
+    location ~* /(?:\.|wp-config\.php|composer\.(?:json|lock)) { deny all; }
+    location ~* ^/wp-content/(?:uploads|cache)/.*\.(?:php[0-9]*|phtml|phar)(?:/|$) { deny all; }
 
     location ~ \.php\$ {
         try_files \$uri =404;

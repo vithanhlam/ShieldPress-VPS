@@ -2,6 +2,7 @@
 
 BASE_DIR="${BASE_DIR:-/opt/shieldpress}"
 source "$BASE_DIR/core/helpers.sh"
+source "$BASE_DIR/core/domain-security.sh"
 source "$BASE_DIR/modules/helpers/task-progress.sh"
 
 DOMAINS_ROOT="/home/domains"
@@ -136,6 +137,7 @@ fix_selected_domain_permissions(){
 
     fix_selinux_context
 
+    sp_secure_domain_control "$DOMAIN_PATH" || return 1
     chown root:root "$DOMAIN_PATH"
     chmod 755 "$DOMAIN_PATH"
 
@@ -151,7 +153,7 @@ fix_selected_domain_permissions(){
         *) fix_wordpress_permissions ;;
     esac
 
-    [ -d "$DOMAIN_PATH/backup" ] && chown -R "$SYSUSER:$SYSUSER" "$DOMAIN_PATH/backup" && chmod 750 "$DOMAIN_PATH/backup"
+    [ -d "$DOMAIN_PATH/backup" ] && chown -R root:root "$DOMAIN_PATH/backup" && chmod 700 "$DOMAIN_PATH/backup"
     [ -d "$DOMAIN_PATH/tmp" ] && chown -R "$SYSUSER:$SYSUSER" "$DOMAIN_PATH/tmp"
     [ -d "$DOMAIN_PATH/tmp" ] && chmod 755 "$DOMAIN_PATH/tmp"
     [ -d "$DOMAIN_PATH/tmp/sessions" ] && chmod 700 "$DOMAIN_PATH/tmp/sessions"

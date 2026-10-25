@@ -3,6 +3,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+source "$BASE_DIR/core/domain-security.sh"
 pause(){ echo ""; read -rp "Press Enter..."; }
 valid_number(){ [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge "$2" ] && [ "$1" -le "$3" ]; }
 
@@ -48,11 +49,13 @@ cat <<'RUNNER'
 set -o pipefail
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+source "$BASE_DIR/core/domain-security.sh"
 RUN_LOG_FILE="$LOG_DIR/auto-backup.log"
 LOCK_FILE="$DATA_DIR/auto-backup-file-batch.lock"
 exec 9>"$LOCK_FILE"; flock -n 9 || { echo "$(date '+%F %T') | SKIP: file batch is already running" >> "$RUN_LOG_FILE"; exit 0; }
 backup_one(){
  local domain_path="$1" domain="$2" app_type="$3" mode="$4" retention="$5" date dir file status targets list
+ sp_domain_control check "${domain_path##*/}" || return 1
  [ -d "$domain_path/public_html" ] || { echo "$(date '+%F %T') | SKIP: $domain source missing" >> "$RUN_LOG_FILE"; return; }
  dir="$domain_path/backup/files"; mkdir -p "$dir"; date=$(date +%F_%H-%M-%S); file="$dir/files_${mode}_$date.tar.gz"; status=1
  case "$mode:$app_type" in
@@ -63,14 +66,14 @@ backup_one(){
      elif [ "$app_type" = laravel ]; then tar -czf "$file" --exclude='./vendor' --exclude='./node_modules' --exclude='./.git' --exclude='./bootstrap/cache' --exclude='./storage/logs' --exclude='./storage/framework/cache' --exclude='./storage/framework/sessions' --exclude='./storage/framework/views' -C "$domain_path/public_html" .
      else tar -czf "$file" --exclude='./node_modules' --exclude='./.git' --exclude='./.next' --exclude='./.nuxt' --exclude='./dist' --exclude='./build' --exclude='./.cache' --exclude='./.turbo' -C "$domain_path/public_html" .; fi ;;
    recent:*)
-     list=$(mktemp /tmp/sp_recent_XXXXXX); find "$domain_path/public_html" -type f -mmin -1440 -not -path '*/node_modules/*' -not -path '*/vendor/*' -not -path '*/.git/*' -not -path '*/backup/*' > "$list" 2>/dev/null
-     [ -s "$list" ] && tar -czf "$file" -T "$list" --transform="s|^$domain_path/public_html/|./|"; status=$?; rm -f "$list"; [ "${status:-1}" -eq 0 ] || { echo "$(date '+%F %T') | SKIP: $domain no changed files" >> "$RUN_LOG_FILE"; rm -f "$file"; return; } ;;
+     list=$(mktemp /tmp/sp_recent_XXXXXX); find "$domain_path/public_html" -type f -mmin -1440 -not -path '*/node_modules/*' -not -path '*/vendor/*' -not -path '*/.git/*' -not -path '*/backup/*' -print0 > "$list" 2>/dev/null
+     [ -s "$list" ] && tar -czf "$file" --null --verbatim-files-from -T "$list" --transform="s|^$domain_path/public_html/|./|"; status=$?; rm -f "$list"; [ "${status:-1}" -eq 0 ] || { echo "$(date '+%F %T') | SKIP: $domain no changed files" >> "$RUN_LOG_FILE"; rm -f "$file"; return; } ;;
    full:*) tar -czf "$file" --exclude='./node_modules' --exclude='./vendor' --exclude='./.git' --exclude='./.next' --exclude='./.nuxt' --exclude='./dist' --exclude='./build' --exclude='./.cache' --exclude='./.turbo' --exclude='./backup' -C "$domain_path/public_html" . ;;
  esac
  status=$?
  if [ "$status" -eq 0 ] && [ -f "$file" ]; then
    echo "$(date '+%F %T') | SUCCESS: batch files $domain ($mode): $file" >> "$RUN_LOG_FILE"
-   find "$dir" -maxdepth 1 -type f -name "files_${mode}_*.tar.gz" -printf '%T@ %p\n' | sort -nr | tail -n +$((retention+1)) | cut -d' ' -f2- | xargs -r rm -f
+   find "$dir" -maxdepth 1 -type f -name "files_${mode}_*.tar.gz" -printf '%T@ %p\0' | sort -zrn | tail -z -n +$((retention+1)) | cut -z -d' ' -f2- | xargs -0 -r rm -f --
    source "$BASE_DIR/modules/backup/_backup_helper.sh"; remote_upload_backup "$file" files "$domain"
  else echo "$(date '+%F %T') | FAILED: batch files $domain ($mode)" >> "$RUN_LOG_FILE"; rm -f "$file"; fi
 }

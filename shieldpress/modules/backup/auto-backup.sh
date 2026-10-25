@@ -36,7 +36,7 @@ while true; do
             echo "           ALL BACKUP SCHEDULES (crontab)"
             echo "===================================================="
             echo ""
-            JOBS=$(crontab -l 2>/dev/null | grep -E "auto-backup|backup-telegram")
+            JOBS=$(crontab -l 2>/dev/null | grep -E "auto-backup|backup-telegram|/jobs/[A-Za-z0-9_-]+-backup-(db|files|full)\.sh")
             if [ -n "$JOBS" ]; then
                 echo "$JOBS" | while read -r line; do
                     echo "  $line"
@@ -61,7 +61,7 @@ while true; do
                 echo "$i) $line"
                 JOBS[$i]="$line"
                 ((i++))
-            done < <(crontab -l 2>/dev/null | grep -E "auto-backup|backup-telegram")
+            done < <(crontab -l 2>/dev/null | grep -E "auto-backup|backup-telegram|/jobs/[A-Za-z0-9_-]+-backup-(db|files|full)\.sh")
 
             if [ $i -eq 1 ]; then
                 echo "  No backup schedules found."

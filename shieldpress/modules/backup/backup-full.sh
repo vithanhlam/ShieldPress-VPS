@@ -33,7 +33,7 @@ FOLDER="${FOLDERS[$choice]}"
 [ -z "$FOLDER" ] && { echo "Invalid selection!"; pause; exit 1; }
 
 DOMAIN_PATH="$DOMAINS_ROOT/$FOLDER"
-load_domain_info "$DOMAIN_PATH"
+load_domain_info "$DOMAIN_PATH" || { echo "[FAIL] Untrusted domain configuration" >&2; exit 1; }
 
 FREE_MB=$(df -m / | awk 'NR==2 {print $4}')
 SOURCE_MB=$(du -sm "$DOMAIN_PATH/public_html" 2>/dev/null | awk '{print $1}')

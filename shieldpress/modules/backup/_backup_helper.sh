@@ -3,6 +3,7 @@
 DOMAINS_ROOT="/home/domains"
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+source "$BASE_DIR/core/domain-security.sh"
 LOG_FILE="$LOG_DIR/backup.log"
 
 mkdir -p "$LOG_DIR"
@@ -39,20 +40,13 @@ select_domain_backup(){
 }
 
 load_domain_info(){
-    local DPATH=$1
+    local DPATH="${1%/}"
     local ENV="$DPATH/config/domain.env"
+    sp_load_domain_env "$DPATH" || return 1
     DOMAIN_PATH="$DPATH"
-    DOMAIN=$(grep    "^DOMAIN="      "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-    DB_NAME=$(grep   "^DB_NAME="     "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-    DB_USER=$(grep   "^DB_USER="     "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-    DB_PASS=$(grep   "^DB_PASS="     "$ENV" | cut -d'=' -f2-)
-    SYSTEM_USER=$(grep "^SYSTEM_USER=" "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-    APP_TYPE=$(grep "^APP_TYPE=" "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-    DB_CONNECTION=$(grep "^DB_CONNECTION=" "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-    ROOT=$(grep "^ROOT=" "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
     APP_TYPE="${APP_TYPE:-wordpress}"
     DB_CONNECTION="${DB_CONNECTION:-mysql}"
-    ROOT="${ROOT:-$DPATH/public_html}"
+    ROOT="$DPATH/public_html"
 
     # Load per-domain backup config
     load_backup_config "$DPATH"
@@ -113,31 +107,29 @@ load_backup_config(){
     POSTGRES_BACKUP_MODE="${POSTGRES_BACKUP_MODE:-cluster-wal}"
 }
 
-# Build --exclude flags from comma-separated list
+# Construct arguments as arrays; configuration is data, never shell syntax.
 build_exclude_opts(){
-    local CSV="$1"
-    local PREFIX="${2:-.}"
-    local OPTS=""
-    local IFS=','
-    for item in $CSV; do
-        item=$(echo "$item" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-        [ -z "$item" ] && continue
-        OPTS="$OPTS --exclude=${PREFIX}/${item}"
+    local item
+    local -a items=()
+    SP_TAR_EXCLUDES=()
+    IFS=',' read -r -a items <<< "$1"
+    for item in "${items[@]}"; do
+        item="${item#"${item%%[![:space:]]*}"}"
+        item="${item%"${item##*[![:space:]]}"}"
+        [ -n "$item" ] && SP_TAR_EXCLUDES+=("--exclude=${2:-.}/$item")
     done
-    echo "$OPTS"
+    return 0
 }
 
-# Build -not -path flags from comma-separated list (for find)
 build_find_excludes(){
-    local CSV="$1"
-    local OPTS=""
-    local IFS=','
-    for item in $CSV; do
-        item=$(echo "$item" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-        [ -z "$item" ] && continue
-        OPTS="$OPTS -not -path */${item}/*"
+    local item
+    local -a items=()
+    SP_FIND_EXCLUDES=()
+    IFS=',' read -r -a items <<< "$1"
+    for item in "${items[@]}"; do
+        [ -n "$item" ] && SP_FIND_EXCLUDES+=(-not -path "*/$item/*")
     done
-    echo "$OPTS"
+    return 0
 }
 
 # ==================================================
@@ -491,7 +483,7 @@ restore_db_from_sql(){
 archive_source_to_file(){
     local OUT_FILE="$1"
     local BACKUP_TARGET=""
-    local EXCLUDE_OPTS=""
+    local -a EXCLUDE_OPTS=()
     local SRC_SIZE_MB=0
     local START_TIME
 
@@ -507,67 +499,57 @@ archive_source_to_file(){
         BACKUP_TARGET="custom"
 
         # Build targets from comma-separated paths
-        local TARGETS=""
-        local IFS=','
-        for p in $BK_CUSTOM_PATHS; do
-            p=$(echo "$p" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-            [ -z "$p" ] && continue
-            if [ -e "$DOMAIN_PATH/public_html/$p" ]; then
-                TARGETS="$TARGETS $p"
-            else
-                warn "Path not found, skipping: $p"
-            fi
-        done
-        unset IFS
+        sp_backup_targets "$DOMAIN_PATH/public_html" "$BK_CUSTOM_PATHS" || return 1
+        local -a TARGETS=("${SP_BACKUP_TARGETS[@]}")
 
-        if [ -z "$TARGETS" ]; then
+        if [ "${#TARGETS[@]}" -eq 0 ]; then
             fail "No valid BACKUP_PATHS found in backup.env"
             return 1
         fi
 
         # Custom excludes
         if [ -n "$BK_CUSTOM_EXCLUDE" ]; then
-            EXCLUDE_OPTS=$(build_exclude_opts "$BK_CUSTOM_EXCLUDE" ".")
+            build_exclude_opts "$BK_CUSTOM_EXCLUDE" "."; EXCLUDE_OPTS+=("${SP_TAR_EXCLUDES[@]}")
         fi
 
-        SRC_SIZE_MB=$(du -sm $(for t in $TARGETS; do echo "$DOMAIN_PATH/public_html/$t"; done) 2>/dev/null | awk '{sum+=$1} END{print sum+0}')
+        SRC_SIZE_MB=$(du -sm "$DOMAIN_PATH/public_html" 2>/dev/null | awk '{print $1}')
 
         echo "  Mode      : Custom paths (backup.env)"
-        echo "  Paths     :$TARGETS"
-        [ -n "$EXCLUDE_OPTS" ] && echo "  Exclude   : $BK_CUSTOM_EXCLUDE"
+        printf '  Paths     : %s\n' "${TARGETS[*]}"
+        [ "${#EXCLUDE_OPTS[@]}" -gt 0 ] && echo "  Exclude   : $BK_CUSTOM_EXCLUDE"
 
     else
         # === DEFAULT MODE per APP_TYPE ===
         case "$APP_TYPE" in
             laravel)
                 BACKUP_TARGET="."
-                EXCLUDE_OPTS="--exclude=./vendor --exclude=./node_modules --exclude=./.git --exclude=./backup"
-                EXCLUDE_OPTS="$EXCLUDE_OPTS --exclude=./bootstrap/cache"
-                EXCLUDE_OPTS="$EXCLUDE_OPTS --exclude=./storage/logs/*.log"
-                EXCLUDE_OPTS="$EXCLUDE_OPTS --exclude=./storage/framework/cache/data"
-                EXCLUDE_OPTS="$EXCLUDE_OPTS --exclude=./storage/framework/sessions"
-                EXCLUDE_OPTS="$EXCLUDE_OPTS --exclude=./storage/framework/views"
+                EXCLUDE_OPTS=(--exclude=./vendor --exclude=./node_modules --exclude=./.git --exclude=./backup)
+                EXCLUDE_OPTS+=(--exclude=./bootstrap/cache)
+                EXCLUDE_OPTS+=(--exclude=./storage/logs/*.log)
+                EXCLUDE_OPTS+=(--exclude=./storage/framework/cache/data)
+                EXCLUDE_OPTS+=(--exclude=./storage/framework/sessions)
+                EXCLUDE_OPTS+=(--exclude=./storage/framework/views)
                 # Append custom excludes from backup.env
                 if [ -n "$BK_CUSTOM_EXCLUDE" ]; then
-                    EXCLUDE_OPTS="$EXCLUDE_OPTS $(build_exclude_opts "$BK_CUSTOM_EXCLUDE" ".")"
+                    build_exclude_opts "$BK_CUSTOM_EXCLUDE" "."; EXCLUDE_OPTS+=("${SP_TAR_EXCLUDES[@]}")
                 fi
                 SRC_SIZE_MB=$(du -sm "$DOMAIN_PATH/public_html" --exclude="$DOMAIN_PATH/public_html/vendor" --exclude="$DOMAIN_PATH/public_html/node_modules" 2>/dev/null | awk '{print $1}')
                 ;;
             nodejs)
                 BACKUP_TARGET="."
-                EXCLUDE_OPTS="--exclude=./node_modules --exclude=./.git --exclude=./backup"
-                EXCLUDE_OPTS="$EXCLUDE_OPTS --exclude=./.next --exclude=./.nuxt --exclude=./dist --exclude=./build"
-                EXCLUDE_OPTS="$EXCLUDE_OPTS --exclude=./.cache --exclude=./.turbo"
+                EXCLUDE_OPTS=(--exclude=./node_modules --exclude=./.git --exclude=./backup)
+                EXCLUDE_OPTS+=(--exclude=./.next --exclude=./.nuxt --exclude=./dist --exclude=./build)
+                EXCLUDE_OPTS+=(--exclude=./.cache --exclude=./.turbo)
                 if [ -n "$BK_CUSTOM_EXCLUDE" ]; then
-                    EXCLUDE_OPTS="$EXCLUDE_OPTS $(build_exclude_opts "$BK_CUSTOM_EXCLUDE" ".")"
+                    build_exclude_opts "$BK_CUSTOM_EXCLUDE" "."; EXCLUDE_OPTS+=("${SP_TAR_EXCLUDES[@]}")
                 fi
                 SRC_SIZE_MB=$(du -sm "$DOMAIN_PATH/public_html" --exclude="$DOMAIN_PATH/public_html/node_modules" 2>/dev/null | awk '{print $1}')
                 ;;
             *)
                 BACKUP_TARGET="public_html"
-                EXCLUDE_OPTS=""
+                EXCLUDE_OPTS=()
                 if [ -n "$BK_CUSTOM_EXCLUDE" ]; then
-                    EXCLUDE_OPTS=$(build_exclude_opts "$BK_CUSTOM_EXCLUDE" ".")
+                    build_exclude_opts "$BK_CUSTOM_EXCLUDE" "."; EXCLUDE_OPTS+=("${SP_TAR_EXCLUDES[@]}")
                 fi
                 SRC_SIZE_MB=$(du -sm "$DOMAIN_PATH/public_html" 2>/dev/null | awk '{print $1}')
                 ;;
@@ -583,11 +565,11 @@ archive_source_to_file(){
     if [ "$BACKUP_TARGET" = "custom" ]; then
         # Custom paths: tar specific dirs
         if backup_progress_available && [ "$SRC_SIZE_BYTES" -gt 0 ]; then
-            (set -o pipefail; tar -cf - $EXCLUDE_OPTS -C "$DOMAIN_PATH/public_html" $TARGETS | backup_stream_progress "$SRC_SIZE_BYTES" | gzip > "$OUT_FILE")
+            (set -o pipefail; tar -cf - "${EXCLUDE_OPTS[@]}" -C "$DOMAIN_PATH/public_html" -- "${TARGETS[@]}" | backup_stream_progress "$SRC_SIZE_BYTES" | gzip > "$OUT_FILE")
         else
             local HB_PID=""
             [ -t 1 ] && { start_heartbeat "Archiving files" "$OUT_FILE"; HB_PID=$HEARTBEAT_PID; }
-            tar -czf "$OUT_FILE" $EXCLUDE_OPTS -C "$DOMAIN_PATH/public_html" $TARGETS
+            tar -czf "$OUT_FILE" "${EXCLUDE_OPTS[@]}" -C "$DOMAIN_PATH/public_html" -- "${TARGETS[@]}"
             local CMD_STATUS=$?
             [ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
             ( exit "$CMD_STATUS" )
@@ -595,11 +577,11 @@ archive_source_to_file(){
     elif [ "$BACKUP_TARGET" = "." ]; then
         # Laravel/Node.js: backup from inside public_html
         if backup_progress_available && [ "$SRC_SIZE_BYTES" -gt 0 ]; then
-            (set -o pipefail; tar -cf - $EXCLUDE_OPTS -C "$DOMAIN_PATH/public_html" . | backup_stream_progress "$SRC_SIZE_BYTES" | gzip > "$OUT_FILE")
+            (set -o pipefail; tar -cf - "${EXCLUDE_OPTS[@]}" -C "$DOMAIN_PATH/public_html" . | backup_stream_progress "$SRC_SIZE_BYTES" | gzip > "$OUT_FILE")
         else
             local HB_PID=""
             [ -t 1 ] && { start_heartbeat "Archiving files" "$OUT_FILE"; HB_PID=$HEARTBEAT_PID; }
-            tar -czf "$OUT_FILE" $EXCLUDE_OPTS -C "$DOMAIN_PATH/public_html" .
+            tar -czf "$OUT_FILE" "${EXCLUDE_OPTS[@]}" -C "$DOMAIN_PATH/public_html" .
             local CMD_STATUS=$?
             [ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
             ( exit "$CMD_STATUS" )
@@ -607,11 +589,11 @@ archive_source_to_file(){
     else
         # WordPress/PHP: backup public_html directory
         if backup_progress_available && [ "$SRC_SIZE_BYTES" -gt 0 ]; then
-            (set -o pipefail; tar -cf - $EXCLUDE_OPTS -C "$DOMAIN_PATH" public_html | backup_stream_progress "$SRC_SIZE_BYTES" | gzip > "$OUT_FILE")
+            (set -o pipefail; tar -cf - "${EXCLUDE_OPTS[@]}" -C "$DOMAIN_PATH" public_html | backup_stream_progress "$SRC_SIZE_BYTES" | gzip > "$OUT_FILE")
         else
             local HB_PID=""
             [ -t 1 ] && { start_heartbeat "Archiving files" "$OUT_FILE"; HB_PID=$HEARTBEAT_PID; }
-            tar -czf "$OUT_FILE" $EXCLUDE_OPTS -C "$DOMAIN_PATH" public_html
+            tar -czf "$OUT_FILE" "${EXCLUDE_OPTS[@]}" -C "$DOMAIN_PATH" public_html
             local CMD_STATUS=$?
             [ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
             ( exit "$CMD_STATUS" )
@@ -648,39 +630,33 @@ archive_source_incremental(){
     START_TIME=$(date +%s)
 
     # Build extra find excludes from backup.env INCR_EXCLUDE + BACKUP_EXCLUDE
-    local EXTRA_FIND_EXCLUDES=""
+    local -a EXTRA_FIND_EXCLUDES=()
     if [ -n "$BK_CUSTOM_INCR_EXCLUDE" ]; then
-        EXTRA_FIND_EXCLUDES=$(build_find_excludes "$BK_CUSTOM_INCR_EXCLUDE")
+        build_find_excludes "$BK_CUSTOM_INCR_EXCLUDE"; EXTRA_FIND_EXCLUDES+=("${SP_FIND_EXCLUDES[@]}")
     fi
     if [ -n "$BK_CUSTOM_EXCLUDE" ]; then
-        EXTRA_FIND_EXCLUDES="$EXTRA_FIND_EXCLUDES $(build_find_excludes "$BK_CUSTOM_EXCLUDE")"
+        build_find_excludes "$BK_CUSTOM_EXCLUDE"; EXTRA_FIND_EXCLUDES+=("${SP_FIND_EXCLUDES[@]}")
     fi
 
     # If backup.env has BACKUP_PATHS, use them for WP-style targeted backup
     if [ -n "$BK_CUSTOM_PATHS" ]; then
         echo "  Mode      : Custom paths from backup.env"
 
-        local TARGETS=""
-        local IFS=','
-        for p in $BK_CUSTOM_PATHS; do
-            p=$(echo "$p" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-            [ -z "$p" ] && continue
-            [ -e "$DOMAIN_PATH/public_html/$p" ] && TARGETS="$TARGETS $p"
-        done
-        unset IFS
+        sp_backup_targets "$DOMAIN_PATH/public_html" "$BK_CUSTOM_PATHS" || return 1
+        local -a TARGETS=("${SP_BACKUP_TARGETS[@]}")
 
-        if [ -z "$TARGETS" ]; then
+        if [ "${#TARGETS[@]}" -eq 0 ]; then
             warn "No valid BACKUP_PATHS found"
             return 2
         fi
 
-        local EXCLUDE_OPTS=""
-        [ -n "$BK_CUSTOM_EXCLUDE" ] && EXCLUDE_OPTS=$(build_exclude_opts "$BK_CUSTOM_EXCLUDE" ".")
+        local -a EXCLUDE_OPTS=()
+        build_exclude_opts "$BK_CUSTOM_EXCLUDE" "."; EXCLUDE_OPTS+=("${SP_TAR_EXCLUDES[@]}")
 
-        echo "  Paths     :$TARGETS"
+        printf '  Paths     : %s\n' "${TARGETS[*]}"
         [ -n "$BK_CUSTOM_EXCLUDE" ] && echo "  Exclude   : $BK_CUSTOM_EXCLUDE"
 
-        tar -czf "$OUT_FILE" $EXCLUDE_OPTS -C "$DOMAIN_PATH/public_html" $TARGETS 2>/dev/null
+        tar -czf "$OUT_FILE" "${EXCLUDE_OPTS[@]}" -C "$DOMAIN_PATH/public_html" -- "${TARGETS[@]}" 2>/dev/null
         local STATUS=$?
 
     else
@@ -692,7 +668,7 @@ archive_source_incremental(){
 
                 local TMP_LIST
                 TMP_LIST=$(mktemp /tmp/sp_incr_XXXXXX)
-                eval find "$DOMAIN_PATH/public_html" -mmin "-$((HOURS * 60))" -type f \
+                find "$DOMAIN_PATH/public_html" -mmin "-$((HOURS * 60))" -type f \
                     -not -path "*/vendor/*" \
                     -not -path "*/node_modules/*" \
                     -not -path "*/.git/*" \
@@ -702,10 +678,10 @@ archive_source_incremental(){
                     -not -path "*/storage/framework/views/*" \
                     -not -path "*/storage/logs/*" \
                     -not -path "*/backup/*" \
-                    $EXTRA_FIND_EXCLUDES \
+                    "${EXTRA_FIND_EXCLUDES[@]}" -print0 \
                     > "$TMP_LIST" 2>/dev/null
 
-                FILE_COUNT=$(wc -l < "$TMP_LIST" | tr -d '[:space:]')
+                FILE_COUNT=$(tr -cd '\0' < "$TMP_LIST" | wc -c | tr -d '[:space:]')
                 echo "  Files     : $FILE_COUNT changed"
 
                 if [ "$FILE_COUNT" -eq 0 ]; then
@@ -714,7 +690,7 @@ archive_source_incremental(){
                     return 2
                 fi
 
-                tar -czf "$OUT_FILE" -T "$TMP_LIST" --transform="s|^${DOMAIN_PATH}/public_html/|./|" 2>/dev/null
+                tar -czf "$OUT_FILE" --null --verbatim-files-from -T "$TMP_LIST" --transform="s|^${DOMAIN_PATH}/public_html/|./|" 2>/dev/null
                 local STATUS=$?
                 rm -f "$TMP_LIST"
                 ;;
@@ -726,7 +702,7 @@ archive_source_incremental(){
 
                 local TMP_LIST
                 TMP_LIST=$(mktemp /tmp/sp_incr_XXXXXX)
-                eval find "$DOMAIN_PATH/public_html" -mmin "-$((HOURS * 60))" -type f \
+                find "$DOMAIN_PATH/public_html" -mmin "-$((HOURS * 60))" -type f \
                     -not -path "*/node_modules/*" \
                     -not -path "*/.git/*" \
                     -not -path "*/.next/*" \
@@ -736,10 +712,10 @@ archive_source_incremental(){
                     -not -path "*/.cache/*" \
                     -not -path "*/.turbo/*" \
                     -not -path "*/backup/*" \
-                    $EXTRA_FIND_EXCLUDES \
+                    "${EXTRA_FIND_EXCLUDES[@]}" -print0 \
                     > "$TMP_LIST" 2>/dev/null
 
-                FILE_COUNT=$(wc -l < "$TMP_LIST" | tr -d '[:space:]')
+                FILE_COUNT=$(tr -cd '\0' < "$TMP_LIST" | wc -c | tr -d '[:space:]')
                 echo "  Files     : $FILE_COUNT changed"
 
                 if [ "$FILE_COUNT" -eq 0 ]; then
@@ -748,7 +724,7 @@ archive_source_incremental(){
                     return 2
                 fi
 
-                tar -czf "$OUT_FILE" -T "$TMP_LIST" --transform="s|^${DOMAIN_PATH}/public_html/|./|" 2>/dev/null
+                tar -czf "$OUT_FILE" --null --verbatim-files-from -T "$TMP_LIST" --transform="s|^${DOMAIN_PATH}/public_html/|./|" 2>/dev/null
                 local STATUS=$?
                 rm -f "$TMP_LIST"
                 ;;
@@ -758,25 +734,25 @@ archive_source_incremental(){
                 echo "  Mode      : WordPress smart (themes + plugins + uploads only)"
 
                 local WP_ROOT="$DOMAIN_PATH/public_html/wp-content"
-                local TARGETS=""
-                [ -d "$WP_ROOT/themes" ]  && TARGETS="$TARGETS wp-content/themes"
-                [ -d "$WP_ROOT/plugins" ] && TARGETS="$TARGETS wp-content/plugins"
-                [ -d "$WP_ROOT/uploads" ] && TARGETS="$TARGETS wp-content/uploads"
+                local -a TARGETS=()
+                [ -d "$WP_ROOT/themes" ]  && TARGETS+=("wp-content/themes")
+                [ -d "$WP_ROOT/plugins" ] && TARGETS+=("wp-content/plugins")
+                [ -d "$WP_ROOT/uploads" ] && TARGETS+=("wp-content/uploads")
 
-                if [ -z "$TARGETS" ]; then
+                if [ "${#TARGETS[@]}" -eq 0 ]; then
                     echo "  [WARN] No wp-content subdirectories found."
                     return 2
                 fi
 
-                local EXCLUDE_OPTS=""
-                [ -n "$BK_CUSTOM_EXCLUDE" ] && EXCLUDE_OPTS=$(build_exclude_opts "$BK_CUSTOM_EXCLUDE" ".")
+                local -a EXCLUDE_OPTS=()
+                build_exclude_opts "$BK_CUSTOM_EXCLUDE" "."; EXCLUDE_OPTS+=("${SP_TAR_EXCLUDES[@]}")
 
-                SRC_SIZE_MB=$(du -sm $(for t in $TARGETS; do echo "$DOMAIN_PATH/public_html/$t"; done) 2>/dev/null | awk '{sum+=$1} END{print sum+0}')
-                echo "  Targets   :$TARGETS"
+                SRC_SIZE_MB=$(du -sm "$DOMAIN_PATH/public_html" 2>/dev/null | awk '{print $1}')
+                printf '  Targets   : %s\n' "${TARGETS[*]}"
                 echo "  Size      : ${SRC_SIZE_MB}MB"
                 [ -n "$BK_CUSTOM_EXCLUDE" ] && echo "  + Exclude : $BK_CUSTOM_EXCLUDE"
 
-                tar -czf "$OUT_FILE" $EXCLUDE_OPTS -C "$DOMAIN_PATH/public_html" $TARGETS 2>/dev/null
+                tar -czf "$OUT_FILE" "${EXCLUDE_OPTS[@]}" -C "$DOMAIN_PATH/public_html" -- "${TARGETS[@]}" 2>/dev/null
                 local STATUS=$?
                 ;;
         esac
@@ -795,10 +771,11 @@ prune_local_backups(){
 
     [ -d "$DIR" ] || return 0
     [ "$KEEP" -gt 0 ] 2>/dev/null || return 0
-    find "$DIR" -maxdepth 1 -type f -name "$PATTERN" -printf '%T@ %p\n' 2>/dev/null \
-        | sort -rn \
-        | awk -v keep="$KEEP" 'NR>keep {sub(/^[^ ]+ /,""); print}' \
-        | xargs -r rm -f
+    find "$DIR" -maxdepth 1 -type f -name "$PATTERN" -printf '%T@ %p\0' 2>/dev/null \
+        | sort -zrn \
+        | tail -z -n +$((KEEP + 1)) \
+        | cut -z -d ' ' -f2- \
+        | xargs -0 -r rm -f --
 }
 
 remote_env_file(){

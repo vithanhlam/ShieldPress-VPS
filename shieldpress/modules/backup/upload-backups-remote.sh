@@ -49,7 +49,7 @@ echo "Files queued: $TOTAL_FILES (progress is printed every 10s while each file 
 for d in "$DOMAINS_ROOT"/*/; do
     [ -d "$d" ] || continue
     [ -f "$d/config/domain.env" ] || continue
-    load_domain_info "$d"
+    load_domain_info "$d" || { echo "[FAIL] Untrusted domain configuration" >&2; exit 1; }
 
     for type in db files full; do
         DIR="$d/backup/$type"

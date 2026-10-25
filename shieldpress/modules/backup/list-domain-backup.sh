@@ -176,9 +176,9 @@ case "$VIEW_MODE" in
     # Auto-backup status
     echo "  AUTO-BACKUP STATUS:"
     echo "  ─────────────────────────────────────────────"
-    DB_SCRIPT="$DOMAIN_PATH/config/auto-backup-db.sh"
-    FILE_SCRIPT="$DOMAIN_PATH/config/auto-backup-files.sh"
-    FULL_SCRIPT="$DOMAIN_PATH/config/auto-backup-full.sh"
+    DB_SCRIPT="$ETC_DIR/jobs/${DOMAIN_PATH##*/}-backup-db.sh"
+    FILE_SCRIPT="$ETC_DIR/jobs/${DOMAIN_PATH##*/}-backup-files.sh"
+    FULL_SCRIPT="$ETC_DIR/jobs/${DOMAIN_PATH##*/}-backup-full.sh"
     [ -f "$DB_SCRIPT" ] && crontab -l 2>/dev/null | grep -Fq "$DB_SCRIPT" && DB_STATUS="AUTO Backup conf" || DB_STATUS="No Backup"
     [ -f "$FILE_SCRIPT" ] && crontab -l 2>/dev/null | grep -Fq "$FILE_SCRIPT" && FILE_STATUS="AUTO Backup conf" || FILE_STATUS="No Backup"
     [ -f "$FULL_SCRIPT" ] && crontab -l 2>/dev/null | grep -Fq "$FULL_SCRIPT" && FULL_STATUS="AUTO Backup conf" || FULL_STATUS="No Backup"

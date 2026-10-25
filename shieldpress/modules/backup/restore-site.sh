@@ -35,7 +35,7 @@ FOLDER="${FOLDERS[$choice]}"
 [ -z "$FOLDER" ] && { echo "Invalid selection!"; pause; exit 1; }
 
 DOMAIN_PATH="$DOMAINS_ROOT/$FOLDER"
-load_domain_info "$DOMAIN_PATH"
+load_domain_info "$DOMAIN_PATH" || { echo "[FAIL] Untrusted domain configuration" >&2; exit 1; }
 SYSUSER="$SYSTEM_USER"
 
 # Serialize restore operations for this domain.
@@ -113,7 +113,7 @@ ROLLBACK_DIR="$DOMAIN_PATH/backup/rollback_${DATE}"
 mkdir -p "$ROLLBACK_DIR"
 rollback_files(){
     rm -rf -- "$DOMAIN_PATH/public_html"
-    if tar -xzf "$ROLLBACK_DIR/files_rollback.tar.gz" -C "$DOMAIN_PATH"; then
+    if tar --no-same-owner --no-same-permissions -xzf "$ROLLBACK_DIR/files_rollback.tar.gz" -C "$DOMAIN_PATH"; then
         echo "[OK] Previous website files restored; rollback snapshot retained."
     else
         echo "[FAIL] File rollback failed! Recovery snapshot: $ROLLBACK_DIR"
@@ -171,15 +171,19 @@ if [ -n "$DB_NAME" ] && [ "$DB_CONNECTION" != "none" ]; then
 fi
 echo "[OK] Rollback snapshot created at $ROLLBACK_DIR"
 
+# Validate link targets and traversal before extracting the package as root.
+python3 "$BASE_DIR/modules/backup/validate-archive.py" "$FULL_PATH" || { rm -rf "$TMP"; pause; exit 1; }
+python3 "$BASE_DIR/modules/backup/validate-archive.py" "$ROLLBACK_DIR/files_rollback.tar.gz" --scope public_html || { rm -rf "$TMP"; pause; exit 1; }
+
 # Extract backup
 echo ""
 echo "[Step 2/4] Extracting backup..."
 if command -v pv >/dev/null 2>&1 && [ "$BACKUP_SIZE_BYTES" -gt 0 ]; then
-    pv -s "$BACKUP_SIZE_BYTES" -p -t -e -r "$FULL_PATH" | tar -xzf - -C "$TMP"
+    pv -s "$BACKUP_SIZE_BYTES" -p -t -e -r "$FULL_PATH" | tar --no-same-owner --no-same-permissions -xzf - -C "$TMP"
 else
     HB_PID=""
     [ -t 1 ] && { start_heartbeat "Extracting backup" ""; HB_PID=$HEARTBEAT_PID; }
-    tar -xzf "$FULL_PATH" -C "$TMP"
+    tar --no-same-owner --no-same-permissions -xzf "$FULL_PATH" -C "$TMP"
     EXTRACT_STATUS=$?
     [ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
     ( exit "$EXTRACT_STATUS" )
@@ -217,6 +221,12 @@ if ! tar -tzf "$TMP/files.tar.gz" > "$TMP/files.list"; then
 fi
 ARCHIVE_HAS_PUBLIC=$(grep -cE '^(\./)?public_html(/|$)' "$TMP/files.list")
 
+if [ "$ARCHIVE_HAS_PUBLIC" -gt 0 ]; then
+    python3 "$BASE_DIR/modules/backup/validate-archive.py" "$TMP/files.tar.gz" --scope public_html || { rm -rf "$TMP"; pause; exit 1; }
+else
+    python3 "$BASE_DIR/modules/backup/validate-archive.py" "$TMP/files.tar.gz" || { rm -rf "$TMP"; pause; exit 1; }
+fi
+
 rm -rf "$DOMAIN_PATH/public_html"
 mkdir -p "$DOMAIN_PATH/public_html"
 
@@ -225,11 +235,11 @@ FILES_SIZE_BYTES=$(stat -c '%s' "$TMP/files.tar.gz" 2>/dev/null || echo 0)
 if [ "$ARCHIVE_HAS_PUBLIC" -gt 0 ]; then
     # WordPress/PHP backup: archive contains public_html/ directory
     if command -v pv >/dev/null 2>&1 && [ "$FILES_SIZE_BYTES" -gt 0 ]; then
-        pv -s "$FILES_SIZE_BYTES" -p -t -e -r "$TMP/files.tar.gz" | tar -xzf - -C "$DOMAIN_PATH"
+        pv -s "$FILES_SIZE_BYTES" -p -t -e -r "$TMP/files.tar.gz" | tar --no-same-owner --no-same-permissions -xzf - -C "$DOMAIN_PATH"
     else
         HB_PID=""
         [ -t 1 ] && { start_heartbeat "Restoring files" ""; HB_PID=$HEARTBEAT_PID; }
-        tar -xzf "$TMP/files.tar.gz" -C "$DOMAIN_PATH"
+        tar --no-same-owner --no-same-permissions -xzf "$TMP/files.tar.gz" -C "$DOMAIN_PATH"
         EXTRACT_STATUS=$?
         [ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
         ( exit "$EXTRACT_STATUS" )
@@ -237,11 +247,11 @@ if [ "$ARCHIVE_HAS_PUBLIC" -gt 0 ]; then
 else
     # Laravel/Node.js backup: archive contains ./ (app root files directly)
     if command -v pv >/dev/null 2>&1 && [ "$FILES_SIZE_BYTES" -gt 0 ]; then
-        pv -s "$FILES_SIZE_BYTES" -p -t -e -r "$TMP/files.tar.gz" | tar -xzf - -C "$DOMAIN_PATH/public_html"
+        pv -s "$FILES_SIZE_BYTES" -p -t -e -r "$TMP/files.tar.gz" | tar --no-same-owner --no-same-permissions -xzf - -C "$DOMAIN_PATH/public_html"
     else
         HB_PID=""
         [ -t 1 ] && { start_heartbeat "Restoring files" ""; HB_PID=$HEARTBEAT_PID; }
-        tar -xzf "$TMP/files.tar.gz" -C "$DOMAIN_PATH/public_html"
+        tar --no-same-owner --no-same-permissions -xzf "$TMP/files.tar.gz" -C "$DOMAIN_PATH/public_html"
         EXTRACT_STATUS=$?
         [ -n "$HB_PID" ] && stop_heartbeat "$HB_PID"
         ( exit "$EXTRACT_STATUS" )

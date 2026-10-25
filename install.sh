@@ -77,7 +77,7 @@ if [ -z "$SOURCE_DIR" ]; then
         || { echo "[ERROR] Source checksum mismatch; refusing install"; exit 1; }
 
     mkdir -p "$WORK_DIR/extract"
-    tar -xzf "$WORK_DIR/source.tar.gz" -C "$WORK_DIR/extract" \
+    tar --no-same-owner -xzf "$WORK_DIR/source.tar.gz" -C "$WORK_DIR/extract" \
         || { echo "[ERROR] Cannot extract downloaded package"; exit 1; }
 
     SOURCE_DIR=$(find "$WORK_DIR/extract" -maxdepth 3 -type f -name shieldpress.sh -printf '%h\n' 2>/dev/null | sort | head -1)
@@ -99,6 +99,11 @@ else
     find "$TARGET_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
     cp -a "$SOURCE_DIR"/. "$TARGET_DIR"/
 fi
+
+# Secure copied code before invoking its root installer.
+chown -hR root:root "$TARGET_DIR"
+find "$TARGET_DIR" -type d -exec chmod go-w {} +
+find "$TARGET_DIR" -type f -exec chmod go-w {} +
 
 mkdir -p "$CONF_DIR"
 cat > "$CONF_DIR/update.conf" <<CONF_EOF

@@ -19,7 +19,7 @@ database_schedule_script(){
         env_engine=$(grep '^DB_CONNECTION=' "$env" | cut -d'=' -f2- | tr -d '[:space:]')
         case "$env_engine" in mysql|mariadb) env_engine=mysql ;; pgsql|postgres|postgresql) env_engine=pgsql ;; esac
         if [ "$env_db" = "$db" ] && [ "$env_engine" = "$engine" ]; then
-            printf '%s/config/auto-backup-db.sh\n' "$(dirname "$(dirname "$env")")"
+            printf '%s/jobs/%s-backup-db.sh\n' "$ETC_DIR" "$(basename "$(dirname "$(dirname "$env")")")"
             return
         fi
     done
@@ -101,7 +101,7 @@ case "$SELECT_MODE" in
     [ -z "$FOLDER" ] && { echo "Invalid selection!"; pause; exit 1; }
 
     DOMAIN_PATH="$DOMAINS_ROOT/$FOLDER"
-    load_domain_info "$DOMAIN_PATH"
+    load_domain_info "$DOMAIN_PATH" || { echo "[FAIL] Untrusted domain configuration" >&2; exit 1; }
 
     if [ -z "$DB_NAME" ] || [ "$DB_CONNECTION" = "none" ]; then
         echo "No database configured for $DOMAIN"
@@ -272,7 +272,8 @@ mkdir -p "$BACKUP_DIR"
 
 # Script location: domain config dir or central
 if [ -n "$DOMAIN_PATH" ]; then
-    AUTO_SCRIPT="$DOMAIN_PATH/config/auto-backup-db.sh"
+    sp_secure_domain_control "$DOMAIN_PATH" || exit 1
+    sp_write_backup_job "${DOMAIN_PATH##*/}" db full "$RETENTION" || exit 1
 else
     mkdir -p "$BASE_DIR/config/auto-backup"
     SAFE_NAME=$(echo "$DB_NAME" | sed 's/[^a-zA-Z0-9]/_/g')
@@ -298,6 +299,7 @@ case "$DB_CONNECTION" in
         ;;
 esac
 
+if [ -z "$DOMAIN_PATH" ]; then
 cat > "$AUTO_SCRIPT" << SCRIPT
 #!/bin/bash
 set -o pipefail
@@ -341,9 +343,9 @@ esac
 
 if [ \$? -eq 0 ]; then
     echo "\$(date '+%F %T') | SUCCESS: \$DOMAIN DB backup \$FILE" >> "\$RUN_LOG_FILE"
-    find "\$BACKUP_DIR" -maxdepth 1 -type f -name "\${DB_NAME}_*.sql.gz" -printf '%T@ %p\n' \
-        | sort -nr | tail -n +\$((RETENTION+1)) | cut -d' ' -f2- \
-        | while IFS= read -r old_file; do rm -f -- "\$old_file"; done
+    find "\$BACKUP_DIR" -maxdepth 1 -type f -name "\${DB_NAME}_*.sql.gz" -printf '%T@ %p\0' \
+        | sort -zrn | tail -z -n +\$((RETENTION+1)) | cut -z -d' ' -f2- \
+        | while IFS= read -r -d '' old_file; do rm -f -- "\$old_file"; done
     if [ -f "\$BASE_DIR/modules/backup/_backup_helper.sh" ]; then
         source "\$BASE_DIR/modules/backup/_backup_helper.sh"
         shieldpress_notify_event "backup_success" "Auto database backup completed" "\$DOMAIN (\$DB_CONNECTION/\$DB_NAME): \$FILE"
@@ -360,10 +362,11 @@ else
     rm -f "\$FILE"
 fi
 SCRIPT
+fi
 
 chmod 700 "$AUTO_SCRIPT"
 
-(crontab -l 2>/dev/null | grep -v "$AUTO_SCRIPT"; echo "$CRON_TIME $AUTO_SCRIPT") | crontab -
+(crontab -l 2>/dev/null | grep -vF "$AUTO_SCRIPT" | grep -vF "$DOMAIN_PATH/config/auto-backup-db.sh"; echo "$CRON_TIME $AUTO_SCRIPT") | crontab -
 
 echo ""
 echo "===================================================="

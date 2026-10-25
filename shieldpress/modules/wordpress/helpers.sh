@@ -4,6 +4,7 @@ BASE_DIR="/opt/shieldpress"
 DOMAINS_ROOT="/home/domains"
 
 source /opt/shieldpress/modules/helpers/domain-utils.sh
+source "$BASE_DIR/core/domain-security.sh"
 
 select_domain() {
 
@@ -50,25 +51,16 @@ CLEAN_DOMAIN=$(domain_to_clean "$SELECTED_DOMAIN")
 
 DOMAIN_PATH="$DOMAINS_ROOT/$CLEAN_DOMAIN"
 ROOT="$DOMAIN_PATH/public_html"
-
+sp_domain_control check "$CLEAN_DOMAIN" || return 1
 
 if [ ! -f "$DOMAIN_PATH/config/domain.env" ]; then
     echo "Domain config not found!"
     return 1
 fi
 
-# load domain config (safe grep, no source)
-local _ENV="$DOMAIN_PATH/config/domain.env"
-DOMAIN=$(grep "^DOMAIN=" "$_ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-DB_NAME=$(grep "^DB_NAME=" "$_ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-DB_USER=$(grep "^DB_USER=" "$_ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-DB_PASS=$(grep "^DB_PASS=" "$_ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-SYSTEM_USER=$(grep "^SYSTEM_USER=" "$_ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-PHP_VERSION=$(grep "^PHP_VERSION=" "$_ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-APP_TYPE=$(grep "^APP_TYPE=" "$_ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-DB_CONNECTION=$(grep "^DB_CONNECTION=" "$_ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-_CLEAN=$(grep "^CLEAN_DOMAIN=" "$_ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-[ -n "$_CLEAN" ] && CLEAN_DOMAIN="$_CLEAN"
+# Load literal, validated data from the protected control directory.
+sp_load_domain_env "$DOMAIN_PATH" || return 1
+ROOT="$DOMAIN_PATH/public_html"
 
 return 0
 }
@@ -78,7 +70,8 @@ fix_permissions() {
 
 echo "Fixing permissions for $DOMAIN"
 
-chown -R "$SYSTEM_USER:$SYSTEM_USER" "$DOMAIN_PATH"
+sp_secure_domain_control "$DOMAIN_PATH" || return 1
+chown -R "$SYSTEM_USER:$SYSTEM_USER" "$ROOT" "$DOMAIN_PATH/tmp"
 
 find "$ROOT" -type d \
     -not -path "*/node_modules/*" -not -path "*/vendor/*" -not -path "*/.git/*" \

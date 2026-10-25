@@ -2,6 +2,7 @@
 
 BASE_DIR="${BASE_DIR:-/opt/shieldpress}"
 source "$BASE_DIR/core/helpers.sh"
+source "$BASE_DIR/core/domain-security.sh"
 
 DOMAINS_ROOT="/home/domains"
 
@@ -101,13 +102,15 @@ for d in "$DOMAINS_ROOT"/*; do
     [ -d "$d/config" ] && chown root:root "$d/config" && chmod 700 "$d/config"
     [ -f "$ENV_FILE" ] && chown root:root "$ENV_FILE" && chmod 600 "$ENV_FILE"
 
+    sp_secure_domain_control "$DOMAIN_PATH" || exit 1
+
     case "$APP_TYPE" in
         laravel) fix_laravel ;;
         nodejs) fix_nodejs ;;
         *) fix_wordpress ;;
     esac
 
-    [ -d "$d/backup" ] && chown -R "$SYSUSER:$SYSUSER" "$d/backup" && chmod 750 "$d/backup"
+    [ -d "$d/backup" ] && chown -R root:root "$d/backup" && chmod 700 "$d/backup"
     [ -d "$d/tmp" ] && chown -R "$SYSUSER:$SYSUSER" "$d/tmp"
     [ -d "$d/tmp" ] && chmod 755 "$d/tmp"
     [ -d "$d/tmp/sessions" ] && chmod 700 "$d/tmp/sessions"

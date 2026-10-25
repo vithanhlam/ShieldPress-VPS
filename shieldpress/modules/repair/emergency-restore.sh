@@ -6,6 +6,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+source "$BASE_DIR/core/domain-security.sh"
 SNAPSHOT_DIR="$BASE_DIR/snapshots"
 LOG_FILE="$LOG_DIR/emergency.log"
 DOMAINS_ROOT="/home/domains"
@@ -371,18 +372,11 @@ fix_permissions(){
             log "REBUILT user: $SYSUSER for $DN"
         fi
 
-        # Fix ownership
-        chown -R "$SYSUSER:$SYSUSER" "$d" 2>/dev/null
-
-        # Fix directory permissions
-        find "$d" -type d \
-            -not -path "*/node_modules/*" -not -path "*/vendor/*" -not -path "*/.git/*" \
-            -exec chmod 755 {} \; 2>/dev/null
-
-        # Fix file permissions
-        find "$d" -type f \
-            -not -path "*/node_modules/*" -not -path "*/vendor/*" -not -path "*/.git/*" \
-            -exec chmod 644 {} \; 2>/dev/null
+        # Repair only application data; control and backup trees stay root-owned.
+        sp_secure_domain_control "$d" || { warn "$DN: control repair failed"; continue; }
+        chown -R "$SYSUSER:$SYSUSER" "$d/public_html" "$d/tmp" 2>/dev/null
+        find "$d/public_html" -type d -not -path "*/node_modules/*" -not -path "*/vendor/*" -not -path "*/.git/*" -exec chmod 755 {} +
+        find "$d/public_html" -type f -not -path "*/node_modules/*" -not -path "*/vendor/*" -not -path "*/.git/*" -exec chmod 644 {} +
 
         # wp-config.php should be more restrictive
         [ -f "$d/public_html/wp-config.php" ] && chmod 600 "$d/public_html/wp-config.php"

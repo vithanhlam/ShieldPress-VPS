@@ -742,6 +742,22 @@ patch_restored_wordpress_db(){
     ok "Restored WordPress database configuration checked"
 }
 
+patch_domain_privilege_boundary(){
+    local ID="SP_20261025_DOMAIN_PRIVILEGE_BOUNDARY"
+    patch_applied "$ID" && return 0
+    # Also protect the first upgrade launched by an older updater that preserved
+    # archive owner IDs. The new release archive uses numeric root ownership.
+    chown -hR root:root "$BASE_DIR" || return 1
+    find "$BASE_DIR" -type d -exec chmod go-w {} + || return 1
+    find "$BASE_DIR" -type f -exec chmod go-w {} + || return 1
+    if python3 "$BASE_DIR/modules/security/domain-boundary-migration.py" --base "$BASE_DIR" --domains "$DOMAINS_ROOT" --etc "$ETC_DIR"; then
+        patch_mark_done "$ID"
+        ok "Protected domain control directories and rebuilt domain backup schedules"
+    else
+        return 1
+    fi
+}
+
 apply_all_patches(){
     local ssl_status=0
     echo ""
@@ -749,6 +765,12 @@ apply_all_patches(){
     echo "  ShieldPress Migration Patches"
     echo "======================================"
     echo ""
+
+    # Fail closed before older migrations inspect any per-domain control data.
+    if ! patch_domain_privilege_boundary; then
+        fail "Domain privilege boundary repair remains pending; older patches were not run"
+        return 1
+    fi
 
     # Retry safely on every update, including orphaned schedules from older deletes.
     if ! python3 "$BASE_DIR/modules/backup/cleanup-domain-jobs.py" --base "$BASE_DIR" --domains "$DOMAINS_ROOT"; then
@@ -803,6 +825,7 @@ show_patch_status(){
         fi
     }
 
+    _status "SP_20261025_DOMAIN_PRIVILEGE_BOUNDARY" "Protect root control paths and rebuild domain jobs"
     _status "SP_20261025_RESTORE_WORDPRESS_DB" "Repair restored WordPress database configuration"
     _status "SP_134_FIX_BIN_PERMS"          "v1.3.4 Fix node_modules/vendor bin perms"
     _status "SP_134_SECURE_CONFIG_DIR"       "v1.3.4 Secure config/ to root:root 700"

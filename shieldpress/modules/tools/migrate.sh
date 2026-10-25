@@ -53,7 +53,7 @@ export_domain(){
     [ -z "$FOLDER" ] && { echo "Invalid selection!"; return 1; }
 
     local DOMAIN_PATH="$DOMAINS_ROOT/$FOLDER"
-    load_domain_info "$DOMAIN_PATH"
+    load_domain_info "$DOMAIN_PATH" || { echo "[FAIL] Untrusted domain configuration" >&2; exit 1; }
 
     echo ""
     echo "Exporting: $DOMAIN"
@@ -344,7 +344,8 @@ import_domain(){
         useradd -r -d "$TARGET_PATH" -s /sbin/nologin "$SYSUSER" 2>/dev/null || true
     fi
     mkdir -p "$TARGET_PATH"/{config,public_html,logs,backup/{db,files,full},tmp,sessions}
-    chown "$SYSUSER:$SYSUSER" "$TARGET_PATH"
+    chown root:root "$TARGET_PATH"
+    sp_secure_domain_control "$TARGET_PATH" || { fail "Unsafe domain control paths"; return 1; }
     ok "Domain structure ready"
 
     # ── Step 2: Config ──
@@ -352,7 +353,7 @@ import_domain(){
     echo "[Step 2/6] Restoring configuration..."
     if [ -f "$IMPORT_DIR/config/domain.env" ]; then
         cp "$IMPORT_DIR/config/domain.env" "$TARGET_PATH/config/"
-        chmod 640 "$TARGET_PATH/config/domain.env"
+        chmod 600 "$TARGET_PATH/config/domain.env"
         # Update SYSTEM_USER in case username differs
         sed -i "s/^SYSTEM_USER=.*/SYSTEM_USER=$SYSUSER/" "$TARGET_PATH/config/domain.env"
         ok "Configuration restored"
@@ -727,7 +728,7 @@ if [ "$1" = "--export-auto" ] && [ -n "$2" ]; then
 
     [ ! -d "$DOMAIN_PATH" ] && { echo "FAIL: Domain not found"; exit 1; }
 
-    load_domain_info "$DOMAIN_PATH"
+    load_domain_info "$DOMAIN_PATH" || { echo "[FAIL] Untrusted domain configuration" >&2; exit 1; }
 
     DATE=$(date +%F_%H-%M-%S)
     EXPORT_DIR=$(mktemp -d "$MIGRATE_DIR/export_XXXXXX")

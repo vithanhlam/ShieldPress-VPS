@@ -3,6 +3,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+source "$BASE_DIR/core/domain-security.sh"
 
 pause(){ echo ""; read -rp "Press Enter..."; }
 valid_number(){ [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge "$2" ] && [ "$1" -le "$3" ]; }
@@ -91,6 +92,7 @@ set -o pipefail
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+source "$BASE_DIR/core/domain-security.sh"
 RUN_LOG_FILE="$LOG_DIR/auto-backup.log"
 exec 2>>"$RUN_LOG_FILE"
 LOCK_FILE="$DATA_DIR/auto-backup-full-db-batch.lock"
@@ -101,6 +103,7 @@ value_from_env(){ grep "^$2=" "$1/config/domain.env" 2>/dev/null | head -n1 | cu
 backup_one(){
     local engine="$1" db="$2" domain_path="$3" retention="$4" date file backup_dir db_user db_pass domain upload_scope status
     if [ -n "$domain_path" ] && [ -f "$domain_path/config/domain.env" ]; then
+        sp_domain_control check "${domain_path##*/}" || return 1
         db_user=$(value_from_env "$domain_path" DB_USER); db_pass=$(value_from_env "$domain_path" DB_PASS); domain=$(value_from_env "$domain_path" DOMAIN)
         backup_dir="$domain_path/backup/db"; upload_scope="$domain"
     else
@@ -120,7 +123,7 @@ backup_one(){
     esac
     if [ "$status" -eq 0 ] && gzip -t "$file" 2>/dev/null; then
         echo "$(date '+%F %T') | SUCCESS: batch DB $domain ($engine/$db): $file" >> "$RUN_LOG_FILE"
-        find "$backup_dir" -maxdepth 1 -type f -name "${db}_*.sql.gz" -printf '%T@ %p\n' | sort -nr | tail -n +$((retention+1)) | cut -d' ' -f2- | xargs -r rm -f
+        find "$backup_dir" -maxdepth 1 -type f -name "${db}_*.sql.gz" -printf '%T@ %p\0' | sort -zrn | tail -z -n +$((retention+1)) | cut -z -d' ' -f2- | xargs -0 -r rm -f --
         source "$BASE_DIR/modules/backup/_backup_helper.sh"
         if ! remote_upload_backup "$file" "db" "$upload_scope" >>"$RUN_LOG_FILE" 2>&1; then
             echo "$(date '+%F %T') | REMOTE FAILED: batch DB $domain ($engine/$db): $file" >> "$RUN_LOG_FILE"

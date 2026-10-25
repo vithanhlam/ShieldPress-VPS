@@ -181,7 +181,8 @@ echo "✔ Connection test successful."
 
 if [[ -n "$DOMAIN_PATH" && -f "$DOMAIN_PATH/config/domain.env" ]]; then
     sed -i "s/^DB_PASS=.*/DB_PASS=$NEW_PASS/" "$DOMAIN_PATH/config/domain.env"
-    [[ -n "$SYSTEM_USER" ]] && chown "$SYSTEM_USER:$SYSTEM_USER" "$DOMAIN_PATH/config/domain.env" 2>/dev/null
+    chown root:root "$DOMAIN_PATH/config/domain.env" || exit 1
+    chmod 600 "$DOMAIN_PATH/config/domain.env" || exit 1
     echo "✔ domain.env updated."
 fi
 

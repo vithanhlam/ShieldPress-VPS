@@ -49,6 +49,7 @@ with tempfile.TemporaryDirectory() as tmp:
     # Run actual menu script with a sandbox helper and archive fixtures.
     (base / 'core').mkdir()
     (base / 'modules/backup').mkdir(parents=True)
+    (base / 'modules/backup/validate-archive.py').write_text((ROOT / 'modules/backup/validate-archive.py').read_text())
     (base / 'logs').mkdir()
     (base / 'core/paths.sh').write_text(f'DOMAINS_ROOT="{base}/domains"\nLOG_DIR="{base}/logs"\n')
     (base / 'modules/backup/_backup_helper.sh').write_text('''
