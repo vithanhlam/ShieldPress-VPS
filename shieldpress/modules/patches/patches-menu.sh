@@ -758,6 +758,18 @@ patch_domain_privilege_boundary(){
     fi
 }
 
+patch_server_migration_storage(){
+    local ID="SP_20261025_SERVER_MIGRATION_STORAGE"
+    patch_applied "$ID" && return 0
+    if python3 "$BASE_DIR/modules/tools/server-migration.py" upgrade; then
+        patch_mark_done "$ID"
+        ok "Server Migration storage prepared; legacy packages preserved"
+    else
+        fail "Server Migration storage preparation remains pending; retry after reviewing legacy package permissions"
+        return 1
+    fi
+}
+
 apply_all_patches(){
     local ssl_status=0
     echo ""
@@ -778,6 +790,7 @@ apply_all_patches(){
         ssl_status=1
     fi
     patch_recover_backup_config
+    patch_server_migration_storage || ssl_status=$?
     patch_restored_wordpress_db || ssl_status=$?
     patch_backup_scheduled_jobs
     patch_134_fix_bin_perms

@@ -1,0 +1,2 @@
+#!/bin/bash
+exec /usr/sbin/php-fpm8.5 --fpm-config /etc/shieldpress-test-fpm.conf "$@"

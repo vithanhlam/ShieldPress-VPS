@@ -324,6 +324,12 @@ mkdir -p "$NEW_DIR/update-backups"
 # =========================================
 # ATOMIC SWITCH
 # =========================================
+# Preserve legacy migration packages before an earlier source backup is removed.
+# The post-update patch also handles the first upgrade launched by an old updater.
+if [ -f "$NEW_DIR/modules/tools/server-migration.py" ]; then
+    python3 "$NEW_DIR/modules/tools/server-migration.py" upgrade || \
+        fail "Cannot preserve legacy migration packages; source switch cancelled"
+fi
 log "Switching version..."
 
 rm -rf "$OLD_DIR"

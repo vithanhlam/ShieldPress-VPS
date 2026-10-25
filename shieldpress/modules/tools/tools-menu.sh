@@ -712,7 +712,6 @@ while true; do
         "7|Repair Services|yellow" \
         "8|Restart Full Stack|yellow" \
         "9|Server Migration|magenta" \
-        "10|Migrate Paths|green" \
         "0|Back|white"
     sp_prompt opt
 
@@ -726,7 +725,6 @@ while true; do
         7)  repair ;;
         8)  restart_stack ;;
         9)  bash "$BASE_DIR/modules/tools/migrate.sh" ;;
-        10) bash "$BASE_DIR/modules/tools/migrate-paths.sh" ;;
         0)  break ;;
         *)  sp_invalid ;;
     esac

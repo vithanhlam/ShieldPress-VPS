@@ -1,3 +1,16 @@
+## v1.3.109 — 2026-10-25 — Copy selected websites safely between VPSs
+
+- Label the local Client/controller, original Source A, new Destination B and remote SSH server throughout menus, pairing and copy confirmations; show both website-data and SSH directions with hostnames/server IDs before website selection.
+- Replace legacy Server Migration with a guided SSH copy workflow for one, multiple or all websites, plus offline export/import and destination verification.
+- Pair VPSs once using automatically generated per-server/per-direction Ed25519 keys and reuse pinned saved connections. Authorize only a restricted migration gateway, expire grants after seven days, support console pairing and precise revocation/key rotation, and preserve existing administrator SSH access.
+- Verify server identity, package SHA-256, archive paths, destination resources, compatible runtimes, Nginx dependencies and batch conflicts before provisioning; refuse every existing destination website/database/account instead of overwriting it.
+- Copy complete application files, managed MariaDB/PostgreSQL databases, PHP pools, Nginx configuration and referenced TLS material; build applications as their isolated accounts and install per-user PM2 services.
+- Check database authentication, service health, PHP extensions, permissions and destination HTTP/HTTPS, including a unique local-only vhost probe that rejects responses from the old default server during Nginx reload. Preserve HTTP password protection and isolate copied TLS helper configuration from existing destination policies. Preserve source data, failed destination copies and private recovery reports; keep background jobs disabled until reviewed at cutover.
+- Preserve legacy migration packages through an automatic, retryable update hook and store new migration artifacts outside the source tree.
+- Remove the manual Migrate Paths menu entry; path compatibility remains part of startup/update processing.
+- Add isolated safety regressions and disposable integration coverage using real SSH, database and web services; document operator cutover work and validation limits in SERVER-MIGRATION.md.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.108 — 2026-10-25 — Retry domain boundary migration safely
 
 - Accept and validate the `SSL_TYPE` setting written by ShieldPress SSL installers so existing domains with certificates pass the root-boundary migration.

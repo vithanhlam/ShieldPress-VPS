@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.108`
+**Current version:** `1.3.109`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -546,6 +546,8 @@ Source: `modules/tools/`
 - Auto-reload MariaDB via service monitor.
 - Auto-reload PHP-FPM via cron.
 - Reload PHP/Nginx.
+
+Use **Tools & Utilities → 9) Server Migration** to copy one, several or all websites to another ShieldPress VPS. Pair each VPS once with an automatically generated, expiring migration-only key, then select its saved connection. The wizard verifies SSH access, checks destination conflicts, provisions isolated domain/database/runtime configuration and tests destination HTTP/HTTPS. Source data is retained. See [Server Migration](SERVER-MIGRATION.md) for prerequisites, DNS cutover, certificate renewal and background jobs.
 
 ### 12. SFTP Manager
 

@@ -1,0 +1,31 @@
+#!/bin/bash
+set -e
+verb="$1"; shift
+while [[ "${1:-}" == --* ]]; do shift; done
+service="${1:-}"
+case "$verb:$service" in
+    is-active:nginx) pgrep -x nginx >/dev/null ;;
+    reload:nginx) nginx -s reload ;;
+    is-active:php85-php-fpm) [ -f /run/shieldpress-test-fpm.pid ] && kill -0 "$(cat /run/shieldpress-test-fpm.pid)" ;;
+    reload-or-restart:php85-php-fpm)
+        if [ -f /run/shieldpress-test-fpm.pid ] && kill -0 "$(cat /run/shieldpress-test-fpm.pid)" 2>/dev/null; then
+            kill -USR2 "$(cat /run/shieldpress-test-fpm.pid)"
+        else
+            /opt/remi/php85/root/usr/sbin/php-fpm
+        fi
+        ;;
+    daemon-reload:*) : ;;
+    enable:pm2-*.service)
+        unit="/etc/systemd/system/$service"
+        account=$(sed -n 's/^User=//p' "$unit")
+        home=$(sed -n 's/^Environment=HOME=//p' "$unit")
+        runuser -u "$account" -- env HOME="$home" PM2_HOME="$home/.pm2" pm2 resurrect >/dev/null
+        ;;
+    is-active:pm2-*.service)
+        unit="/etc/systemd/system/$service"
+        account=$(sed -n 's/^User=//p' "$unit")
+        home=$(sed -n 's/^Environment=HOME=//p' "$unit")
+        runuser -u "$account" -- env HOME="$home" PM2_HOME="$home/.pm2" pm2 jlist | grep -q '"status":"online"'
+        ;;
+    *) echo "Unsupported test service operation: $verb $service" >&2; exit 1 ;;
+esac
