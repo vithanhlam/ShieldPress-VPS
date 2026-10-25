@@ -1529,7 +1529,7 @@ while true; do
     clear
     sp_header "Node.js Manager" "Apps, PM2, deployments"
     sp_menu_grid \
-        "1|Install/Update Runtime|green" \
+        "1|Check / Update Runtime|green" \
         "2|Add Node.js Domain|green" \
         "3|List Node.js Domains|cyan" \
         "4|Running Apps (PM2)|cyan" \
@@ -1547,7 +1547,7 @@ while true; do
     sp_prompt opt
 
     case $opt in
-        1) install_node_runtime ;;
+        1) nodejs_runtime_manager ;;
         2) create_node_domain ;;
         3) list_node_domains ;;
         4) pm2_status_all ;;

@@ -1,3 +1,12 @@
+## v1.3.106 — 2026-10-25 — Check Node.js updates and prevent automatic downgrades
+
+- Show the installed Node.js version, repository candidate, and configured Node.js 22 LTS recommendation before offering a runtime update.
+- Require explicit confirmation for manual runtime installation or updates; report older candidates, unavailable repository metadata, and unsupported runtime branches.
+- Block automatic downgrades before changing repositories, package locks, or packages, including calls from app and stack installers; remove the distro-sync downgrade and destructive package-removal retry.
+- Deliver the shared runtime guard to existing installations through the normal source update, without changing the installed Node.js version or requiring a state migration.
+- Add isolated regression checks for newer, equal, and older candidates, repeated downgrade attempts, missing installations, and repository lookup failures.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.105 — 2026-10-25 — Reconnect restored WordPress databases and confirm rollback cleanup
 
 - Verify the managed WordPress database login before restoring and synchronize archived WordPress DB settings with the local VPS credentials, with atomic writes, private configuration backups, and PHP syntax validation.
