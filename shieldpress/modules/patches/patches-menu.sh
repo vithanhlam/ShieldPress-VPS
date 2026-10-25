@@ -719,6 +719,29 @@ EOF
     ok "WordPress recovery service output repaired"
 }
 
+# Repair only previously restored WordPress sites whose local DB login is broken.
+# Working sites and non-WordPress applications are left alone.
+patch_restored_wordpress_db(){
+    local ID="SP_20261025_RESTORE_WORDPRESS_DB" d domain pending=0
+    if patch_applied "$ID"; then
+        skip "Restored WordPress database configuration"
+        return 0
+    fi
+    for d in "$DOMAINS_ROOT"/*; do
+        [ -f "$d/config/domain.env" ] || continue
+        domain=$(sed -n 's/^DOMAIN=//p' "$d/config/domain.env")
+        [ -n "$domain" ] || continue
+        grep -Fq "SUCCESS RESTORE: $domain (wordpress)" "$LOG_DIR/backup.log" 2>/dev/null || continue
+        python3 "$BASE_DIR/modules/backup/restore-wordpress-db.py" "$d" --migrate || pending=1
+    done
+    if [ "$pending" -ne 0 ]; then
+        fail "Restored WordPress DB repair remains pending; review managed credentials and retry"
+        return 1
+    fi
+    patch_mark_done "$ID"
+    ok "Restored WordPress database configuration checked"
+}
+
 apply_all_patches(){
     local ssl_status=0
     echo ""
@@ -733,6 +756,7 @@ apply_all_patches(){
         ssl_status=1
     fi
     patch_recover_backup_config
+    patch_restored_wordpress_db || ssl_status=$?
     patch_backup_scheduled_jobs
     patch_134_fix_bin_perms
     patch_134_secure_config_dir
@@ -779,6 +803,7 @@ show_patch_status(){
         fi
     }
 
+    _status "SP_20261025_RESTORE_WORDPRESS_DB" "Repair restored WordPress database configuration"
     _status "SP_134_FIX_BIN_PERMS"          "v1.3.4 Fix node_modules/vendor bin perms"
     _status "SP_134_SECURE_CONFIG_DIR"       "v1.3.4 Secure config/ to root:root 700"
     _status "SP_134_FIX_OPEN_BASEDIR_TMP"   "v1.3.4 Remove /tmp from open_basedir"

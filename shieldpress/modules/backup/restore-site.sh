@@ -1,4 +1,5 @@
 #!/bin/bash
+set -o pipefail
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
@@ -36,6 +37,13 @@ FOLDER="${FOLDERS[$choice]}"
 DOMAIN_PATH="$DOMAINS_ROOT/$FOLDER"
 load_domain_info "$DOMAIN_PATH"
 SYSUSER="$SYSTEM_USER"
+
+# Serialize restore operations for this domain.
+exec 9>"$DOMAIN_PATH/config/restore.lock"
+flock -n 9 || { echo "[FAIL] Another restore is already running for this domain."; pause; exit 1; }
+if [ "$APP_TYPE" = "wordpress" ]; then
+    python3 "$BASE_DIR/modules/backup/restore-wordpress-db.py" "$DOMAIN_PATH" --check || { pause; exit 1; }
+fi
 
 BACKUP_DIR="$DOMAIN_PATH/backup/full"
 
@@ -103,6 +111,22 @@ TMP=$(mktemp -d /tmp/restore_${FOLDER}_XXXXXX)
 ROLLBACK_DIR="$DOMAIN_PATH/backup/rollback_${DATE}"
 
 mkdir -p "$ROLLBACK_DIR"
+rollback_files(){
+    rm -rf -- "$DOMAIN_PATH/public_html"
+    if tar -xzf "$ROLLBACK_DIR/files_rollback.tar.gz" -C "$DOMAIN_PATH"; then
+        echo "[OK] Previous website files restored; rollback snapshot retained."
+    else
+        echo "[FAIL] File rollback failed! Recovery snapshot: $ROLLBACK_DIR"
+    fi
+}
+restore_failed(){
+    echo "[FAIL] $1"
+    log "FAILED RESTORE: $DOMAIN | $1 | Rollback: $ROLLBACK_DIR"
+    rollback_files
+    rm -rf "$TMP"
+    pause
+    exit 1
+}
 
 BACKUP_SIZE_MB=$(du -sm "$FULL_PATH" 2>/dev/null | awk '{print $1}')
 BACKUP_SIZE_MB=${BACKUP_SIZE_MB:-0}
@@ -135,9 +159,15 @@ fi
 
 # Auto rollback backup
 echo "[Step 1/4] Creating rollback snapshot..."
-tar -czf "$ROLLBACK_DIR/files_rollback.tar.gz" -C "$DOMAIN_PATH" public_html 2>/dev/null
+if ! tar -czf "$ROLLBACK_DIR/files_rollback.tar.gz" -C "$DOMAIN_PATH" public_html; then
+    echo "[FAIL] Cannot create file rollback snapshot; restore cancelled."
+    rm -rf "$TMP"; pause; exit 1
+fi
 if [ -n "$DB_NAME" ] && [ "$DB_CONNECTION" != "none" ]; then
-    backup_db_to_file "$ROLLBACK_DIR/db_rollback.sql.gz" >/dev/null 2>&1
+    if ! backup_db_to_file "$ROLLBACK_DIR/db_rollback.sql.gz"; then
+        echo "[FAIL] Cannot create database rollback snapshot; restore cancelled."
+        rm -rf "$TMP"; pause; exit 1
+    fi
 fi
 echo "[OK] Rollback snapshot created at $ROLLBACK_DIR"
 
@@ -160,6 +190,17 @@ if [ $? -ne 0 ]; then
     rm -rf "$TMP"; pause; exit 1
 fi
 
+# Validate database payload before replacing website files.
+if [ -f "$TMP/db.sql.gz" ]; then
+    gzip -dc "$TMP/db.sql.gz" > "$TMP/db.restore.sql" || { echo "[FAIL] Invalid database payload."; rm -rf "$TMP"; pause; exit 1; }
+elif [ -f "$TMP/db.sql" ]; then
+    cp "$TMP/db.sql" "$TMP/db.restore.sql" || { rm -rf "$TMP"; pause; exit 1; }
+fi
+if [ -f "$TMP/db.restore.sql" ] && { [ -z "$DB_NAME" ] || [ "$DB_CONNECTION" = "none" ]; }; then
+    echo "[FAIL] Backup contains a database but no managed database is configured."
+    rm -rf "$TMP"; pause; exit 1
+fi
+
 # Restore files
 echo ""
 echo "[Step 3/4] Restoring files..."
@@ -170,7 +211,11 @@ if [ ! -f "$TMP/files.tar.gz" ]; then
 fi
 
 # Detect archive type: does it contain "public_html/" (WP/PHP) or "./" (Laravel/Node.js)?
-ARCHIVE_HAS_PUBLIC=$(tar -tzf "$TMP/files.tar.gz" 2>/dev/null | head -5 | grep -c "^public_html/")
+if ! tar -tzf "$TMP/files.tar.gz" > "$TMP/files.list"; then
+    echo "[FAIL] Invalid website archive; existing files were preserved."
+    rm -rf "$TMP"; pause; exit 1
+fi
+ARCHIVE_HAS_PUBLIC=$(grep -cE '^(\./)?public_html(/|$)' "$TMP/files.list")
 
 rm -rf "$DOMAIN_PATH/public_html"
 mkdir -p "$DOMAIN_PATH/public_html"
@@ -204,20 +249,21 @@ else
 fi
 if [ $? -ne 0 ]; then
     echo "[FAIL] File restore failed! Rolling back..."
-    tar -xzf "$ROLLBACK_DIR/files_rollback.tar.gz" -C "$DOMAIN_PATH"
+    rollback_files
     log "FAILED RESTORE (files) + rollback: $DOMAIN"
     rm -rf "$TMP"; pause; exit 1
 fi
 echo "[OK] Files restored"
 
+# The archive can contain credentials from another server. Reconnect WordPress
+# to the verified database managed on this VPS before reporting success.
+if [ "$APP_TYPE" = "wordpress" ]; then
+    python3 "$BASE_DIR/modules/backup/restore-wordpress-db.py" "$DOMAIN_PATH" || restore_failed "WordPress database configuration could not be synchronized."
+fi
+
 # Restore DB
 echo ""
 echo "[Step 4/4] Restoring database..."
-if [ -f "$TMP/db.sql.gz" ]; then
-    gzip -dc "$TMP/db.sql.gz" > "$TMP/db.restore.sql"
-elif [ -f "$TMP/db.sql" ]; then
-    cp "$TMP/db.sql" "$TMP/db.restore.sql"
-fi
 
 if [ -f "$TMP/db.restore.sql" ] && [ -n "$DB_NAME" ] && [ "$DB_CONNECTION" != "none" ]; then
     restore_db_from_sql "$TMP/db.restore.sql"
@@ -229,8 +275,7 @@ if [ -f "$TMP/db.restore.sql" ] && [ -n "$DB_NAME" ] && [ "$DB_CONNECTION" != "n
         elif [ -f "$ROLLBACK_DIR/db_rollback.sql" ]; then
             restore_db_from_sql "$ROLLBACK_DIR/db_rollback.sql"
         fi
-        log "FAILED RESTORE (DB) + rollback: $DOMAIN"
-        rm -rf "$TMP"; pause; exit 1
+        restore_failed "Database import failed; attempted database rollback."
     fi
     echo "[OK] Database restored"
 else
@@ -281,5 +326,17 @@ echo ""
 echo "[OK] Restore completed successfully!"
 echo "Duration : $RESTORE_FMT"
 echo "Rollback : $ROLLBACK_DIR"
+echo "Keep the rollback until you have checked the website."
+read -r -p "Delete this restore's rollback snapshot? [y/N]: " DELETE_ROLLBACK
+if [[ "$DELETE_ROLLBACK" =~ ^[Yy]$ ]]; then
+    if rm -rf -- "$ROLLBACK_DIR"; then
+        echo "[OK] Rollback snapshot deleted."
+        log "ROLLBACK DELETED: $DOMAIN | $ROLLBACK_DIR"
+    else
+        echo "[WARN] Could not delete rollback snapshot: $ROLLBACK_DIR"
+    fi
+else
+    echo "[OK] Rollback snapshot retained: $ROLLBACK_DIR"
+fi
 
 pause

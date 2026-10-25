@@ -45,7 +45,7 @@ load_domain_info(){
     DOMAIN=$(grep    "^DOMAIN="      "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
     DB_NAME=$(grep   "^DB_NAME="     "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
     DB_USER=$(grep   "^DB_USER="     "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
-    DB_PASS=$(grep   "^DB_PASS="     "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
+    DB_PASS=$(grep   "^DB_PASS="     "$ENV" | cut -d'=' -f2-)
     SYSTEM_USER=$(grep "^SYSTEM_USER=" "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
     APP_TYPE=$(grep "^APP_TYPE=" "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')
     DB_CONNECTION=$(grep "^DB_CONNECTION=" "$ENV" | cut -d'=' -f2 | tr -d '[:space:]')

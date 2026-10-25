@@ -1,3 +1,13 @@
+## v1.3.105 — 2026-10-25 — Reconnect restored WordPress databases and confirm rollback cleanup
+
+- Verify the managed WordPress database login before restoring and synchronize archived WordPress DB settings with the local VPS credentials, with atomic writes, private configuration backups, and PHP syntax validation.
+- Serialize restores per domain, stop when rollback snapshots fail, validate database payloads before replacing files, and restore previous website files after database import or configuration failures.
+- Ask whether to delete the rollback snapshot only after a successful restore; default to retaining it on Enter or end of input.
+- Repair previously restored WordPress sites through an automatic, retryable migration; skip working connections, external hosts, and other application stacks.
+- Add isolated regression checks for four application stacks, migration retry/idempotence, database reconnection, rollback retention/deletion, and failure handling.
+- Verify a real WordPress full restore on the authorized VPS: file/database restore completed in 38 seconds, the rollback deletion prompt appeared, the snapshot was retained, and origin/public HTTPS returned HTTP 200.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.104 — 2026-10-25 — Add report-only YARA malware scanning
 
 - Add Security Center option 21 to install/check YARA, scan a selected registered domain or all domains, configure daily/weekly scheduled scans, and review the latest JSON report.
