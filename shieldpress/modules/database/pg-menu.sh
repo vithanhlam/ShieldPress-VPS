@@ -646,11 +646,13 @@ while true; do
         echo ""
         sp_menu_grid \
             "1|Install PostgreSQL|green" \
+            "14|Version & Security Updates|cyan" \
             "0|Back|white"
         sp_prompt choice
 
         case $choice in
             1) install_postgresql_stack ;;
+            14) bash "$BASE_DIR/modules/upgrade/service-updates.sh" postgresql ;;
             0) break ;;
             *) sp_invalid ;;
         esac
@@ -674,6 +676,7 @@ while true; do
         "8|Auto Backup (Set / Disable)|yellow" \
         "9|List Backups|cyan" \
         "10|Streaming Replication|magenta" \
+        "14|Version & Security Updates|cyan" \
         "0|Back|white"
     sp_prompt choice
 
@@ -691,6 +694,7 @@ while true; do
         11) bash "$MODULE_DIR/manage-user.sh" postgresql ;;
         12) bash "$MODULE_DIR/network-port.sh" ;;
         13) bash "$MODULE_DIR/test-connection.sh" postgresql ;;
+        14) bash "$BASE_DIR/modules/upgrade/service-updates.sh" postgresql ;;
         0) break ;;
         *) sp_invalid ;;
     esac

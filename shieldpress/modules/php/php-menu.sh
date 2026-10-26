@@ -324,6 +324,7 @@ while true; do
         "11|Edit PHP Pool Config|yellow" \
         "12|Auto-Reload PHP-FPM|green" \
         "13|Reload PHP-FPM|yellow" \
+        "14|Version & Security Updates|cyan" \
         "0|Back|white"
     sp_prompt choice
 
@@ -341,6 +342,7 @@ while true; do
         11) edit_php ;;
         12) bash "$TOOLS_DIR/auto-reload-php.sh" ;;
         13) reload_php_fpm ;;
+        14) bash "$BASE_DIR/modules/upgrade/service-updates.sh" php ;;
         0)  break ;;
         *)  sp_invalid ;;
     esac

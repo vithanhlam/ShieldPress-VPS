@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.114`
+**Current version:** `1.3.115`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -25,6 +25,30 @@ for updates such as 26.5.0 to a newer 26.x release from the configured repositor
 It confirms the target, refreshes package locks, and verifies the installed version.
 Restart affected applications individually afterward to load the new runtime.
 Option 2 remains the Node.js 22 LTS installer and blocks automatic downgrades.
+
+Nginx **16**, PHP **14**, MariaDB **14** and PostgreSQL **14** open
+**Version & Security Updates**. Check installed RPM versions, proposed updates and
+repository CVE advisories; then choose security updates or all eligible updates.
+PHP prompts for one installed Remi branch. Updates retain the installed Nginx,
+PHP and MariaDB major/minor branch and PostgreSQL major branch, enforce the
+configured upgrade policy, and reject package removals, downgrades and changes
+to other managed stacks. The Upgrade Manager uses the same flow.
+
+Before confirmation, review the full proposed package transaction and expected
+service restart. The updater saves private configuration snapshots and database
+dumps, checks package signatures according to repository policy, refreshes
+versionlocks, and validates installed packages and service health. Database
+services must already be running; MariaDB backups lock writes until the dump
+finishes. Previously inactive Nginx/PHP services remain inactive. Recovery files
+are retained under `/var/shieldpress/backups/service-updates/`; failures require
+review, without automatically restoring a live database or downgrading packages.
+Managed PHP source security builds require their dedicated repair path.
+
+Advisories depend on repository metadata. Empty results do **not** certify that
+a service has no CVEs. Full RPM versions include vendor backport release numbers;
+see [DNF security advisory filtering](https://dnf.readthedocs.io/en/stable/command_ref.html)
+and [Red Hat's backporting policy](https://access.redhat.com/security/updates/backporting).
+The updater requires the system Python DNF/RPM bindings and DNF versionlock plugin.
 
 ## Start here
 

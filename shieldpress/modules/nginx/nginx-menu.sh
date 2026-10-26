@@ -148,6 +148,7 @@ while true; do
         "13|Edit Nginx Config|yellow" \
         "14|View Nginx Logs|magenta" \
         "15|Reload Nginx|yellow" \
+        "16|Version & Security Updates|cyan" \
         "0|Back|white"
     sp_prompt choice
 
@@ -167,6 +168,7 @@ while true; do
         13) edit_nginx ;;
         14) view_nginx_logs ;;
         15) reload_nginx ;;
+        16) bash "$BASE_DIR/modules/upgrade/service-updates.sh" nginx ;;
         0)  break ;;
         *)  sp_invalid ;;
     esac

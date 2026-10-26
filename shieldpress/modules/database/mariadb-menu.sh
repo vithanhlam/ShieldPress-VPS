@@ -22,6 +22,7 @@ while true; do
         "8|Open Adminer|magenta" \
         "9|Set DB to Website|cyan" \
         "10|Export Database|cyan" \
+        "14|Version & Security Updates|cyan" \
         "0|Back|white"
     sp_prompt choice
 
@@ -39,6 +40,7 @@ while true; do
         11) bash "$MODULE_DIR/manage-user.sh" mariadb ;;
         12) bash "$MODULE_DIR/network-port.sh" ;;
         13) bash "$MODULE_DIR/test-connection.sh" mariadb ;;
+        14) bash "$BASE_DIR/modules/upgrade/service-updates.sh" mariadb ;;
         0) break ;;
         *) sp_invalid ;;
     esac

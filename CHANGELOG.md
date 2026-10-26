@@ -1,3 +1,14 @@
+## v1.3.115 — 2026-10-26 — Add service version and security update menus
+
+- Add Version & Security Updates to Nginx, PHP, MariaDB and PostgreSQL menus; route legacy Upgrade Manager entrypoints through the same conservative flow.
+- Display installed RPM versions, resolved update transactions and repository security advisories with CVE references. Offer security-filtered or general updates within the installed compatibility branch and configured policy; explicitly report incomplete advisory coverage.
+- Resolve using DNF, reject removals, downgrades and changes to other managed stacks, and check repository signature policy before executing the reviewed transaction. Preserve persistent locks during resolution and refresh them after transactions, including failures.
+- Back up configurations and databases before applying packages, retain private recovery artifacts, restart and validate previously active services, and retain inactive Nginx/PHP service state. Block automatic major migrations and managed PHP source overrides; do not automatically restore live databases after a failed update.
+- Show stage-specific terminal loading and approximate ETA without obscuring confirmation prompts. Refresh service locks atomically while preserving unrelated locks and explicit version exclusions.
+- Enable the menus on existing installations through a retryable, idempotent source migration. Cover migration handoff, repeat execution, backup/signature/transaction/lock/restart failures and service recovery.
+- Test real DNF transactions on AlmaLinux 9 using isolated RPM and advisory fixtures for all four services, including unchanged upstream versions with security release backports, unapproved branches, cross-stack isolation and restored versionlocks. Service health is simulated in the RPM fixture tests.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.114 — 2026-10-26 — Update Node.js within the installed major branch
 
 - Add an explicit same-branch runtime update option: select the newest available version in the installed major branch, confirm the exact target, update only that Node.js package version, refresh package protection and verify the result.
