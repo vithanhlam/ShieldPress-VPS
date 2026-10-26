@@ -120,10 +120,79 @@ def compare(left, right):
                             (str(right.epoch), right.version, right.release))
 
 
-def locklist_path(conf):
+def locklist_path(conf, required=True):
     config = configparser.RawConfigParser()
     config.read([str(Path(p) / 'versionlock.conf') for p in conf.pluginconfpath])
-    return Path(config.get('main', 'locklist')).resolve(strict=True)
+    if not config.has_option('main', 'locklist'):
+        if required:
+            raise RuntimeError('DNF versionlock configuration is missing. Run service-updates.py --repair-versionlock as root, then retry')
+        return None
+    path = Path(config.get('main', 'locklist'))
+    if not path.is_absolute():
+        raise RuntimeError('DNF versionlock locklist must use an absolute path')
+    if not path.is_file():
+        if required:
+            raise RuntimeError('DNF versionlock list is missing: ' + str(path) + '. Run --repair-versionlock as root')
+        return None
+    return path.resolve(strict=True)
+
+
+def repair_versionlock():
+    if os.geteuid() != 0:
+        raise RuntimeError('Root is required to repair package protection')
+    os.umask(0o077)
+    if subprocess.run(['rpm', '-q', 'python3-dnf-plugin-versionlock'], stdout=subprocess.DEVNULL).returncode:
+        with stage('Installing the DNF versionlock dependency', 120):
+            run(['dnf', 'install', '-y', 'python3-dnf-plugin-versionlock'])
+    import dnf
+    with dnf.Base() as base:
+        base.conf.read()
+        directories = [Path(p) for p in base.conf.pluginconfpath]
+        if not directories:
+            raise RuntimeError('DNF has no plugin configuration directory; restore the system DNF configuration')
+        config = configparser.RawConfigParser()
+        files = [directory / 'versionlock.conf' for directory in directories]
+        config.read([str(p) for p in files])
+        if config.has_option('main', 'enabled') and not config.getboolean('main', 'enabled'):
+            raise RuntimeError('Versionlock is explicitly disabled; review its configuration before enabling package updates')
+        if not config.has_option('main', 'locklist'):
+            directory = directories[-1]
+            directory.mkdir(parents=True, exist_ok=True)
+            path = directory / 'versionlock.list'
+            destination = files[-1]
+            # Retain existing sections and rules; add only the missing setting.
+            local = configparser.RawConfigParser()
+            local.read(str(destination))
+            if not local.has_section('main'):
+                local.add_section('main')
+            local.set('main', 'locklist', str(path))
+            handle, temporary = tempfile.mkstemp(prefix='.versionlock-', dir=directory)
+            try:
+                with os.fdopen(handle, 'w') as output:
+                    local.write(output)
+                os.chmod(temporary, 0o644)
+                os.replace(temporary, destination)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+        else:
+            path = Path(config.get('main', 'locklist'))
+            if not path.is_absolute():
+                raise RuntimeError('Custom versionlock list must use an absolute path')
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Exclusive creation never truncates retained administrator rules.
+        try:
+            versions = run(['rpm', '-qa', '--qf', '%{NAME}|%{NAME}-%{EPOCHNUM}:%{VERSION}-%{RELEASE}.%{ARCH}\n'],
+                           stdout=subprocess.PIPE, text=True).stdout.splitlines()
+            rules = [line.split('|', 1)[1] for line in versions if '|' in line and family(line.split('|', 1)[0])]
+            with path.open('x') as output:
+                output.write('\n'.join(rules) + ('\n' if rules else ''))
+            print('[INFO] Missing lock list initialized from installed service RPMs')
+        except FileExistsError:
+            pass
+    with stage('Verifying package protection'):
+        run(['dnf', '-q', 'versionlock', 'list'])
+    print('[OK] DNF package protection is ready; existing rules retained')
 
 
 def service_lock(rule, service, names):
@@ -137,7 +206,7 @@ def service_lock(rule, service, names):
                for n in possibilities)
 
 
-def open_base(service=None):
+def open_base(service=None, require_locks=False):
     import dnf
     base = dnf.Base()
     base.conf.read()
@@ -145,12 +214,14 @@ def open_base(service=None):
     # stacks. Override only the selected service's positive locks in a private
     # temporary plugin configuration, leaving persistent configuration intact.
     if service:
-        locklist = locklist_path(base.conf)
+        locklist = locklist_path(base.conf, required=require_locks)
+        if locklist is None:
+            print('[WARN] Package protection is not configured. Checks remain read-only; updates require versionlock repair.', flush=True)
         names = run(['rpm', '-qa', '--qf', '%{NAME}\n'], stdout=subprocess.PIPE, text=True).stdout.splitlines()
         temporary = tempfile.TemporaryDirectory(prefix='shieldpress-service-locks-')
         base._shieldpress_lock_config = temporary
         filtered = []
-        for rule in locklist.read_text().splitlines():
+        for rule in (locklist.read_text().splitlines() if locklist else []):
             rule = rule.strip()
             if not rule or rule.startswith('#'):
                 continue
@@ -339,7 +410,7 @@ def refresh_locks(names):
 
 def apply(service, security):
     check_source_override(service)
-    with open_base(service) as base:
+    with open_base(service, require_locks=True) as base:
         plan, anchor = resolve(base, service, security)
         show_plan(plan)
         if not plan['install']:
@@ -420,6 +491,9 @@ def apply(service, security):
 
 
 def main():
+    if sys.argv[1:] == ['--repair-versionlock']:
+        repair_versionlock()
+        return
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('service', choices=['nginx', 'mariadb', 'postgresql', 'php'] + ['php' + str(n) for n in range(81, 86)])
     parser.add_argument('action', choices=['check', 'security', 'update'])
@@ -428,8 +502,8 @@ def main():
     if os.geteuid() != 0:
         raise RuntimeError('Root is required for repository checks and updates')
     if args.service == 'php':
-        with open_base() as base:
-            branches = sorted({family(p.name) for p in base.sack.query().installed() if re.fullmatch(r'php\d{2}-php-fpm', p.name)})
+        names = run(['rpm', '-qa', '--qf', '%{NAME}\n'], stdout=subprocess.PIPE, text=True).stdout.splitlines()
+        branches = sorted({family(name) for name in names if re.fullmatch(r'php\d{2}-php-fpm', name)})
         if not branches:
             raise RuntimeError('No managed Remi PHP-FPM packages found')
         for i, name in enumerate(branches, 1):

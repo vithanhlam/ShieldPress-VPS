@@ -25,6 +25,43 @@ def pkg(name, version, release='1.fixture', epoch=0):
 
 
 class Guards(unittest.TestCase):
+    def test_missing_and_custom_versionlock_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            conf = SimpleNamespace(pluginconfpath=[directory])
+            self.assertIsNone(u.locklist_path(conf, required=False))
+            with self.assertRaisesRegex(RuntimeError, 'configuration is missing'):
+                u.locklist_path(conf)
+            config = Path(directory) / 'versionlock.conf'
+            config.write_text('[other]\nretain=yes\n')
+            self.assertIsNone(u.locklist_path(conf, required=False))
+            custom = Path(directory) / 'custom.list'
+            config.write_text('[main]\nlocklist=' + str(custom) + '\n')
+            self.assertIsNone(u.locklist_path(conf, required=False))
+            with self.assertRaisesRegex(RuntimeError, 'list is missing'):
+                u.locklist_path(conf)
+            custom.write_text('!nginx-0:1.26.99-*.noarch\n')
+            self.assertEqual(u.locklist_path(conf), custom)
+
+    def test_versionlock_repair_preserves_rules_and_repeats(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / 'versionlock.conf'
+            config.write_text('[other]\nretain=yes\n')
+            rules = Path(directory) / 'versionlock.list'
+            original = '!nginx-0:1.26.99-*.noarch\ncustom-0:1-1.*\n'
+            rules.write_text(original)
+            base = MagicMock()
+            base.__enter__.return_value = base
+            base.conf.pluginconfpath = [directory]
+            dnf = SimpleNamespace(Base=lambda: base)
+            with patch.dict(sys.modules, {'dnf': dnf}), patch.object(u.os, 'geteuid', return_value=0), \
+                 patch.object(u.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)), patch.object(u, 'run'):
+                u.repair_versionlock()
+                content = config.read_text()
+                u.repair_versionlock()
+                self.assertEqual(config.read_text(), content)
+            self.assertEqual(rules.read_text(), original)
+            self.assertIn('retain = yes', content)
+
     def test_progress_stops_before_returning_to_prompts(self):
         output = io.StringIO()
         with patch.dict(u.os.environ, {'SHIELDPRESS_UPDATE_TTY': '1'}), contextlib.redirect_stdout(output):
@@ -181,8 +218,73 @@ patch_service_security_updates
 '''
             subprocess.run(['bash', '-c', commands, '_', str(base), str(ROOT / 'shieldpress')], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
+    def test_versionlock_migration_pending_then_repeat(self):
+        text = (ROOT / 'shieldpress/modules/patches/patches-menu.sh').read_text()
+        function = text.split('patch_service_versionlock_repair(){', 1)[1].split('\n}\n', 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            commands = '''
+set -e
+BASE_DIR="$1"
+REGISTRY="$BASE_DIR/registry"
+touch "$REGISTRY"
+patch_applied(){ grep -qxF "$1" "$REGISTRY"; }
+patch_mark_done(){ echo "$1" >> "$REGISTRY"; }
+ok(){ echo "$1"; }
+fail(){ echo "$1"; }
+ready=0
+python3(){ [ "$2" = --repair-versionlock ]; [ "$ready" = 1 ]; }
+'''
+            commands += 'patch_service_versionlock_repair(){' + function + '\n}\n'
+            commands += '''
+if patch_service_versionlock_repair; then exit 1; fi
+[ ! -s "$REGISTRY" ]
+ready=1
+patch_service_versionlock_repair
+patch_service_versionlock_repair
+[ "$(wc -l < "$REGISTRY")" = 1 ]
+'''
+            subprocess.run(['bash', '-c', commands, '_', directory], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
 
 class RealDnf(unittest.TestCase):
+    def test_missing_protection_checks_and_repair(self):
+        config = Path('/etc/dnf/plugins/versionlock.conf')
+        original_config = config.read_bytes()
+        locks = Path('/etc/dnf/plugins/versionlock.list')
+        original_locks = locks.read_bytes()
+        before = subprocess.check_output(['rpm', '-qa'])
+        script = str(ROOT / 'shieldpress/modules/upgrade/service-updates.py')
+        try:
+            config.unlink()
+            for service in ['nginx', 'php', 'mariadb', 'postgresql']:
+                result = subprocess.run([sys.executable, script, service, 'check'], input='1\n' if service == 'php' else '',
+                                        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('Installed packages:', result.stdout)
+                self.assertIn('Checks remain read-only', result.stdout)
+                self.assertFalse(config.exists())
+                self.assertEqual(locks.read_bytes(), original_locks)
+                with self.assertRaisesRegex(RuntimeError, 'configuration is missing'):
+                    u.apply('php84' if service == 'php' else service, False)
+            self.assertEqual(subprocess.check_output(['rpm', '-qa']), before)
+            u.repair_versionlock()
+            repaired = config.read_bytes()
+            self.assertEqual(locks.read_bytes(), original_locks)
+            u.repair_versionlock()
+            self.assertEqual(config.read_bytes(), repaired)
+            # A configured but missing list has the same read-only behavior.
+            locks.unlink()
+            for service in ['nginx', 'php84', 'mariadb', 'postgresql']:
+                with u.open_base(service) as base:
+                    plan, _ = u.resolve(base, service, False)
+                    self.assertTrue(plan['installed'])
+                self.assertFalse(locks.exists())
+            u.repair_versionlock()
+            self.assertIn('php84-php-fpm-0:', locks.read_text())
+        finally:
+            config.write_bytes(original_config)
+            locks.write_bytes(original_locks)
+
     def test_all_stacks_and_security_metadata(self):
         if not Path('/.dockerenv').exists():
             self.fail('Real DNF tests require a disposable container')

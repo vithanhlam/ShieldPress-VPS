@@ -6,6 +6,7 @@ source "$BASE_DIR/core/paths.sh"
 source "$BASE_DIR/core/ui.sh"
 service="${1:-}"
 case "$service" in nginx|php|mariadb|postgresql) ;; *) echo '[FAIL] Unknown service'; exit 2 ;; esac
+case "$service" in nginx) title=Nginx ;; php) title=PHP ;; mariadb) title=MariaDB ;; postgresql) title=PostgreSQL ;; esac
 python=/usr/bin/python3
 if ! "$python" -c 'import dnf, rpm' 2>/dev/null; then
     echo '[FAIL] System Python DNF/RPM bindings are required; restore the AlmaLinux package tools.'
@@ -21,17 +22,24 @@ service_update_run(){
 }
 while true; do
     clear
-    sp_header "$service Version & Security Updates" "Repository advisories and same-branch updates"
+    sp_header "$title Version & Security Updates" "Repository advisories and same-branch updates"
     sp_menu_grid \
         "1|Check Versions & CVE Advisories|cyan" \
         "2|Apply Repository Security Updates|green" \
         "3|Apply All Same-Branch Updates|yellow" \
+        "4|Repair Package Protection|blue" \
         "0|Back|white"
     sp_prompt choice
     case "$choice" in
         1) action=check ;;
         2) action=security ;;
         3) action=update ;;
+        4)
+            PYTHONUNBUFFERED=1 "$python" "$BASE_DIR/modules/upgrade/service-updates.py" --repair-versionlock \
+                2>&1 | tee -a "$LOG_DIR/service-updates.log"
+            read -r -p 'Press Enter...'
+            continue
+            ;;
         0) break ;;
         *) sp_invalid; continue ;;
     esac

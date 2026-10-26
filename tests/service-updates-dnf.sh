@@ -5,7 +5,9 @@ if [ ! -f /.dockerenv ] || [ ! -f /etc/almalinux-release ] || [ ! -d /repo/shiel
     echo 'Requires a disposable AlmaLinux container and a /repo mount.' >&2
     exit 1
 fi
-dnf install -y rpm-build createrepo_c python3-dnf-plugin-versionlock >/tmp/service-tools.log 2>&1
+python3 /repo/shieldpress/modules/upgrade/service-updates.py --repair-versionlock
+rpm -q python3-dnf-plugin-versionlock
+dnf install -y rpm-build createrepo_c >/tmp/service-tools.log 2>&1
 mkdir -p /fixtures /root/rpmbuild/SPECS /opt/shieldpress /var/shieldpress/data
 cp -a /repo/shieldpress/. /opt/shieldpress/
 cat > /root/rpmbuild/SPECS/fixture.spec <<'SPEC'

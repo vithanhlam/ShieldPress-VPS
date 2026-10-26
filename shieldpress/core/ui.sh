@@ -19,7 +19,14 @@ sp_header(){
     local title="$1"
     local subtitle="${2:-ShieldPress VPS}"
     sp_hr
-    printf "${SP_CYAN}|${SP_RESET} ${SP_BOLD}${SP_WHITE}%-42s${SP_RESET} ${SP_DIM}%-29s${SP_RESET} ${SP_CYAN}|${SP_RESET}\n" "$title" "$subtitle"
+    if [ "${#title}" -le 42 ] && [ "${#subtitle}" -le 31 ]; then
+        printf "${SP_CYAN}|${SP_RESET} ${SP_BOLD}${SP_WHITE}%-42s${SP_RESET} ${SP_DIM}%-31s${SP_RESET} ${SP_CYAN}|${SP_RESET}\n" "$title" "$subtitle"
+    else
+        local line
+        while IFS= read -r line; do
+            printf "${SP_CYAN}|${SP_RESET} %-74s ${SP_CYAN}|${SP_RESET}\n" "$line"
+        done < <(printf '%s\n%s\n' "$title" "$subtitle" | fold -s -w 74)
+    fi
     sp_hr
 }
 
@@ -50,21 +57,28 @@ sp_button(){
 }
 
 sp_menu_grid(){
-    local item num label color i=0
+    local item num label color rest i=0 columns=2 width="${COLUMNS:-78}"
+    [[ "$width" =~ ^[0-9]+$ ]] || width=78
+    [ "$width" -ge 78 ] || columns=1
+    for item in "$@"; do
+        rest="${item#*|}"
+        label="${rest%%|*}"
+        [ "${#label}" -le 29 ] || columns=1
+    done
     for item in "$@"; do
         num="${item%%|*}"
         rest="${item#*|}"
         label="${rest%%|*}"
         color="${rest##*|}"
         [ "$color" = "$label" ] && color="cyan"
-        [ $((i % 2)) -eq 0 ] && printf "  "
+        [ $((i % columns)) -eq 0 ] && printf "  "
         sp_button "$num" "$label" "$color"
-        if [ $((i % 2)) -eq 1 ]; then
+        if [ $((i % columns)) -eq $((columns - 1)) ]; then
             echo ""
         fi
         i=$((i + 1))
     done
-    [ $((i % 2)) -eq 1 ] && echo ""
+    [ $((i % columns)) -ne 0 ] && echo ""
     sp_hr
 }
 

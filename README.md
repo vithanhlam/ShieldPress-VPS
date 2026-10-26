@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.115`
+**Current version:** `1.3.116`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -49,6 +49,12 @@ a service has no CVEs. Full RPM versions include vendor backport release numbers
 see [DNF security advisory filtering](https://dnf.readthedocs.io/en/stable/command_ref.html)
 and [Red Hat's backporting policy](https://access.redhat.com/security/updates/backporting).
 The updater requires the system Python DNF/RPM bindings and DNF versionlock plugin.
+Version checks also work when versionlock configuration is missing; package
+updates remain blocked until protection is repaired. Upgrades automatically
+install a missing versionlock plugin and repair missing configuration without
+overwriting existing rules. Retry a pending repair with **4) Repair Package
+Protection** in any service update menu. Long menu labels use one column, and
+long headers place the subtitle on a separate line.
 
 ## Start here
 

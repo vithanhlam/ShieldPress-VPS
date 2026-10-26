@@ -808,6 +808,18 @@ patch_service_security_updates(){
     ok "Version and security update menus enabled for Nginx, PHP, MariaDB and PostgreSQL"
 }
 
+patch_service_versionlock_repair(){
+    local ID="SP_20261026_SERVICE_VERSIONLOCK_REPAIR"
+    patch_applied "$ID" && return 0
+    if python3 "$BASE_DIR/modules/upgrade/service-updates.py" --repair-versionlock; then
+        patch_mark_done "$ID"
+        ok "Service update package protection repaired; existing rules retained"
+    else
+        fail "Service update package protection repair remains pending; use Repair Package Protection in the service update menu"
+        return 1
+    fi
+}
+
 apply_all_patches(){
     local ssl_status=0
     echo ""
@@ -831,6 +843,7 @@ apply_all_patches(){
     patch_server_migration_storage || ssl_status=$?
     patch_nodejs_same_branch_updates || ssl_status=$?
     patch_service_security_updates || ssl_status=$?
+    patch_service_versionlock_repair || ssl_status=$?
     patch_restored_wordpress_db || ssl_status=$?
     patch_backup_scheduled_jobs
     patch_134_fix_bin_perms
@@ -881,6 +894,7 @@ show_patch_status(){
     _status "SP_20261025_DOMAIN_PRIVILEGE_BOUNDARY" "Protect root control paths and rebuild domain jobs"
     _status "SP_20261026_NODEJS_SAME_BRANCH_UPDATES" "Enable same-branch Node.js updates"
     _status "SP_20261026_SERVICE_SECURITY_UPDATES" "Enable service version and security updates"
+    _status "SP_20261026_SERVICE_VERSIONLOCK_REPAIR" "Repair service update package protection"
     _status "SP_20261025_RESTORE_WORDPRESS_DB" "Repair restored WordPress database configuration"
     _status "SP_134_FIX_BIN_PERMS"          "v1.3.4 Fix node_modules/vendor bin perms"
     _status "SP_134_SECURE_CONFIG_DIR"       "v1.3.4 Secure config/ to root:root 700"

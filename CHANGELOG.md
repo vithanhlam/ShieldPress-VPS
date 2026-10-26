@@ -1,3 +1,12 @@
+## v1.3.116 — 2026-10-26 — Repair missing versionlock configuration and menu layout
+
+- Fix `No section: 'main'` when service update checks run without complete versionlock configuration. Allow read-only version and advisory checks while retaining the protection requirement for package updates.
+- Install a missing versionlock dependency and repair missing configuration through an automatic, retryable migration. Retain existing custom lists and exclusions; initialize a missing list from installed service RPMs. Expose Repair Package Protection in all four service update menus and respect explicitly disabled protection.
+- Read installed PHP branches directly from RPM before selection. Check Nginx, PHP, MariaDB and PostgreSQL with absent configuration and lock lists, verify repeated repair and retain existing update safety checks.
+- Render long menu labels in a single column and stack long header subtitles, fixing joined options and overflowing borders across the shared menus.
+- Validate unit regressions, rendered menu labels, migration retry/handoff, smoke and Bash syntax checks, and real AlmaLinux DNF fixture transactions including cold dependency installation and missing-configuration checks for all four services.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.115 — 2026-10-26 — Add service version and security update menus
 
 - Add Version & Security Updates to Nginx, PHP, MariaDB and PostgreSQL menus; route legacy Upgrade Manager entrypoints through the same conservative flow.
