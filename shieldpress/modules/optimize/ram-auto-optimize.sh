@@ -33,35 +33,30 @@ if [ "$TOTAL_RAM" -le 2048 ]; then
     ZRAM_SIZE="512M"
     CACHE_MEM="128mb"
     DB_BUFFER="256M"
-    PHP_CHILD=8
 
 elif [ "$TOTAL_RAM" -le 4096 ]; then
     PROFILE="4GB"
     ZRAM_SIZE="1G"
     CACHE_MEM="512mb"
     DB_BUFFER="512M"
-    PHP_CHILD=15
 
 elif [ "$TOTAL_RAM" -le 8192 ]; then
     PROFILE="8GB"
     ZRAM_SIZE="2G"
     CACHE_MEM="1gb"
     DB_BUFFER="1G"
-    PHP_CHILD=30
 
 elif [ "$TOTAL_RAM" -le 16384 ]; then
     PROFILE="16GB"
     ZRAM_SIZE="4G"
     CACHE_MEM="2gb"
     DB_BUFFER="4G"
-    PHP_CHILD=60
 
 else
     PROFILE="32GB+"
     ZRAM_SIZE="8G"
     CACHE_MEM="4gb"
     DB_BUFFER="10G"
-    PHP_CHILD=120
 fi
 
 echo ""
@@ -69,7 +64,6 @@ echo "RAM Profile  : $PROFILE"
 echo "ZRAM         : $ZRAM_SIZE"
 echo "Cache Memory : $CACHE_MEM"
 echo "DB Buffer    : $DB_BUFFER"
-echo "PHP Children : $PHP_CHILD"
 echo ""
 
 # ==============================
@@ -152,60 +146,9 @@ systemctl restart mariadb 2>/dev/null && \
     ok "MariaDB optimized (buffer: $DB_BUFFER)" || \
     warn "MariaDB restart failed"
 
-# ==============================
-# OPTIMIZE PHP-FPM
-# Ghi đè toàn bộ www.conf với pm=ondemand
-# Tránh lỗi min/max_spare_servers conflict
-# ==============================
-
-echo "Optimizing PHP-FPM..."
-
-for v in 81 82 83 84; do
-
-    CONF="/etc/opt/remi/php${v}/php-fpm.d/www.conf"
-    PHP_FPM_SVC="php${v}-php-fpm"
-
-    # Skip nếu service không tồn tại
-    if ! systemctl list-unit-files 2>/dev/null | grep -q "${PHP_FPM_SVC}"; then
-        continue
-    fi
-
-    [ -f "$CONF" ] || continue
-
-    PHP_SOCKET="/var/opt/remi/php${v}/run/php-fpm/www.sock"
-    mkdir -p "$(dirname $PHP_SOCKET)"
-
-    cat > "$CONF" <<POOL
-[www]
-user = apache
-group = apache
-listen = $PHP_SOCKET
-listen.owner = nginx
-listen.group = nginx
-listen.mode = 0660
-
-pm = ondemand
-pm.max_children = $PHP_CHILD
-pm.process_idle_timeout = 10s
-pm.max_requests = 500
-
-chdir = /
-POOL
-
-    systemctl restart "$PHP_FPM_SVC" 2>/dev/null && \
-        ok "PHP${v}-FPM optimized (ondemand, max_children=$PHP_CHILD)" || \
-        warn "PHP${v}-FPM restart failed"
-
-done
-
-# ==============================
-# CLEAR RAM CACHE
-# ==============================
-
-echo "Cleaning RAM cache..."
-sync
-echo 3 > /proc/sys/vm/drop_caches
-ok "RAM page cache cleared"
+# Apply the same budget used by domain creation and source migrations.
+echo "Applying shared PHP-FPM budget (usually a few seconds)..."
+python3 "$BASE_DIR/modules/helpers/php-budget.py" --apply || exit 1
 
 # ==============================
 # RESULT
@@ -219,7 +162,6 @@ echo "Profile      : $PROFILE"
 echo "ZRAM         : $ZRAM_SIZE"
 echo "Cache Memory : $CACHE_MEM"
 echo "MariaDB Buff : $DB_BUFFER"
-echo "PHP Children : $PHP_CHILD (pm=ondemand)"
 echo ""
 free -h
 echo ""

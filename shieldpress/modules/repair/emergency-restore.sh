@@ -148,11 +148,8 @@ rebuild_php_pools(){
 
         mkdir -p "$SOCK_DIR"
 
-        # Calculate pm.max_children
-        local TOTAL_RAM=$(free -m 2>/dev/null | awk '/Mem:/ {print $2}')
-        local PM_MAX=$((TOTAL_RAM / 40))
-        [ "$PM_MAX" -lt 5 ] && PM_MAX=5
-        [ "$PM_MAX" -gt 50 ] && PM_MAX=50
+        # Rebuilt pools receive the same shared budget as new and upgraded sites.
+        local PM_MAX=4
 
         cat > "$POOL_FILE" <<POOL_EOF
 [$SYSUSER]
@@ -186,6 +183,7 @@ POOL_EOF
 
     if [ "$REBUILT" -gt 0 ]; then
         echo ""
+        python3 "$BASE_DIR/modules/helpers/php-budget.py" --apply || return 1
         echo "Restarting all PHP-FPM services..."
         for v in 81 82 83 84; do
             SVC="php${v}-php-fpm"

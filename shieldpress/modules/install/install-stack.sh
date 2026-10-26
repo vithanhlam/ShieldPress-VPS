@@ -948,19 +948,10 @@ EOF
 
     PHP_POOL_CONF="/etc/opt/remi/php${VERSION}/php-fpm.d/www.conf"
 
-    TOTAL_RAM=$(free -m | awk '/Mem:/ {print $2}')
-    if [ "$LOW_MEMORY_PROFILE" -eq 1 ]; then
-        PM_MAX_CHILDREN=3
-    else
-        PM_MAX_CHILDREN=$((TOTAL_RAM / 50))
-    fi
+    # Use a small initial pool; the shared helper sets all branch limits below.
+    PM_MAX_CHILDREN=4
+    [ "$LOW_MEMORY_PROFILE" -eq 1 ] && PM_MAX_CHILDREN=3
 
-    # 1 GB profile uses 3 on-demand workers; larger hosts keep the old floor.
-    [ "$LOW_MEMORY_PROFILE" -eq 0 ] && [ "$PM_MAX_CHILDREN" -lt 5 ] && PM_MAX_CHILDREN=5
-    [ "$PM_MAX_CHILDREN" -gt 100 ] && PM_MAX_CHILDREN=100
-
-    # Ghi đè toàn bộ www.conf - cách duy nhất đảm bảo không còn spare server directives
-    # pm=ondemand: không cần start_servers, min/max_spare_servers
     PHP_SOCKET="/var/opt/remi/php${VERSION}/run/php-fpm/www.sock"
 
     mkdir -p "$(dirname $PHP_SOCKET)"
@@ -1010,6 +1001,7 @@ POOL
     # ----------------------------------------
 
     PHP_FPM_BIN="/opt/remi/php${VERSION}/root/usr/sbin/php-fpm"
+    python3 "$BASE_DIR/modules/helpers/php-budget.py" --apply
 
     if "$PHP_FPM_BIN" -t 2>&1 | grep -q "ERROR"; then
         warn "PHP${VERSION} config test failed:"

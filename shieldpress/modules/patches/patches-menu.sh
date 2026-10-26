@@ -14,6 +14,7 @@
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
 source "$BASE_DIR/core/ui.sh" 2>/dev/null
+source "$BASE_DIR/modules/helpers/task-progress.sh"
 
 # Keep patch state in the persistent runtime data directory. The updater
 # atomically replaces /opt/shieldpress, so a registry stored in the source
@@ -532,68 +533,18 @@ patch_1331_service_resilience(){
 }
 
 # --------------------------------------------------
-# v1.3.31 — Tính lại pm.max_children cho domain ĐÃ TỒN
-#           TẠI theo công thức mới (chia thêm cho số
-#           domain trên server). Công thức cũ tính độc
-#           lập từng domain là nguyên nhân chính gây
-#           overcommit RAM -> OOM-killer giết MariaDB/
-#           PostgreSQL/PHP-FPM. Domain tạo mới đã tự
-#           dùng công thức mới (domain/helpers.sh); patch
-#           này áp dụng ngược lại cho domain có từ trước.
-#           Chỉ sửa dòng pm.max_children, dùng `reload`
-#           (không `restart`) - không rớt request đang xử
-#           lý.
-# --------------------------------------------------
+# Legacy entrypoint delegates to the shared budget so old upgrades cannot
+# overwrite lower custom pool limits after the new migration has run.
 patch_1331_resize_php_pools(){
     local ID="SP_1331_RESIZE_PHP_POOLS"
-    local DESC="Recalculate pm.max_children for existing domains (prevent RAM overcommit)"
-
-    if patch_applied "$ID"; then
-        skip "$DESC"
-        return 0
+    patch_applied "$ID" && return 0
+    if python3 "$BASE_DIR/modules/helpers/php-budget.py" --apply; then
+        patch_mark_done "$ID"
+        ok "Legacy PHP pool sizing repaired with the shared runtime budget"
+    else
+        fail "Legacy PHP pool sizing remains pending"
+        return 1
     fi
-
-    echo "  Applying: $DESC..."
-
-    local TOTAL_RAM DOMAIN_COUNT PHP_MAX
-    TOTAL_RAM=$(free -m | awk '/Mem:/ {print $2}')
-    DOMAIN_COUNT=$(find "$DOMAINS_ROOT" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
-    [ "$DOMAIN_COUNT" -lt 1 ] && DOMAIN_COUNT=1
-    PHP_MAX=$((TOTAL_RAM / 50 / DOMAIN_COUNT))
-    [ "$PHP_MAX" -lt 5  ] && PHP_MAX=5
-    [ "$PHP_MAX" -gt 50 ] && PHP_MAX=50
-
-    local COUNT=0
-    local -A TOUCHED_VERSIONS=()
-    local d env sysuser php_ver php_short pool_file current
-
-    for env in "$DOMAINS_ROOT"/*/config/domain.env; do
-        [ -f "$env" ] || continue
-        sysuser=$(grep "^SYSTEM_USER=" "$env" | cut -d= -f2 | tr -d '[:space:]')
-        php_ver=$(grep "^PHP_VERSION=" "$env" | cut -d= -f2 | tr -d '[:space:]')
-        [ -z "$sysuser" ] || [ -z "$php_ver" ] && continue
-        [[ "$sysuser" =~ ^[a-zA-Z0-9_-]{1,32}$ ]] || continue
-
-        php_short=$(echo "$php_ver" | tr -d '.')
-        pool_file="/etc/opt/remi/php${php_short}/php-fpm.d/${sysuser}.conf"
-        [ -f "$pool_file" ] || continue
-
-        current=$(grep -oP 'pm\.max_children\s*=\s*\K[0-9]+' "$pool_file" 2>/dev/null)
-        [ -z "$current" ] && continue
-        [ "$current" = "$PHP_MAX" ] && continue
-
-        sed -i "s/pm\.max_children\s*=\s*[0-9]\+/pm.max_children         = ${PHP_MAX}/" "$pool_file"
-        TOUCHED_VERSIONS["$php_short"]=1
-        COUNT=$((COUNT+1))
-    done
-
-    local ver
-    for ver in "${!TOUCHED_VERSIONS[@]}"; do
-        systemctl reload "php${ver}-php-fpm" 2>/dev/null || true
-    done
-
-    patch_mark_done "$ID"
-    ok "$DESC ($COUNT pools resized to pm.max_children=$PHP_MAX for $DOMAIN_COUNT domains)"
 }
 
 # --------------------------------------------------
@@ -808,6 +759,28 @@ patch_service_security_updates(){
     ok "Version and security update menus enabled for Nginx, PHP, MariaDB and PostgreSQL"
 }
 
+patch_shared_runtime_budget(){
+    local ID="SP_20261026_SHARED_RUNTIME_BUDGET"
+    patch_applied "$ID" && return 0
+    info "Applying shared PHP budget and WordPress cache policy (usually under a minute)..."
+    python3 "$BASE_DIR/modules/helpers/php-budget.py" --apply || {
+        fail "Shared PHP budget repair remains pending"
+        return 1
+    }
+    if [ -f /etc/nginx/nginx.conf ]; then
+        python3 "$BASE_DIR/modules/helpers/wordpress-cache.py" --migrate || {
+            fail "WordPress cache policy repair remains pending"
+            return 1
+        }
+    fi
+    python3 "$BASE_DIR/modules/helpers/warmup-schedule.py" || {
+        fail "Warmup schedule repair remains pending"
+        return 1
+    }
+    patch_mark_done "$ID"
+    ok "Shared runtime budget and enabled WordPress caches repaired"
+}
+
 patch_nginx_worker_limits(){
     local ID="SP_20261026_NGINX_WORKER_LIMITS"
     patch_applied "$ID" && return 0
@@ -862,6 +835,13 @@ apply_all_patches(){
     patch_service_security_updates || ssl_status=$?
     patch_service_versionlock_repair || ssl_status=$?
     patch_nginx_worker_limits || ssl_status=$?
+    local policy_timing="${DATA_DIR:-/var/shieldpress/data}/runtime-policy-timing"
+    if install -d -m 700 "$policy_timing"; then
+        run_with_loading "Shared runtime policy migration" "$policy_timing/migration" 30 patch_shared_runtime_budget || ssl_status=$?
+    else
+        fail "Cannot create runtime policy timing directory; migration remains pending"
+        ssl_status=1
+    fi
     patch_restored_wordpress_db || ssl_status=$?
     patch_backup_scheduled_jobs
     patch_134_fix_bin_perms
@@ -875,7 +855,7 @@ apply_all_patches(){
     patch_1331_install_logrotate
     patch_1331_warn_node_root_pm2
     patch_1331_service_resilience
-    patch_1331_resize_php_pools
+    patch_1331_resize_php_pools || ssl_status=$?
     patch_ssl_auto_renew || ssl_status=$?
     patch_wp_recovery_output || ssl_status=$?
 
@@ -926,6 +906,7 @@ show_patch_status(){
     _status "SP_1331_INSTALL_LOGROTATE"           "v1.3.31 Install logrotate for ShieldPress logs"
     _status "SP_1331_WARN_NODE_ROOT_PM2"          "v1.3.31 Warn about Node.js domains running as root"
     _status "SP_1331_SERVICE_RESILIENCE"          "v1.3.31 Auto-restart MariaDB/PostgreSQL/PHP-FPM after crash"
+    _status "SP_20261026_SHARED_RUNTIME_BUDGET" "Shared PHP budget, WordPress cache and warmup schedules"
     _status "SP_1331_RESIZE_PHP_POOLS"            "v1.3.31 Resize pm.max_children (prevent RAM overcommit)"
     _status "SP_20260928_BACKUP_JOBS"             "Repair existing database backup schedules"
     _status "SP_20261001_SSL_AUTO_RENEW"          "Repair SSL auto-renew and standalone mail certificates"

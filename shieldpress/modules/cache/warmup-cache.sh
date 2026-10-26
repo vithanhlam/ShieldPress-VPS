@@ -8,7 +8,7 @@ AUTO_MODE=0
 if [ "$1" = "--auto" ] && [ -n "$2" ]; then
     AUTO_MODE=1
     SELECTED_DOMAIN="$2"
-    CLEAN_DOMAIN=$(echo "$SELECTED_DOMAIN" | sed 's/[^a-zA-Z0-9]/_/g')
+    CLEAN_DOMAIN=$(domain_to_clean "$SELECTED_DOMAIN")
     DOMAIN_PATH="/home/domains/$CLEAN_DOMAIN"
     ROOT="$DOMAIN_PATH/public_html"
     if [ ! -d "$DOMAIN_PATH" ]; then
@@ -23,6 +23,32 @@ else
     select_domain || exit 1
 fi
 
+# One warmup job per VPS; keep lock storage outside writable website directories.
+LOCK_DIR="/run/shieldpress/cache-warmup"
+install -d -m 700 "$LOCK_DIR" || exit 1
+exec 9>"$LOCK_DIR/global.lock"
+if ! flock -n 9; then
+    echo "[INFO] Another cache warmup is active; this run was skipped"
+    exit 0
+fi
+
+warmup_capacity(){
+    local available total load cores
+    read -r available total < <(awk '/MemTotal:/ {t=$2} /MemAvailable:/ {a=$2} END {print a+0,t+0}' /proc/meminfo)
+    read -r load _ < /proc/loadavg
+    cores=$(nproc)
+    awk -v a="$available" -v t="$total" -v l="$load" -v c="$cores" 'BEGIN {exit !(a >= 262144 && a >= t * .15 && l < c)}'
+}
+
+# Stop before generating more PHP traffic when the server is under pressure.
+require_warmup_capacity(){
+    if ! warmup_capacity; then
+        echo "[WARN] Warmup stopped: load or available memory exceeds the safe threshold; retry off peak"
+        return 1
+    fi
+}
+require_warmup_capacity || exit 1
+
 WP_CONFIG="$DOMAIN_PATH/public_html/wp-config.php"
 
 LOG_FILE="$LOG_DIR/cache-warmup.log"
@@ -35,7 +61,7 @@ log(){
 # =========================
 # CONFIG
 # =========================
-PARALLEL=10
+PARALLEL=2
 LIMIT=500
 RETRY=2
 
@@ -204,6 +230,10 @@ run_parallel(){
     while read -r url; do
         [ -z "$url" ] && continue
 
+        if ! require_warmup_capacity; then
+            wait
+            return 1
+        fi
         (
             hit_url "$url"
             sleep 0.2
@@ -447,8 +477,10 @@ setup_cron(){
 # CRON PREF (ASK BEFORE WARMUP)
 # =========================
 ask_cron_pref(){
-    local default_hour=0
-    local default_min=0
+    local schedule_seed
+    schedule_seed=$(printf '%s' "$SELECTED_DOMAIN" | cksum | awk '{print $1}')
+    local default_hour=$((schedule_seed % 6))
+    local default_min=$(((schedule_seed / 6) % 60))
     local hour_input
     local min_input
     local cron_expr
@@ -502,7 +534,7 @@ hit_url "$URL"
 # =========================
 # WARM URLS
 # =========================
-run_parallel "$URLS"
+run_parallel "$URLS" || exit 1
 
 # =========================
 # SUMMARY

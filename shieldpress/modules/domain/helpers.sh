@@ -113,9 +113,7 @@ EOF
 
     pool_conf="/etc/opt/remi/php${version_short}/php-fpm.d/www.conf"
     total_ram=$(free -m | awk '/Mem:/ {print $2}')
-    pm_max_children=$((total_ram / 50))
-    [ "$pm_max_children" -lt 5 ] && pm_max_children=5
-    [ "$pm_max_children" -gt 100 ] && pm_max_children=100
+    pm_max_children=4
 
     mkdir -p "/var/opt/remi/php${version_short}/run/php-fpm"
 
@@ -159,6 +157,7 @@ EOF
         return 1
     fi
 
+    python3 "$BASE_DIR/modules/helpers/php-budget.py" --apply || return 1
     systemctl restart "$service_name" >/dev/null 2>&1 || return 1
     ok "PHP ${version} installed"
     return 0
@@ -528,30 +527,18 @@ create_php_pool(){
     mkdir -p "/var/opt/remi/php${PHP_SHORT}/run/php-fpm"
     mkdir -p "$SLOW_LOG_DIR"
 
-    # SELinux: $SLOW_LOG_DIR nằm ngoài $DOMAIN_PATH nên không được gán context
-    # ở create_directory_structure(). Không có rule này thì php-fpm (chạy trong
-    # domain httpd_t) bị denied mở slowlog -> service FAIL LÚC START -> sập
-    # toàn bộ site cùng version PHP trên server (không chỉ domain mới).
+    # SELinux: slow logs live outside the domain directory.
+    # Label the shared slow log directory for PHP-FPM.
+    # An incorrect context can prevent PHP-FPM from starting.
+    # This affects every pool using the same PHP service.
     if command -v semanage >/dev/null 2>&1; then
         semanage fcontext -a -t httpd_log_t "$SLOW_LOG_DIR(/.*)?" 2>/dev/null || \
             semanage fcontext -m -t httpd_log_t "$SLOW_LOG_DIR(/.*)?" 2>/dev/null || true
         restorecon -Rv "$SLOW_LOG_DIR" >/dev/null 2>&1 || true
     fi
 
-    local TOTAL_RAM PHP_MAX DOMAIN_COUNT
-    TOTAL_RAM=$(free -m | awk '/Mem:/ {print $2}')
-    # Chia thêm cho số domain hiện có - công thức cũ (TOTAL_RAM/50) tính độc
-    # lập cho MỖI domain, không co giãn theo số domain trên server. Với
-    # memory_limit=1024M/worker, chỉ cần vài domain cùng đạt pm.max_children
-    # tối đa là đủ overcommit RAM thật nhiều lần, dễ kích hoạt OOM-killer
-    # giết MariaDB/PostgreSQL/PHP-FPM. Domain cũ đã tạo trước fix này giữ
-    # nguyên số cũ (không tự retrofit ngược) - chỉ domain tạo mới hoặc đổi
-    # PHP version sau bản vá mới được tính lại.
-    DOMAIN_COUNT=$(find "$DOMAINS_ROOT" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
-    [ "$DOMAIN_COUNT" -lt 1 ] && DOMAIN_COUNT=1
-    PHP_MAX=$((TOTAL_RAM / 50 / DOMAIN_COUNT))
-    [ "$PHP_MAX" -lt 5  ] && PHP_MAX=5
-    [ "$PHP_MAX" -gt 50 ] && PHP_MAX=50
+    # The shared budget helper recalculates all branches after writing this pool.
+    local PHP_MAX=4
 
     cat > "$POOL_DIR/${CLEAN_DOMAIN}.conf" << POOL
 [$CLEAN_DOMAIN]
@@ -567,16 +554,16 @@ pm.max_children         = $PHP_MAX
 pm.process_idle_timeout = 10s
 pm.max_requests         = 500
 
-; Kill process treo sau 300s - tránh zombie ăn RAM
+; Terminate requests exceeding 300 seconds.
 request_terminate_timeout = 300
 
-; Slow log - log request chậm hơn 5s để debug
+; Record requests taking longer than five seconds.
 slowlog = ${SLOW_LOG_DIR}/${CLEAN_DOMAIN}-slow.log
 request_slowlog_timeout = 5
 
 chdir = /
 
-; ---- PHP VALUES (tối ưu cho WordPress nặng) ----
+; ---- PHP VALUES ----
 php_admin_value[memory_limit]        = 1024M
 php_admin_value[upload_max_filesize] = 1024M
 php_admin_value[post_max_size]       = 1024M
@@ -585,7 +572,7 @@ php_admin_value[max_input_vars]      = 10000
 php_admin_value[max_input_time]      = 300
 
 ; ---- PERFORMANCE ----
-; Cache đường dẫn file - giảm stat() calls cho site nhiều file/plugin
+; Cache resolved filesystem paths.
 php_admin_value[realpath_cache_size] = 4096K
 php_admin_value[realpath_cache_ttl]  = 600
 
@@ -595,11 +582,11 @@ php_admin_value[sys_temp_dir]        = $DOMAIN_PATH/tmp
 php_admin_value[temp_dir]            = $DOMAIN_PATH/tmp
 php_admin_value[session.save_path]   = $DOMAIN_PATH/tmp/sessions
 
-; Tắt các hàm nguy hiểm hay dùng trong webshell/malware
+; Disable shell execution functions for managed application pools.
 php_admin_value[disable_functions]   = exec,passthru,shell_exec,system,proc_open,popen,pcntl_exec
 POOL
 
-    # Tạo thư mục tmp riêng cho domain
+    # Create private temporary directories for the domain.
     mkdir -p "$DOMAIN_PATH/tmp/sessions" || exit 1
 
     chmod 700 "$DOMAIN_PATH/tmp"
@@ -613,7 +600,8 @@ POOL
         restorecon -Rv $DOMAIN_PATH/tmp
     fi
 
-    systemctl restart "$PHP_SVC" 2>/dev/null
+    python3 "$BASE_DIR/modules/helpers/php-budget.py" --apply || return 1
+    systemctl restart "$PHP_SVC" 2>/dev/null || return 1
     sleep 1
 }
 
@@ -624,29 +612,6 @@ POOL
 create_nginx_config(){
     PHP_SOCKET="/var/opt/remi/php${PHP_SHORT}/run/php-fpm/${CLEAN_DOMAIN}.sock"
     NGINX_CONF="/etc/nginx/conf.d/${CLEAN_DOMAIN}.conf"
-
-    # --- Per-domain FastCGI cache ---
-    local CACHE_DIR="/var/cache/nginx/${CLEAN_DOMAIN}"
-    local CACHE_ZONE="SHIELDPRESS_${CLEAN_DOMAIN}"
-    local CACHE_ZONE_CONF="/etc/nginx/conf.d/cache-zone-${CLEAN_DOMAIN}.conf"
-
-    # Tạo thư mục cache riêng cho domain
-    mkdir -p "$CACHE_DIR"
-    chown nginx:nginx "$CACHE_DIR"
-    chmod 755 "$CACHE_DIR"
-
-    # Tính max_size theo RAM
-    local TOTAL_RAM CACHE_MAX
-    TOTAL_RAM=$(free -m | awk '/Mem:/ {print $2}')
-    CACHE_MAX=$((TOTAL_RAM / 4))
-    [ "$CACHE_MAX" -lt 512  ] && CACHE_MAX=512
-    [ "$CACHE_MAX" -gt 2048 ] && CACHE_MAX=2048
-
-    # Tạo cache zone riêng cho domain
-    cat > "$CACHE_ZONE_CONF" << ZEOF
-# Cache zone for: $DOMAIN
-fastcgi_cache_path ${CACHE_DIR} levels=1:2 keys_zone=${CACHE_ZONE}:10m inactive=60m max_size=${CACHE_MAX}m;
-ZEOF
 
     ensure_security_headers_snippet
 
@@ -694,42 +659,6 @@ server {
         fastcgi_buffers     32 32k;
         fastcgi_buffer_size 64k;
 
-        # =========================
-        # SKIP CACHE
-        # =========================
-        set \$skip_cache 0;
-
-        if (\$request_method = POST) { set \$skip_cache 1; }
-
-        # search / filter / biến thể
-        if (\$query_string != "") { set \$skip_cache 1; }
-
-        if (\$request_uri ~* "/wp-admin/") { set \$skip_cache 1; }
-        if (\$request_uri ~* "/wp-login.php") { set \$skip_cache 1; }
-
-        # user + session (QUAN TRỌNG)
-        if (\$http_cookie ~* "wordpress_logged_in") { set \$skip_cache 1; }
-        if (\$http_cookie ~* "woocommerce_items_in_cart") { set \$skip_cache 1; }
-        if (\$http_cookie ~* "wp-postpass") { set \$skip_cache 1; }
-
-        # =========================
-        # CACHE
-        # =========================
-        fastcgi_cache_bypass \$skip_cache;
-        fastcgi_no_cache     \$skip_cache;
-
-        fastcgi_cache        ${CACHE_ZONE};
-        fastcgi_cache_key    "\$scheme\$request_method\$host\$request_uri";
-
-        fastcgi_cache_valid  200 301 302 6h;
-
-        fastcgi_cache_use_stale updating;
-        fastcgi_cache_background_update on;
-
-        fastcgi_cache_lock on;
-        fastcgi_cache_lock_timeout 10s;
-        add_header X-Powered-By "ShieldPress VPS" always;
-        add_header X-Cache \$upstream_cache_status;
     }
 
     location ~ /\.                                    { deny all; }
@@ -749,6 +678,13 @@ server {
     }
 }
 NGEOF
+
+    if [ "${APP_TYPE:-wordpress}" = "wordpress" ]; then
+        python3 "$BASE_DIR/modules/helpers/wordpress-cache.py" --domain "$CLEAN_DOMAIN" --create-wordpress || {
+            rollback_domain
+            return 1
+        }
+    fi
 
     if nginx -t 2>/dev/null; then
         systemctl reload nginx

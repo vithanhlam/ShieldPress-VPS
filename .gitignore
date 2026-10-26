@@ -50,3 +50,7 @@ temp/
 
 # Local Codex release instructions; never publish
 GITHUB.MD
+
+# Python interpreter artifacts
+__pycache__/
+*.py[cod]

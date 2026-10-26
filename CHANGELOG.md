@@ -1,3 +1,13 @@
+## v1.3.118 — 2026-10-26 — Share PHP capacity and unify WordPress Nginx caching
+
+- Share a memory- and CPU-based PHP-FPM child budget across installed Remi branches using global `process.max` and bounded per-pool concurrency. Retain lower custom limits, users, sockets, PHP settings and process-manager modes; validate before reloading previously active services and restore configuration on failure.
+- Use the policy in installation, domain creation/PHP changes, PHP optimization, automatic RAM optimization, emergency pool rebuilding and legacy/new source migrations. Stop legacy migrations from overwriting lower limits. Retain the existing database and per-request PHP memory configuration during migration.
+- Unify WordPress creation and cache enable/disable around a transactional cache helper. Bypass authenticated, session, query, POST and sensitive endpoint traffic, honor upstream cache controls, enable regeneration locks, retire old cache keys and add cache/timing fields to managed access logs. Do not enable WordPress page cache for new generic PHP, Laravel or Node.js domains; leave unrecognized custom cache blocks pending for review.
+- Reduce per-site cache metadata zones to 2 MiB and budget disk cache targets across domains. Keep disabled cache data for recovery rather than deleting it during a configuration change.
+- Limit warmup to one VPS job and two concurrent URLs, stop launching work under CPU/RAM pressure, and stagger only legacy generated midnight daily schedules with private crontab backups. Remove page-cache dropping from automatic RAM optimization.
+- Add retryable, idempotent upgrade repair with configuration rollback and document limits, backups and recovery. Verify real Nginx/PHP-FPM cache HIT/bypass and private-response behavior in an isolated container, regression checks for budgets, stack isolation, rollback, schedules and old-updater handoff, existing security/restore checks, smoke tests, Bash syntax and whitespace. Production resource savings are not measured by these tests.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.117 — 2026-10-26 — Bound Nginx worker memory allocation
 
 - Replace unbounded automatic workers and CPU-multiplied connection allocation in installation and optimization with a shared policy: at most 16 workers and 16,384 connections per worker. Smaller hosts retain proportionate limits.

@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.117`
+**Current version:** `1.3.118`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -30,6 +30,55 @@ Nginx installation and optimization cap worker allocation at 16 workers and
 16,384 connections per worker. Upgrades automatically reduce excessive limits
 while preserving lower custom values, validate configuration before reload,
 and restore the configuration file if validation or reload fails.
+
+PHP-FPM now shares a host budget across installed Remi branches. The policy
+uses 40% of physical RAM minus a 256 MiB reserve per branch, estimates each
+worker at the larger of 128 MiB or the observed PHP-FPM peak RSS, and caps the
+host at six children per CPU. Each branch receives a `process.max` limit and
+each pool at most eight children; lower existing limits and pool users,
+sockets, PHP settings and process-manager modes are retained. These are
+concurrency limits, not hard memory quotas: individual requests can grow and
+busy sites may queue. Initial domain pools start at four children before
+shared budgeting. Inactive services remain inactive during budget repair.
+
+Creation, PHP optimization, installation, emergency pool repair and source
+migrations use the same helper. Preview with
+`python3 /opt/shieldpress/modules/helpers/php-budget.py`; apply with `--apply`.
+Configuration backups use `.before-php-budget.*` and `.before-cache-policy.*`
+suffixes beside the originals. Restore the matching files together, validate
+with the installed PHP-FPM binaries and `nginx -t`, then reload affected active
+services. Failed validation/reload restores configuration; failed migrations
+remain pending in Migration Patches. Lower limits are never raised by repair.
+
+WordPress creation, Enable Cache and enabled-cache migrations share one policy:
+cache anonymous GET/HEAD responses, bypass queries, authentication, known
+session cookies and account/cart/checkout/admin/API endpoints; respect upstream
+`Set-Cookie` and `Cache-Control`. Cache locks reduce simultaneous regeneration.
+Only successful 200 responses have a default one-hour TTL; upstream cache
+headers may override it. A new cache-key namespace retires old cached content
+without deleting files. Disable Cache retains inactive cache data/zone files
+for recovery; the per-domain purge tool can clear data separately.
+
+New generic PHP, Laravel and Node.js domains do not receive WordPress page
+cache rules. Migration repairs only enabled, recognized WordPress cache blocks;
+custom blocks require review and leave migration pending. Customized checkout
+URLs or session cookies should be reviewed before enabling page cache.
+The `shieldpress_perf` log format adds host, request/upstream timing and cache
+status to managed WordPress access logs. Cache metadata zones use 2 MiB per
+site; disk cache targets divide 8 GiB or 10% of the cache filesystem (whichever is
+smaller) across domains, then clamp each site to 16–512 MiB. The minimum can
+exceed the shared target on hosts with very many domains. These are eviction targets, not
+filesystem quotas, and previously allocated files may take time to expire.
+
+Warmup allows one job per VPS and two concurrent URLs. It stops launching new
+work when load reaches the CPU count or available RAM falls below 15% / 256 MiB.
+Overlapping jobs are skipped and need a later retry. Legacy generated midnight
+daily root schedules are staggered across 00:00–05:59; customized schedules are
+retained. Crontab backups live under
+`/var/shieldpress/backups/warmup-schedule/`. Automatic RAM optimization no longer
+drops Linux page cache. These source changes do not establish a measured
+production CPU or RAM reduction; compare traffic, HIT rates and latency after
+updating and allowing active requests to drain.
 
 Nginx **16**, PHP **14**, MariaDB **14** and PostgreSQL **14** open
 **Version & Security Updates**. Check installed RPM versions, proposed updates and
