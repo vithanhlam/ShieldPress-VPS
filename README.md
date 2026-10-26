@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.116`
+**Current version:** `1.3.117`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -25,6 +25,11 @@ for updates such as 26.5.0 to a newer 26.x release from the configured repositor
 It confirms the target, refreshes package locks, and verifies the installed version.
 Restart affected applications individually afterward to load the new runtime.
 Option 2 remains the Node.js 22 LTS installer and blocks automatic downgrades.
+
+Nginx installation and optimization cap worker allocation at 16 workers and
+16,384 connections per worker. Upgrades automatically reduce excessive limits
+while preserving lower custom values, validate configuration before reload,
+and restore the configuration file if validation or reload fails.
 
 Nginx **16**, PHP **14**, MariaDB **14** and PostgreSQL **14** open
 **Version & Security Updates**. Check installed RPM versions, proposed updates and

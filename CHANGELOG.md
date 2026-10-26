@@ -1,3 +1,11 @@
+## v1.3.117 — 2026-10-26 — Bound Nginx worker memory allocation
+
+- Replace unbounded automatic workers and CPU-multiplied connection allocation in installation and optimization with a shared policy: at most 16 workers and 16,384 connections per worker. Smaller hosts retain proportionate limits.
+- Automatically repair existing installations through a retryable migration, retaining lower custom limits. Back up the configuration, validate with `nginx -t` before reload, restore the file on validation or reload failure, and leave unsuccessful migrations pending.
+- Explicitly install the Python runtime used by the shared Nginx worker helper.
+- Validate CPU profiles from 1 to 192 cores, custom limits, repeat execution, configuration validation and reload failures, and old-updater migration handoff/retry. Run repository smoke tests, Bash syntax checks and whitespace checks. Live VPS memory usage is not measured by these local checks.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.116 — 2026-10-26 — Repair missing versionlock configuration and menu layout
 
 - Fix `No section: 'main'` when service update checks run without complete versionlock configuration. Allow read-only version and advisory checks while retaining the protection requirement for package updates.

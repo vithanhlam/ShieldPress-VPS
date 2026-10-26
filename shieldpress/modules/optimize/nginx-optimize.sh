@@ -30,11 +30,8 @@ fi
 # NGINX.CONF - worker tuning
 # ================================================
 
-sed -i "s/^worker_processes.*/worker_processes auto;/" "$NGINX_CONF"
-
-WORKER_CONN=$((CPU * 4096))
-sed -i '/worker_connections/d' "$NGINX_CONF"
-sed -i "/events {/a \    worker_connections $WORKER_CONN;" "$NGINX_CONF"
+BASE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+python3 "$BASE_DIR/modules/helpers/nginx-workers.py" || exit 1
 
 grep -q "worker_rlimit_nofile" "$NGINX_CONF" || \
     sed -i '1i worker_rlimit_nofile 100000;' "$NGINX_CONF"
@@ -57,7 +54,7 @@ for DIRECTIVE in "sendfile on" "tcp_nopush on" "tcp_nodelay on" "keepalive_timeo
     fi
 done
 
-ok "nginx.conf tuned (workers=auto, connections=$WORKER_CONN)"
+ok "nginx.conf tuned (at most 16 workers and 16384 connections per worker)"
 
 # ================================================
 # PERFORMANCE CONF - full rewrite

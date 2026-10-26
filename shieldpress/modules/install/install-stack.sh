@@ -408,7 +408,7 @@ EOF
 dnf clean all
 dnf makecache
 
-dnf install -y nginx
+dnf install -y nginx python3
 
 echo "[INFO] Re-sync after adding repositories..."
 dnf update -y || true
@@ -422,17 +422,8 @@ mkdir -p /var/cache/nginx
 chown -R nginx:nginx /var/cache/nginx
 chmod 755 /var/cache/nginx
 
-# Optimize nginx worker_processes
-sed -i "s/^worker_processes.*/worker_processes auto;/" /etc/nginx/nginx.conf
-
-# ------------------------------------------------
-# NGINX AUTO TUNING
-# ------------------------------------------------
-
-WORKER_CONN=$((CPU_CORES * 4096))
-
-sed -i '/worker_connections/d' /etc/nginx/nginx.conf
-sed -i "/events {/a \    worker_connections $WORKER_CONN;" /etc/nginx/nginx.conf
+# Bound worker and connection allocation on large CPU hosts.
+python3 "$BASE_DIR/modules/helpers/nginx-workers.py"
 
 grep -q "worker_rlimit_nofile" /etc/nginx/nginx.conf || \
     sed -i '1i worker_rlimit_nofile 100000;' /etc/nginx/nginx.conf

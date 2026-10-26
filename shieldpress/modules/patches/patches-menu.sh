@@ -808,6 +808,23 @@ patch_service_security_updates(){
     ok "Version and security update menus enabled for Nginx, PHP, MariaDB and PostgreSQL"
 }
 
+patch_nginx_worker_limits(){
+    local ID="SP_20261026_NGINX_WORKER_LIMITS"
+    patch_applied "$ID" && return 0
+    if [ ! -f /etc/nginx/nginx.conf ]; then
+        skip "Nginx configuration missing; worker limit repair remains pending"
+        return 0
+    fi
+    info "Bounding Nginx worker allocation (usually a few seconds)..."
+    if python3 "$BASE_DIR/modules/helpers/nginx-workers.py" --clamp --reload; then
+        patch_mark_done "$ID"
+        ok "Nginx worker allocation bounded"
+    else
+        fail "Nginx worker limit repair remains pending; review Nginx configuration and retry"
+        return 1
+    fi
+}
+
 patch_service_versionlock_repair(){
     local ID="SP_20261026_SERVICE_VERSIONLOCK_REPAIR"
     patch_applied "$ID" && return 0
@@ -844,6 +861,7 @@ apply_all_patches(){
     patch_nodejs_same_branch_updates || ssl_status=$?
     patch_service_security_updates || ssl_status=$?
     patch_service_versionlock_repair || ssl_status=$?
+    patch_nginx_worker_limits || ssl_status=$?
     patch_restored_wordpress_db || ssl_status=$?
     patch_backup_scheduled_jobs
     patch_134_fix_bin_perms
@@ -895,6 +913,7 @@ show_patch_status(){
     _status "SP_20261026_NODEJS_SAME_BRANCH_UPDATES" "Enable same-branch Node.js updates"
     _status "SP_20261026_SERVICE_SECURITY_UPDATES" "Enable service version and security updates"
     _status "SP_20261026_SERVICE_VERSIONLOCK_REPAIR" "Repair service update package protection"
+    _status "SP_20261026_NGINX_WORKER_LIMITS" "Bound Nginx worker memory allocation"
     _status "SP_20261025_RESTORE_WORDPRESS_DB" "Repair restored WordPress database configuration"
     _status "SP_134_FIX_BIN_PERMS"          "v1.3.4 Fix node_modules/vendor bin perms"
     _status "SP_134_SECURE_CONFIG_DIR"       "v1.3.4 Secure config/ to root:root 700"
