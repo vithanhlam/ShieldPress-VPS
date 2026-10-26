@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import stat
 import subprocess
 import sys
 import tempfile
@@ -141,15 +142,26 @@ NGINX_GUARDS = r'''    # ShieldPress application source boundary
 
 
 def harden_nginx(directory, uid=0):
-    if directory.is_symlink():
+    if directory.is_symlink() or directory.resolve() != directory.absolute():
         raise ValueError("Nginx configuration directory is a symlink")
+    parent = directory.stat()
+    if parent.st_uid != uid or parent.st_mode & 0o022:
+        raise ValueError('Untrusted Nginx configuration directory')
     changed = {}
     for path in directory.glob('*.conf'):
         if path.is_symlink():
             raise ValueError(f'Nginx configuration is a symlink: {path.name}')
-        if path.stat().st_uid != uid or path.stat().st_mode & 0o022:
-            raise ValueError(f'Untrusted Nginx configuration: {path.name}')
-        text = path.read_text()
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd) as stream:
+            current = os.fstat(stream.fileno())
+            if current.st_uid != uid or not stat.S_ISREG(current.st_mode) or current.st_nlink != 1:
+                raise ValueError(f'Untrusted Nginx configuration: {path.name}')
+            # Legacy root-owned vhosts can retain mode 666. Lock the opened
+            # regular file before reading it; never follow links or change owners.
+            if current.st_mode & 0o022:
+                os.fchmod(stream.fileno(), stat.S_IMODE(current.st_mode) & 0o755)
+                print(f'[OK] Removed group/other write access from Nginx configuration: {path.name}')
+            text = stream.read()
         if 'ShieldPress application source boundary' in text or '/public_html' not in text:
             continue
         handler = re.search(r'(?m)^\s*location ~ \\\.php\$ \{', text)

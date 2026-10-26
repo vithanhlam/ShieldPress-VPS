@@ -314,7 +314,7 @@ class SecurityBoundaries(unittest.TestCase):
 
     def test_nginx_migration_repeat_and_rollback(self):
         configs = self.root / 'nginx'
-        configs.mkdir()
+        configs.mkdir(mode=0o755)
         path = configs / 'example.conf'
         original = 'server {\n root /home/domains/example_com/public_html;\n location ~ \\.php$ { return 200; }\n}\n'
         path.write_text(original)
@@ -332,6 +332,62 @@ class SecurityBoundaries(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 migration.harden_nginx(configs, os.getuid())
         self.assertEqual(path.read_text(), original)
+
+    def test_nginx_legacy_writable_configuration_repair_and_retry(self):
+        configs = self.root / 'nginx'
+        configs.mkdir(mode=0o755)
+        path = configs / '1618art_com.conf'
+        original = 'server {\n root /home/domains/1618art_com/public_html;\n location ~ \\.php$ { return 200; }\n}\n'
+        path.write_text(original)
+        path.chmod(0o666)
+        with patch.object(migration.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1)):
+            with self.assertRaises(RuntimeError):
+                migration.harden_nginx(configs, os.getuid())
+        self.assertEqual(path.read_text(), original)
+        self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+        with patch.object(migration.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as run:
+            migration.harden_nginx(configs, os.getuid())
+            first = path.read_text()
+            migration.harden_nginx(configs, os.getuid())
+            self.assertEqual(run.call_count, 2)
+            self.assertEqual(first, path.read_text())
+        self.assertIn('ShieldPress application source boundary', first)
+        self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+
+    def test_nginx_permission_repair_rejects_links_owners_and_writable_directory(self):
+        configs = self.root / 'nginx'
+        configs.mkdir(mode=0o755)
+        outside = self.root / 'outside.conf'
+        outside.write_text('unchanged')
+        outside.chmod(0o666)
+        path = configs / 'example.conf'
+        with patch.object(migration.subprocess, 'run') as run:
+            path.symlink_to(outside)
+            with self.assertRaises(ValueError):
+                migration.harden_nginx(configs, os.getuid())
+            path.unlink()
+            os.link(outside, path)
+            with self.assertRaises(ValueError):
+                migration.harden_nginx(configs, os.getuid())
+            path.unlink()
+            path.write_text('unchanged')
+            with self.assertRaises(ValueError):
+                migration.harden_nginx(configs, os.getuid() + 1)
+            account_stat = list(path.stat())
+            account_stat[4] = os.getuid() + 1
+            with patch.object(migration.os, 'fstat', return_value=os.stat_result(account_stat)):
+                with self.assertRaises(ValueError):
+                    migration.harden_nginx(configs, os.getuid())
+            path.unlink()
+            os.mkfifo(path)
+            with self.assertRaises(ValueError):
+                migration.harden_nginx(configs, os.getuid())
+            configs.chmod(0o777)
+            with self.assertRaises(ValueError):
+                migration.harden_nginx(configs, os.getuid())
+            run.assert_not_called()
+        self.assertEqual(outside.read_text(), 'unchanged')
+        self.assertEqual(outside.stat().st_mode & 0o777, 0o666)
 
     def test_real_archive_helpers_preserve_names_and_do_not_evaluate_settings(self):
         app = self.home / 'public_html'

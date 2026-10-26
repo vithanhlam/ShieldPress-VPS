@@ -1,3 +1,10 @@
+## v1.3.122 — 2026-10-26 — Repair legacy writable Nginx configuration permissions
+
+- Automatically remove group/other write access from root-owned regular Nginx configuration files before pending domain boundary migration continues, including legacy mode `666` vhosts. Preserve configuration content during permission repair and retain Nginx validation and rollback for source protection changes.
+- Require a trusted configuration directory and reject symlinks, hardlinks, special files and unexpected owners. Repair the opened file descriptor without following links or changing ownership.
+- Cover legacy permission repair, failed validation followed by retry, repeat execution and unsafe path rejection in security regressions. Run repository smoke tests, Bash syntax and whitespace checks.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.121 — 2026-10-26 — Retry security migration for legacy digit-leading users
 
 - Accept digit-leading application usernames generated from legacy domain names, including `1618art_com`. Continue rejecting root, UID-zero accounts, numeric-only identifiers and unsafe username characters.
