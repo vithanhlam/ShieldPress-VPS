@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Real-engine, isolated report-only YARA regression checks."""
 import hashlib
+import contextlib
+import io
 import importlib.util
 import json
 import os
@@ -146,6 +148,37 @@ class ScanTests(unittest.TestCase):
         with patch.object(m.shutil, 'which', return_value='/mock/yara'), patch.object(m, 'run_engine', side_effect=engine):
             self.assertEqual(m.scan('nodejs', self.config), 2)
         self.assertIn('file changed', str(self.report()))
+
+    def test_live_counts_and_partial_report_on_interrupt(self):
+        output = io.StringIO()
+        with patch.object(m.shutil, 'which', return_value='/mock/yara'), patch.object(
+                m, 'run_engine', side_effect=[(0, '', ''), KeyboardInterrupt()]), contextlib.redirect_stdout(output):
+            self.assertEqual(m.scan('nodejs', self.config), 2)
+        self.assertEqual(self.report()['status'], 'INCOMPLETE')
+        self.assertIn('interrupted by user', self.report()['error'])
+        self.assertIn('Processed 1/1 candidate files', output.getvalue())
+        self.assertIn('ETA:', output.getvalue())
+        self.assertIsNone(m.ACTIVE_PROGRESS)
+
+    def test_engine_timeout_is_bounded(self):
+        with patch.object(m, 'ACTIVE_PROGRESS', m.ScanProgress()):
+            code, _, error = m.run_engine(
+                ['bash', '-c', 'sleep 2'], 128, 0.1)
+        self.assertEqual(code, 124)
+        self.assertIn('timeout', error)
+
+    def test_scan_outcomes_keep_menu_open_with_errexit(self):
+        source = (ROOT / 'modules/security/yara-menu.sh').read_text()
+        source = source.replace('source "$BASE_DIR/core/paths.sh"', ':')
+        for status in (1, 2, 137):
+            with self.subTest(status=status):
+                script = f'python3() {{ return {status}; }};\n' + source
+                # Domain listing may fail, but selecting all still invokes scan.
+                result = subprocess.run(['bash', '-e', '-c', script],
+                                        input='2\n0\n\n0\n', text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertGreaterEqual(result.stdout.count('YARA MALWARE SCAN'), 2)
+                self.assertIn('[WARN]', result.stdout)
 
     def test_config_rejects_invalid_limits(self):
         m.CONFIG.parent.mkdir()

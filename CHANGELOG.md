@@ -1,3 +1,12 @@
+## v1.3.113 — 2026-10-26 — Show deletion and malware scan progress
+
+- Ask whether to back up files and configuration before full domain or source-only deletion; Enter defaults to Yes and `n` skips the backup. Keep deletion blocked when a requested backup fails.
+- Show animated terminal loading and approximate ETA for backup, scheduled-job cleanup, database deletion, source deletion and configuration cleanup; reuse successful stage timings when available.
+- Show YARA scan stages, processed/total candidate files and a throughput-based ETA; surface errors, retain partial reports after interruption and keep the menu open for findings and failed scans.
+- Document loading and estimated-time feedback as the convention for future processing tasks. Existing installations receive these changes through the normal source update; no stored configuration or service migration is required.
+- Validate on AlmaLinux 9.8 with real YARA: 13 scanner regressions, 9 deletion/progress checks, smoke tests and a terminal scan of 401 files across WordPress, Laravel, Node.js and PHP fixtures.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.112 — 2026-10-25 — Recover orphan migration paths safely
 
 - Remove only unchanged log links and empty configuration directories created by a failed import, retaining website files, databases and recovery reports.

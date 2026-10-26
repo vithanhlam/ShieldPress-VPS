@@ -32,3 +32,13 @@ these stacks priority in regression testing. For changes that can affect a
 stack, test its relevant install, update/deploy, runtime, and rollback behavior
 where applicable; include cross-stack checks when shared services or server
 configuration are changed.
+
+## Long-running task feedback
+
+For processing tasks (including backup, deletion, install, update, and migration),
+show the active stage, an animated loading indicator on interactive terminals,
+and an estimated duration or remaining time. Prefer measured work or previous
+successful timings; label fallback estimates as approximate. If an estimate is
+exceeded, keep the loading indicator active and explain that work continues.
+Do not use an elapsed-seconds counter as the only progress feedback or invent
+completion percentages. Preserve command errors and exit status.

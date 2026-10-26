@@ -21,6 +21,39 @@ REPORTS = Path(os.environ.get('LOG_DIR', '/var/shieldpress/logs')) / 'yara'
 CONFIG = Path(os.environ.get('ETC_DIR', '/etc/shieldpress')) / 'yara.json'
 UNITS = Path(os.environ.get('YARA_UNIT_DIR', '/etc/systemd/system'))
 RULES = BASE / 'modules/security/yara-rules/webshell.yar'
+ACTIVE_PROGRESS = None
+
+
+class ScanProgress:
+    def __init__(self):
+        self.started = time.monotonic()
+        self.last = 0
+        self.total = 0
+        self.done = 0
+        self.stage = "Preparing scan"
+        self.frame = 0
+
+    def tick(self, force=False):
+        now = time.monotonic()
+        interactive = sys.stdout.isatty()
+        if not force and now - self.last < (0.2 if interactive else 10):
+            return
+        self.last = now
+        elapsed = now - self.started
+        eta = (f"~{max(0, round(elapsed / self.done * (self.total - self.done)))}s"
+               if self.done and self.total else "estimating as files are processed")
+        frame = "|/-" + chr(92)
+        text = (f"[{frame[self.frame % 4]}] {self.stage} | "
+                f"Processed: {self.done}/{self.total or '?'} files | ETA: {eta}")
+        self.frame += 1
+        print(("\r\033[K" if interactive else "") + text,
+              end="" if interactive else "\n", flush=True)
+
+    def clear(self):
+        if sys.stdout.isatty():
+            print("\r\033[K", end="", flush=True)
+
+
 DEFAULTS = dict(max_file_mb=16, memory_mb=256, timeout_seconds=900,
                 per_file_seconds=5, report_retention=30, notify=False)
 
@@ -71,8 +104,24 @@ def run_engine(args, memory_mb, timeout, pass_fds=()):
     # Temporary files cap scanner output without accumulating it in RAM.
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
         try:
-            proc = subprocess.run(args, stdout=out, stderr=err, timeout=timeout,
-                                  pass_fds=pass_fds, preexec_fn=limits(memory_mb))
+            proc = subprocess.Popen(args, stdout=out, stderr=err,
+                                    pass_fds=pass_fds, preexec_fn=limits(memory_mb))
+            end = time.monotonic() + timeout
+            try:
+                while proc.poll() is None:
+                    if ACTIVE_PROGRESS:
+                        ACTIVE_PROGRESS.tick()
+                    remaining = end - time.monotonic()
+                    if remaining <= 0:
+                        raise subprocess.TimeoutExpired(args, timeout)
+                    try:
+                        proc.wait(timeout=min(0.2, remaining))
+                    except subprocess.TimeoutExpired:
+                        pass
+            except BaseException:
+                proc.kill()
+                proc.wait()
+                raise
         except subprocess.TimeoutExpired:
             return 124, '', 'YARA timeout'
         out.seek(0)
@@ -108,6 +157,7 @@ def save_report(report, config):
 
 
 def scan(selection, config):
+    global ACTIVE_PROGRESS
     REPORTS.mkdir(parents=True, exist_ok=True, mode=0o700)
     REPORTS.chmod(0o700)
     with (REPORTS / '.scan.lock').open('w') as lock:
@@ -120,6 +170,9 @@ def scan(selection, config):
                       scanned=0, skipped=0, errors=0, matches=0, domains=[],
                       scope='Registered public_html trees; regular files only; no archive extraction',
                       warning='No matches does not prove a website is clean. Starter rules have limited coverage.')
+        progress = ScanProgress()
+        ACTIVE_PROGRESS = progress
+        progress.tick(force=True)
         started = time.monotonic()
         deadline = started + config['timeout_seconds']
         try:
@@ -132,6 +185,19 @@ def scan(selection, config):
             yara, yarac = shutil.which('yara'), shutil.which('yarac')
             if not yara or not yarac:
                 raise ValueError('YARA is not installed. Use Install YARA in the Security menu.')
+            progress.stage = 'Counting candidate files (no file contents read)'
+            progress.tick(force=True)
+            for path, _, _ in selected.values():
+                root = path / 'public_html'
+                if root.is_symlink() or not root.is_dir():
+                    continue
+                for _, _, files in os.walk(root, followlinks=False):
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError('Overall scan time limit reached while counting files')
+                    progress.total += len(files)
+                    progress.tick()
+            progress.stage = 'Validating YARA rules'
+            progress.tick(force=True)
             with tempfile.TemporaryDirectory(prefix='.rules-', dir=REPORTS) as tmp:
                 compiled = str(Path(tmp) / 'rules.bin')
                 code, _, error = run_engine([yarac, str(RULES), compiled], config['memory_mb'], 15)
@@ -140,7 +206,11 @@ def scan(selection, config):
                 for folder, (path, name, stack) in selected.items():
                     item = dict(domain=name, app=stack, scanned=0, skipped=0, skipped_examples=[], errors=[], findings=[])
                     report['domains'].append(item)
+                    progress.clear()
                     print(f'[SCAN] {name} ({stack})', flush=True)
+                    progress.stage = f'Scanning {name} ({stack})'
+                    progress.started = time.monotonic() if not progress.done else progress.started
+                    progress.tick(force=True)
                     root = path / 'public_html'
                     if root.is_symlink() or not root.is_dir():
                         item['errors'].append('Source directory is missing or is a symlink')
@@ -197,8 +267,15 @@ def scan(selection, config):
                             finally:
                                 if fd is not None:
                                     os.close(fd)
+                                progress.done += 1
+                                progress.tick()
+        except KeyboardInterrupt:
+            report['error'] = 'Scan interrupted by user; partial results retained'
         except (OSError, ValueError, TimeoutError) as error:
             report['error'] = str(error)
+        progress.clear()
+        ACTIVE_PROGRESS = None
+        print(f'[PROGRESS] Processed {progress.done}/{progress.total} candidate files.', flush=True)
         for item in report['domains']:
             report['scanned'] += item['scanned']
             report['skipped'] += item['skipped']
@@ -208,6 +285,11 @@ def scan(selection, config):
             report['errors'] += 1
         report['status'] = 'INCOMPLETE' if report['errors'] else ('FINDINGS' if report['matches'] else 'NO_MATCHES')
         report['duration_seconds'] = round(time.monotonic() - started, 2)
+        if 'error' in report:
+            print(f"[FAIL] {report['error']}", flush=True)
+        for item in report['domains']:
+            for error in item['errors'][:5]:
+                print(f"[WARN] {item['domain']}: {error}", flush=True)
         save_report(report, config)
         return 2 if report['errors'] else (1 if report['matches'] else 0)
 

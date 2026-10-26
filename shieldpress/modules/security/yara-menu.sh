@@ -87,7 +87,19 @@ while true; do
     read -r -p "Select: " choice || break
     case "$choice" in
         1) install_yara ;;
-        2) choose_scan ;;
+        2)
+            # Findings (1) and incomplete scans (2) are expected scanner outcomes.
+            # Handle them explicitly so inherited errexit cannot close the menu.
+            if choose_scan; then
+                :
+            else
+                status=$?
+                case "$status" in
+                    1) echo "[WARN] Findings detected. Review the saved report." ;;
+                    *) echo "[WARN] Scan did not complete (exit $status). Review the error and latest report; you can retry from this menu." ;;
+                esac
+            fi
+            ;;
         3) configure_scan ;;
         4) python3 "$SCANNER" report ;;
         5) systemctl list-timers --all shieldpress-yara.timer --no-pager ;;

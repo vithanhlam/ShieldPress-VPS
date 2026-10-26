@@ -50,3 +50,53 @@ run_with_progress() (
     fi
     return "$status"
 )
+
+# Use a spinner for non-interactive stages; keep the command in the foreground.
+run_with_loading() (
+    local label="$1" history="$2" fallback="$3"
+    shift 3
+    local estimate="$fallback" basis="rough estimate" monitor status started=$SECONDS
+    if [ -f "$history" ]; then
+        local previous
+        read -r previous < "$history"
+        if [[ "$previous" =~ ^[1-9][0-9]*$ ]]; then
+            estimate="$previous"
+            basis="previous successful run"
+        fi
+    fi
+    echo "[PROGRESS] $label: estimated duration ~${estimate}s ($basis)."
+    trap '[ -z "$monitor" ] || { kill "$monitor" 2>/dev/null || true; wait "$monitor" 2>/dev/null || true; }' EXIT
+    (
+        local frames='|/-\' index=0 remaining
+        trap 'exit 0' TERM INT HUP
+        while true; do
+            remaining=$((estimate - (SECONDS - started)))
+            if [ -t 1 ]; then
+                if [ "$remaining" -gt 0 ]; then
+                    printf '\r\033[K[%s] %s — ETA ~%ss' "${frames:index++%4:1}" "$label" "$remaining"
+                else
+                    printf '\r\033[K[%s] %s — taking longer than estimated; still running' "${frames:index++%4:1}" "$label"
+                fi
+            fi
+            sleep 0.2 &
+            local sleeper=$!
+            trap 'kill "$sleeper" 2>/dev/null; wait "$sleeper" 2>/dev/null; exit 0' TERM INT HUP
+            wait "$sleeper" || exit
+        done
+    ) &
+    monitor=$!
+    if "$@"; then status=0; else status=$?; fi
+    kill "$monitor" 2>/dev/null || true
+    wait "$monitor" 2>/dev/null || true
+    monitor=""
+    [ ! -t 1 ] || printf '\r\033[K'
+    echo "[PROGRESS] $label: finished (exit $status)."
+    if [ "$status" -eq 0 ]; then
+        local elapsed=$((SECONDS - started)) timing_file
+        if timing_file=$(mktemp "${history}.XXXXXX" 2>/dev/null); then
+            printf '%s\n' "$((elapsed > 0 ? elapsed : 1))" > "$timing_file"
+            mv -fT -- "$timing_file" "$history" 2>/dev/null || rm -f -- "$timing_file"
+        fi
+    fi
+    return "$status"
+)
