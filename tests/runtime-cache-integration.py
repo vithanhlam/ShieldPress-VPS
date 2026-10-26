@@ -66,7 +66,7 @@ pm.process_idle_timeout = 10s
     (root / 'rules.conf').write_text(cache.RULES)
     config = root / 'nginx.conf'
     block = cache.block('integration').replace(cache.SNIPPET, str(root / 'rules.conf'))
-    config.write_text(f'''user nginx;
+    config.write_text(cache.performance_logs(f'''user nginx;
 worker_processes 1;
 pid {root}/nginx.pid;
 error_log {root}/nginx-error.log;
@@ -74,9 +74,17 @@ events {{ worker_connections 128; }}
 http {{
     {cache.POLICY}
     fastcgi_cache_path {root}/cache levels=1:2 keys_zone=SHIELDPRESS_integration:10m;
-    access_log {root}/access.log shieldpress_perf;
+    access_log {root}/access.log;
     server {{
         listen 127.0.0.1:18080;
+        location = /robots.txt {{
+            access_log off;
+            return 200 "robots";
+        }}
+        location = /static.css {{
+            access_log off;
+            return 200 "static";
+        }}
         location / {{
             include /etc/nginx/fastcgi_params;
             fastcgi_param SCRIPT_FILENAME {root}/index.php;
@@ -85,7 +93,7 @@ http {{
         }}
     }}
 }}
-''')
+'''))
     subprocess.run(['nginx', '-t', '-p', str(root), '-c', str(config)], check=True)
     try:
         processes.append(subprocess.Popen([str(php_binary), '-F', '-y', str(fpm)]))

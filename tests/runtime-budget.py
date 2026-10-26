@@ -86,6 +86,9 @@ assert '$skip_cache' not in updated and 'sp-v2:' in updated
 assert cache.rewrite(updated, 'wp_test') == updated
 assert cache.SNIPPET in updated
 assert 'fastcgi_cache' not in cache.rewrite(updated, 'wp_test', True)
+assert cache.performance_logs('    access_log off shieldpress_perf;\n') == '    access_log off;\n'
+assert cache.performance_logs('    access_log off;\n') == '    access_log off;\n'
+assert cache.performance_logs('    access_log off ;\n') == '    access_log off ;\n'
 disabled_legacy = 'server {\nlocation ~ \\.php$ {\nfastcgi_pass unix:/run/php.sock;\nfastcgi_cache_lock on;\nfastcgi_cache_lock_timeout 10s;\n}\n}\n'
 assert 'fastcgi_cache_lock on;' not in cache.rewrite(disabled_legacy, 'wp_test')
 custom = legacy.replace('        fastcgi_cache_lock on;', '        fastcgi_ignore_headers Set-Cookie;\n        proxy_pass http://custom;')
@@ -101,7 +104,7 @@ with tempfile.TemporaryDirectory() as temp:
     (root / 'var/cache').mkdir(parents=True)
     conf = root / 'etc/nginx/conf.d/wp_test.conf'
     conf.parent.mkdir(parents=True)
-    conf.write_text(legacy)
+    conf.write_text(legacy.replace('server {', 'server {\n    access_log /tmp/wordpress-access.log;\n    access_log /tmp/custom.log combined buffer=32k;\n    location = /static { access_log off; }\n    access_log off;'))
     for name, kind in [('wp_test', 'wordpress'), ('laravel_test', 'laravel'), ('node_test', 'nodejs'), ('php_test', 'php')]:
         domain = root / f'home/domains/{name}/config'
         domain.mkdir(parents=True)
@@ -114,6 +117,10 @@ with tempfile.TemporaryDirectory() as temp:
             else:
                 raise AssertionError(f'Page cache must not be enabled for {kind}')
     changes = cache.build(root, ['wp_test'])
+    assert 'access_log off;' in changes[conf]
+    assert 'off shieldpress_perf' not in changes[conf]
+    assert '/tmp/wordpress-access.log shieldpress_perf;' in changes[conf]
+    assert '/tmp/custom.log combined buffer=32k;' in changes[conf]
     for path, text in changes.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)

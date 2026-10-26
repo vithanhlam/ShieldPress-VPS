@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.118`
+**Current version:** `1.3.119`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -64,7 +64,10 @@ cache rules. Migration repairs only enabled, recognized WordPress cache blocks;
 custom blocks require review and leave migration pending. Customized checkout
 URLs or session cookies should be reviewed before enabling page cache.
 The `shieldpress_perf` log format adds host, request/upstream timing and cache
-status to managed WordPress access logs. Cache metadata zones use 2 MiB per
+status to managed WordPress access logs. Disabled logs (`access_log off;`) and
+explicit custom formats/options are retained. The v1.3.119 migration retries
+cache policy repair after v1.3.118 and fixes its exact malformed disabled-log
+directive if one was retained. Cache metadata zones use 2 MiB per
 site; disk cache targets divide 8 GiB or 10% of the cache filesystem (whichever is
 smaller) across domains, then clamp each site to 16–512 MiB. The minimum can
 exceed the shared target on hosts with very many domains. These are eviction targets, not

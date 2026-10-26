@@ -760,7 +760,7 @@ patch_service_security_updates(){
 }
 
 patch_shared_runtime_budget(){
-    local ID="SP_20261026_SHARED_RUNTIME_BUDGET"
+    local ID="SP_20261026_CACHE_ACCESS_LOG_REPAIR"
     patch_applied "$ID" && return 0
     info "Applying shared PHP budget and WordPress cache policy (usually under a minute)..."
     python3 "$BASE_DIR/modules/helpers/php-budget.py" --apply || {
@@ -906,7 +906,7 @@ show_patch_status(){
     _status "SP_1331_INSTALL_LOGROTATE"           "v1.3.31 Install logrotate for ShieldPress logs"
     _status "SP_1331_WARN_NODE_ROOT_PM2"          "v1.3.31 Warn about Node.js domains running as root"
     _status "SP_1331_SERVICE_RESILIENCE"          "v1.3.31 Auto-restart MariaDB/PostgreSQL/PHP-FPM after crash"
-    _status "SP_20261026_SHARED_RUNTIME_BUDGET" "Shared PHP budget, WordPress cache and warmup schedules"
+    _status "SP_20261026_CACHE_ACCESS_LOG_REPAIR" "Shared PHP budget, WordPress cache and warmup schedules"
     _status "SP_1331_RESIZE_PHP_POOLS"            "v1.3.31 Resize pm.max_children (prevent RAM overcommit)"
     _status "SP_20260928_BACKUP_JOBS"             "Repair existing database backup schedules"
     _status "SP_20261001_SSL_AUTO_RENEW"          "Repair SSL auto-renew and standalone mail certificates"

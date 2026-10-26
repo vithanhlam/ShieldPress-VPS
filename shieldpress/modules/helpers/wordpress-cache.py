@@ -90,6 +90,17 @@ def wordpress(path):
     return app == 'wordpress' or (not app and (path / 'public_html/wp-config.php').is_file())
 
 
+def performance_logs(text):
+    """Add timing format only to enabled logs without an explicit format/options."""
+    # Repair the exact malformed directive produced by v1.3.118 if retained.
+    text = re.sub(r'(?m)^([ \t]*access_log[ \t]+off)[ \t]+shieldpress_perf[ \t]*;', r'\1;', text)
+    def replace(match):
+        if match[2] == 'off':
+            return match[0]
+        return f'{match[1]}{match[2]} shieldpress_perf;'
+    return re.sub(r'(?m)^([ \t]*access_log[ \t]+)([^;\s]+)[ \t]*;', replace, text)
+
+
 def build(root, domains, disable=False, creating=False):
     changes = {}
     if not disable:
@@ -110,7 +121,7 @@ def build(root, domains, disable=False, creating=False):
         original = conf.read_text()
         updated = rewrite(original, domain, disable)
         if not disable:
-            updated = re.sub(r'(?m)^(\s*access_log\s+[^;\s]+);', r'\1 shieldpress_perf;', updated)
+            updated = performance_logs(updated)
         changes[conf] = updated
         zone = root / f'etc/nginx/conf.d/cache-zone-{domain}.conf'
         if not disable:

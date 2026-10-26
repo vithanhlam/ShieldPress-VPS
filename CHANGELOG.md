@@ -1,3 +1,10 @@
+## v1.3.119 — 2026-10-26 — Preserve disabled Nginx access logs during cache migration
+
+- Fix v1.3.118 cache migration adding `shieldpress_perf` to `access_log off;`, which Nginx rejects as an invalid parameter. Add the performance format only to enabled logs without an explicit format or options; retain disabled logs and custom logging settings.
+- Repair the exact malformed disabled-log directive if retained and retry shared runtime/cache repair through a new, idempotent migration marker. Keep configuration validation, backups and rollback; a failed repair remains pending.
+- Add regression fixtures with static/robots disabled logs and custom formats, repeat execution and malformed-directive repair. Validate migrated directives with real Nginx/PHP-FPM, cache behavior, upgrade retry/rollback, repository smoke tests, Bash syntax and whitespace checks.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.118 — 2026-10-26 — Share PHP capacity and unify WordPress Nginx caching
 
 - Share a memory- and CPU-based PHP-FPM child budget across installed Remi branches using global `process.max` and bounded per-pool concurrency. Retain lower custom limits, users, sockets, PHP settings and process-manager modes; validate before reloading previously active services and restore configuration on failure.
