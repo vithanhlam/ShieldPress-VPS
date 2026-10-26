@@ -1,3 +1,10 @@
+## v1.3.123 — 2026-10-26 — Exclude deployment staging from domain boundary migration
+
+- Skip real deployment workspace directories matching `.deploy-<name>-YYYYMMDD-HHMMSS` while scanning the active domain registry. Leave staging contents, ownership and permissions untouched and exclude them from trusted domain backup jobs.
+- Automatically retry the existing pending security migration during upgrade; continue rejecting symlinks and unrecognized invalid domain entries.
+- Test pending-error recovery, repeated execution, staging preservation across supported stack names and unsafe entry rejection. Run security regressions, repository smoke tests, Bash syntax and whitespace checks.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.122 — 2026-10-26 — Repair legacy writable Nginx configuration permissions
 
 - Automatically remove group/other write access from root-owned regular Nginx configuration files before pending domain boundary migration continues, including legacy mode `666` vhosts. Preserve configuration content during permission repair and retain Nginx validation and rollback for source protection changes.

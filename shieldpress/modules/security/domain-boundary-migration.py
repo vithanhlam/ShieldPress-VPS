@@ -45,6 +45,11 @@ def migrate(base, domains, etc, uid=0, gid=0):
         if home.is_symlink() or not home.is_dir():
             pending.append(f'Invalid domain directory: {home.name}')
             continue
+        # Deployment workspaces are not active domain registry entries.
+        # Leave them untouched and never include them in trusted backup jobs.
+        if re.fullmatch(r'\.deploy-[A-Za-z0-9_][A-Za-z0-9_-]*-[0-9]{8}-[0-9]{6}', home.name):
+            print(f'[SKIP] Deployment staging directory: {home.name}')
+            continue
         try:
             security.domain_control(domains, home.name, True, uid, gid)
             security.read_settings(home / 'config/domain.env')

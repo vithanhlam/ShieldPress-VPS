@@ -179,6 +179,41 @@ class SecurityBoundaries(unittest.TestCase):
         self.assertTrue((etc / 'crontab-before-domain-boundary.txt').is_file())
         self.assertEqual(self.env.read_text(), original)
 
+    def test_deployment_staging_does_not_block_pending_migration(self):
+        stages = []
+        for stack in ('1618', 'wordpress', 'laravel', 'nodejs', 'php'):
+            stage = self.domains / f'.deploy-{stack}-20261015-104910'
+            stage.mkdir(mode=0o755)
+            marker = stage / 'untouched'
+            marker.write_text('deployment data')
+            marker.chmod(0o664)
+            stages.append((stage, stage.stat(), marker.stat()))
+        etc = self.root / 'etc'
+        etc.mkdir(mode=0o700)
+        pending = etc / 'domain-boundary-pending.txt'
+        pending.write_text('.deploy-1618-20261015-104910: Invalid domain directory name\n')
+        with patch.object(migration.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')):
+            for _ in range(2):
+                self.assertTrue(migration.migrate(ROOT, self.domains, etc, os.getuid(), os.getgid()))
+                self.assertEqual(pending.read_text(), '')
+        for stage, before, marker_before in stages:
+            self.assertEqual(stage.stat().st_mode, before.st_mode)
+            self.assertEqual(stage.stat().st_uid, before.st_uid)
+            self.assertEqual((stage / 'untouched').stat().st_mode, marker_before.st_mode)
+            self.assertEqual((stage / 'untouched').read_text(), 'deployment data')
+            self.assertFalse((stage / 'config').exists())
+
+    def test_staging_links_and_unrecognized_domain_names_remain_pending(self):
+        stage = self.domains / '.deploy-1618-20261015-104910'
+        stage.symlink_to(self.home, target_is_directory=True)
+        invalid = self.domains / '.unexpected'
+        invalid.mkdir()
+        with patch.object(migration.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')):
+            self.assertFalse(migration.migrate(ROOT, self.domains, self.root / 'etc', os.getuid(), os.getgid()))
+        pending = (self.root / 'etc/domain-boundary-pending.txt').read_text()
+        self.assertIn(f'Invalid domain directory: {stage.name}', pending)
+        self.assertIn('.unexpected: Invalid domain directory name', pending)
+
     def test_unknown_setting_diagnostics_do_not_expose_values(self):
         self.env.write_text('UNKNOWN_SETTING=private-secret\n')
         with self.assertRaisesRegex(ValueError, '^Unsupported setting UNKNOWN_SETTING at line 1$'):
