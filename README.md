@@ -12,13 +12,19 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.113`
+**Current version:** `1.3.114`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
 ShieldPress VPS is a terminal-based server management toolkit for Linux VPS, focused on deploying websites, managing domains, SSL, WordPress, Laravel, Node.js, databases, cache, backup, security, performance optimization, email and system monitoring.
 
 Source code is in the `shieldpress/` directory. On the server it installs to `/opt/shieldpress`, domain data is stored at `/home/domains`.
+
+The Node.js runtime menu offers **3) Update installed Node.js (keep current major version)**
+for updates such as 26.5.0 to a newer 26.x release from the configured repositories.
+It confirms the target, refreshes package locks, and verifies the installed version.
+Restart affected applications individually afterward to load the new runtime.
+Option 2 remains the Node.js 22 LTS installer and blocks automatic downgrades.
 
 ## Start here
 

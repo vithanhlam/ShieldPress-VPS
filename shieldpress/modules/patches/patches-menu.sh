@@ -770,6 +770,22 @@ patch_server_migration_storage(){
     fi
 }
 
+patch_nodejs_same_branch_updates(){
+    local ID="SP_20261026_NODEJS_SAME_BRANCH_UPDATES"
+    patch_applied "$ID" && return 0
+    # The source updater installs the repair; no runtime or repository change
+    # is needed until the administrator explicitly confirms an update.
+    if bash -n "$BASE_DIR/modules/helpers/nodejs-runtime.sh" &&
+        bash -c 'source "$1" && declare -F update_shieldpress_nodejs_current_branch >/dev/null' \
+            _ "$BASE_DIR/modules/helpers/nodejs-runtime.sh"; then
+        patch_mark_done "$ID"
+        ok "Same-branch Node.js updates enabled; installed runtime and repositories retained"
+    else
+        fail "Same-branch Node.js update repair remains pending; reinstall the updated source"
+        return 1
+    fi
+}
+
 apply_all_patches(){
     local ssl_status=0
     echo ""
@@ -791,6 +807,7 @@ apply_all_patches(){
     fi
     patch_recover_backup_config
     patch_server_migration_storage || ssl_status=$?
+    patch_nodejs_same_branch_updates || ssl_status=$?
     patch_restored_wordpress_db || ssl_status=$?
     patch_backup_scheduled_jobs
     patch_134_fix_bin_perms
@@ -839,6 +856,7 @@ show_patch_status(){
     }
 
     _status "SP_20261025_DOMAIN_PRIVILEGE_BOUNDARY" "Protect root control paths and rebuild domain jobs"
+    _status "SP_20261026_NODEJS_SAME_BRANCH_UPDATES" "Enable same-branch Node.js updates"
     _status "SP_20261025_RESTORE_WORDPRESS_DB" "Repair restored WordPress database configuration"
     _status "SP_134_FIX_BIN_PERMS"          "v1.3.4 Fix node_modules/vendor bin perms"
     _status "SP_134_SECURE_CONFIG_DIR"       "v1.3.4 Secure config/ to root:root 700"

@@ -1,3 +1,12 @@
+## v1.3.114 — 2026-10-26 — Update Node.js within the installed major branch
+
+- Add an explicit same-branch runtime update option: select the newest available version in the installed major branch, confirm the exact target, update only that Node.js package version, refresh package protection and verify the result.
+- Retain repositories, the Node.js 22 LTS installer and downgrade protection. Do not upgrade npm independently or restart all PM2 applications. Show loading and an approximate ETA during package updates.
+- Automatically verify the updated helper on existing installations through a retryable, idempotent migration; retain runtime packages until an administrator confirms an update.
+- Cover multiple repository branches, Node.js 22 and 26 updates, repeat execution, cancellation, unavailable candidates, package and lock failures, post-update verification and old-source migration handoff.
+- Validate real DNF transactions on AlmaLinux 9 using isolated RPM fixtures: update 26.5.0 to 26.12.1 with a matching dependency, ignore the available 27.x branch, restore version locks and retain downgrade protection. Run repository smoke and shell syntax checks.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.113 — 2026-10-26 — Show deletion and malware scan progress
 
 - Ask whether to back up files and configuration before full domain or source-only deletion; Enter defaults to Yes and `n` skips the backup. Keep deletion blocked when a requested backup fails.
