@@ -106,7 +106,10 @@ def read_settings(path):
             raise ValueError(f'Invalid or duplicate setting: {key}')
         result[key] = value
     user = result.get('SYSTEM_USER', '')
-    if user and (not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_-]{0,31}', user) or user == 'root'):
+    # Legacy domain creation uses CLEAN_DOMAIN, which can start with a digit.
+    # Reject numeric-only names so account tools cannot interpret them as UIDs.
+    if user and (not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_-]{0,31}', user)
+                 or user.isdigit() or user == 'root'):
         raise ValueError('Invalid application user')
     if user:
         try:

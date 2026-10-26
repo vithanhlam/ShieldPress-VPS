@@ -102,6 +102,47 @@ class SecurityBoundaries(unittest.TestCase):
             with self.assertRaises((ValueError, OSError)):
                 security.backup_targets(app, bad)
 
+    def test_legacy_digit_leading_application_users(self):
+        self.env.write_text('SYSTEM_USER=1618art_com\n')
+        with patch.object(security.pwd, 'getpwnam', return_value=type('Account', (), {'pw_uid': 1001})()):
+            self.assertEqual(security.read_settings(self.env)['SYSTEM_USER'], '1618art_com')
+        with patch.object(security.pwd, 'getpwnam', return_value=type('Account', (), {'pw_uid': 0})()):
+            with self.assertRaisesRegex(ValueError, 'UID zero'):
+                security.read_settings(self.env)
+        for user in ('0', '1001', '-1618art', '1618art;id', '1618art/name', '1618art name'):
+            self.env.write_text(f'SYSTEM_USER={user}\n')
+            with self.assertRaisesRegex(ValueError, 'Invalid application user'):
+                security.read_settings(self.env)
+
+    def test_digit_leading_domain_migration_recovers_and_repeats(self):
+        renamed = self.domains / '1618art_com'
+        self.home.rename(renamed)
+        self.home = renamed
+        self.env = renamed / 'config/domain.env'
+        self.env.write_text('DOMAIN=1618art.com\nCLEAN_DOMAIN=1618art_com\nSYSTEM_USER=1618art_com\nAPP_TYPE=wordpress\n')
+        original_settings = self.env.read_text()
+        old = renamed / 'config/auto-backup-db.sh'
+        old.write_text('RETENTION=3\n')
+        cron = [f'# ShieldPress disabled unsafe legacy backup: 0 2 * * * {old}\n']
+
+        def run(argv, **kwargs):
+            if argv == ['crontab', '-l']:
+                return subprocess.CompletedProcess(argv, 0, cron[0], '')
+            self.assertEqual(argv, ['crontab', '-'])
+            cron[0] = kwargs['input']
+            return subprocess.CompletedProcess(argv, 0, '', '')
+
+        etc = self.root / 'etc'
+        etc.mkdir(mode=0o700)
+        (etc / 'domain-boundary-pending.txt').write_text('1618art_com: Invalid application user\n')
+        with patch.object(migration.subprocess, 'run', side_effect=run):
+            for _ in range(2):
+                self.assertTrue(migration.migrate(ROOT, self.domains, etc, os.getuid(), os.getgid()))
+                self.assertEqual((etc / 'domain-boundary-pending.txt').read_text(), '')
+                self.assertEqual(self.env.read_text(), original_settings)
+        self.assertIn(str(etc / 'jobs/1618art_com-backup-db.sh'), cron[0])
+        self.assertNotIn('disabled unsafe legacy', cron[0])
+
     def test_legacy_jobs_rebuilt_without_executing_or_copying_old_code(self):
         # Older installations may already have keys saved by the search menu.
         with self.env.open('a') as stream:

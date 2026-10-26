@@ -1,3 +1,10 @@
+## v1.3.121 — 2026-10-26 — Retry security migration for legacy digit-leading users
+
+- Accept digit-leading application usernames generated from legacy domain names, including `1618art_com`. Continue rejecting root, UID-zero accounts, numeric-only identifiers and unsafe username characters.
+- Reuse the automatic pending domain boundary migration on upgrade; preserve account names and domain settings, recover recognized disabled backup schedules and clear pending errors after successful repair.
+- Test pending migration recovery and repeated execution, account validation and settings preservation. Security regressions, repository smoke tests and Bash syntax checks pass.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.120 — 2026-10-26 — Accept managed Meilisearch settings during domain security repair
 
 - Allow the five `MEILI_*` settings written by the Meilisearch key menu in the literal domain settings reader. Existing installations automatically retry pending domain privilege boundary repair during update without rewriting credentials or bypassing security validation.
