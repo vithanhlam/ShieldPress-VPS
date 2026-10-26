@@ -103,6 +103,13 @@ class SecurityBoundaries(unittest.TestCase):
                 security.backup_targets(app, bad)
 
     def test_legacy_jobs_rebuilt_without_executing_or_copying_old_code(self):
+        # Older installations may already have keys saved by the search menu.
+        with self.env.open('a') as stream:
+            stream.write('MEILI_HOST=http://127.0.0.1:7700\nMEILI_INDEX=products_example_com\n'
+                         'MEILI_KEY=literal$(touch SHOULD_NOT_EXIST)\nMEILI_KEY_UID=test-uid\n'
+                         'MEILI_KEY_EXPIRES_AT=2036-10-26T00:00:00Z\n')
+        original = self.env.read_text()
+        self.assertEqual(security.read_settings(self.env)['MEILI_KEY'], 'literal$(touch SHOULD_NOT_EXIST)')
         old = self.home / 'config/auto-backup-db.sh'
         marker = self.root / 'executed'
         old.write_text(f'#!/bin/bash\nRETENTION=5\ntouch {marker}\n')
@@ -129,6 +136,15 @@ class SecurityBoundaries(unittest.TestCase):
         self.assertIn(str(job), cron[0])
         self.assertNotIn(str(old), cron[0])
         self.assertTrue((etc / 'crontab-before-domain-boundary.txt').is_file())
+        self.assertEqual(self.env.read_text(), original)
+
+    def test_unknown_setting_diagnostics_do_not_expose_values(self):
+        self.env.write_text('UNKNOWN_SETTING=private-secret\n')
+        with self.assertRaisesRegex(ValueError, '^Unsupported setting UNKNOWN_SETTING at line 1$'):
+            security.read_settings(self.env)
+        self.env.write_text('private-secret\n')
+        with self.assertRaisesRegex(ValueError, '^Unsupported setting at line 1$'):
+            security.read_settings(self.env)
 
     def test_unsupported_legacy_schedule_stays_pending(self):
         old = self.home / 'config/auto-backup-files.sh'

@@ -9,6 +9,8 @@ import stat
 import sys
 
 KEYS = set('DOMAIN CLEAN_DOMAIN SYSTEM_USER APP_TYPE ROOT DB_CONNECTION DB_NAME DB_USER DB_PASS PHP_VERSION NODE_APP_PORT NODE_ENTRY SSL SSL_TYPE CREATED SFTP SFTP_PORT SFTP_USER SFTP_PASS NODE_PORT PM2_NAME NODE_VERSION NODE_START_COMMAND NODE_PACKAGE_MANAGER NODE_ENV DOCUMENT_ROOT'.split())
+# Written by the managed Meilisearch key menu on existing installations.
+KEYS.update('MEILI_HOST MEILI_INDEX MEILI_KEY MEILI_KEY_UID MEILI_KEY_EXPIRES_AT'.split())
 
 
 def directory(path):
@@ -94,6 +96,8 @@ def read_settings(path):
             continue
         key, sep, value = line.partition('=')
         if not sep or key not in KEYS:
+            if sep and re.fullmatch(r'[A-Z_][A-Z0-9_]{0,63}', key):
+                raise ValueError(f'Unsupported setting {key} at line {number}')
             raise ValueError(f'Unsupported setting at line {number}')
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":

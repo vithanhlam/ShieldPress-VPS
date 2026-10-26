@@ -1,3 +1,10 @@
+## v1.3.120 — 2026-10-26 — Accept managed Meilisearch settings during domain security repair
+
+- Allow the five `MEILI_*` settings written by the Meilisearch key menu in the literal domain settings reader. Existing installations automatically retry pending domain privilege boundary repair during update without rewriting credentials or bypassing security validation.
+- Include the unsupported setting name in validation errors when it is a safe identifier; never include its value.
+- Test legacy settings migration and repeated execution, credential preservation and private diagnostics. Run security regressions, repository smoke tests, Bash syntax and whitespace checks.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.119 — 2026-10-26 — Preserve disabled Nginx access logs during cache migration
 
 - Fix v1.3.118 cache migration adding `shieldpress_perf` to `access_log off;`, which Nginx rejects as an invalid parameter. Add the performance format only to enabled logs without an explicit format or options; retain disabled logs and custom logging settings.
