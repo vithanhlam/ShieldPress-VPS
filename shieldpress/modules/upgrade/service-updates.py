@@ -71,9 +71,10 @@ def family(name):
 
 
 def branch(service, version):
-    parts = version.split('.')
-    if not all(p.isdigit() for p in parts) or len(parts) < 2:
+    match = re.fullmatch(r'([0-9]+(?:\.[0-9]+)+)(?:[~^]?[A-Za-z][A-Za-z0-9._~^]*)?', version)
+    if not match:
         raise RuntimeError('Unrecognized RPM version: ' + version)
+    parts = match[1].split('.')
     # PostgreSQL 10+ retains on-disk compatibility within one major.
     count = 1 if service == 'postgresql' and int(parts[0]) >= 10 else 2
     return '.'.join(parts[:count])
@@ -89,6 +90,17 @@ def allowed(service, version):
     if any(fnmatch.fnmatchcase(version, p) for p in policy.get(key + '_BLOCKED', [])):
         return False
     return any(fnmatch.fnmatchcase(version, p) for p in policy.get(key + '_ALLOWED', []))
+
+
+def package_version_allowed(service, pkg, previous, anchor):
+    # Independently versioned modules follow the server's branch policy.
+    # Package family checks and DNF dependencies enforce runtime compatibility.
+    if service == 'nginx' and pkg.name.startswith(('nginx-mod-', 'nginx-module-')):
+        return allowed(service, anchor.version)
+    if service.startswith('php') and pkg.name.startswith(service + '-php-pecl-'):
+        return allowed(service, anchor.version)
+    return (branch(service, pkg.version) == branch(service, (previous or anchor).version)
+            and allowed(service, pkg.version))
 
 
 def row(pkg):
@@ -267,9 +279,8 @@ def resolve(base, service, security):
         if kind and kind != service:
             blocked.append(pkg)
         elif kind == service:
-            previous = old.get(identity(pkg), anchor)
-            if (branch(service, pkg.version) != branch(service, previous.version)
-                    or not allowed(service, pkg.version)):
+            previous = old.get(identity(pkg))
+            if not package_version_allowed(service, pkg, previous, anchor):
                 blocked.append(pkg)
     base.sack.add_excludes(blocked)
     if security:
@@ -299,10 +310,8 @@ def validate_transaction(transaction, installed, service, anchor):
         if kind and kind != service:
             raise RuntimeError('Changing another managed stack is blocked: ' + str(pkg))
         if kind == service:
-            if branch(service, pkg.version) != branch(service, (previous or anchor).version):
-                raise RuntimeError('Branch migration blocked: ' + str(pkg))
-            if not allowed(service, pkg.version):
-                raise RuntimeError('Version is not approved by the configured policy: ' + str(pkg))
+            if not package_version_allowed(service, pkg, previous, anchor):
+                raise RuntimeError('Branch migration or unapproved version blocked: ' + str(pkg))
 
 
 def service_info(service, anchor):

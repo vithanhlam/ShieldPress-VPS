@@ -87,6 +87,88 @@ class Guards(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             u.branch('nginx', 'unknown')
 
+    def test_rpm_suffixes_and_php_extensions(self):
+        for version in ['2.0.6~RC1', '2.0.6RC1', '2.0.6^git20261027']:
+            self.assertEqual(u.branch('php84', version), '2.0')
+        for version in ['unknown', '2', '2..0', '2.0!RC1']:
+            with self.assertRaises(RuntimeError):
+                u.branch('php84', version)
+        anchor = pkg('php84-php-fpm', '8.4.27')
+        old = pkg('php84-php-pecl-example', '2.0.5')
+        new = pkg(old.name, '2.0.6~RC1')
+        base = MagicMock()
+        base.sack.query.return_value.installed.return_value = [anchor, old]
+        base.sack.query.return_value.available.return_value = [new, pkg(anchor.name, '8.5.1')]
+        base.transaction.install_set = [new]
+        base.transaction.remove_set = [old]
+        with patch.object(u, 'compare', return_value=1):
+            for _ in range(2):
+                plan, _ = u.resolve(base, 'php84', False)
+                self.assertEqual(plan['install'], [u.row(new)])
+                excluded = base.sack.add_excludes.call_args.args[0]
+                self.assertEqual([p.version for p in excluded], ['8.5.1'])
+            with self.assertRaises(RuntimeError):
+                u.validate_transaction(SimpleNamespace(install_set=[pkg('php83-php-pecl-example', '2.0.6')],
+                                                       remove_set=[]), [anchor, old], 'php84', anchor)
+        with patch.object(u, 'compare', return_value=-1):
+            with self.assertRaisesRegex(RuntimeError, 'downgrade'):
+                u.validate_transaction(base.transaction, [anchor, old], 'php84', anchor)
+
+    def test_nginx_independent_module_versions(self):
+        self.assertEqual(u.branch('nginx', '1.0.0~rc'), '1.0')
+        anchor = pkg('nginx', '1.26.2')
+        old = pkg('nginx-mod-brotli', '1.0.0~rc')
+        new = pkg(old.name, '1.0.0')
+        core = pkg('nginx-core', '1.26.3')
+        wrong_branch = pkg('nginx-core', '1.28.1')
+        base = MagicMock()
+        base.sack.query.return_value.installed.return_value = [anchor, old]
+        base.sack.query.return_value.available.return_value = [new, core, wrong_branch]
+        base.transaction.install_set = [new, core]
+        base.transaction.remove_set = [old]
+        with patch.object(u, 'compare', return_value=1):
+            for _ in range(2):
+                plan, _ = u.resolve(base, 'nginx', False)
+                self.assertEqual(len(plan['install']), 2)
+                self.assertEqual(base.sack.add_excludes.call_args.args[0], [wrong_branch])
+            base.transaction.install_set = [new, wrong_branch]
+            with self.assertRaisesRegex(RuntimeError, 'Branch migration'):
+                u.validate_transaction(base.transaction, [anchor, old], 'nginx', anchor)
+        for name in ['nginx-mod-brotli', 'nginx-module-njs']:
+            self.assertTrue(u.package_version_allowed('nginx', pkg(name, '1.0.0~rc'), old, anchor))
+            self.assertFalse(u.package_version_allowed('nginx', pkg(name, '1.0.0~rc'), old,
+                                                     pkg('nginx', '1.30.0')))
+        base.transaction.install_set = [new]
+        with patch.object(u, 'compare', return_value=-1):
+            with self.assertRaisesRegex(RuntimeError, 'downgrade'):
+                u.validate_transaction(base.transaction, [anchor, old], 'nginx', anchor)
+
+    def test_rpm_version_migration_handoff_and_repeat(self):
+        text = (ROOT / 'shieldpress/modules/patches/patches-menu.sh').read_text()
+        function = text.split('patch_service_rpm_versions(){', 1)[1].split('\n}\n', 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            commands = '''
+set -e
+BASE_DIR="$1"
+REGISTRY="$BASE_DIR/registry"
+touch "$REGISTRY"
+patch_applied(){ grep -qxF "$1" "$REGISTRY"; }
+patch_mark_done(){ echo "$1" >> "$REGISTRY"; }
+ok(){ echo "$1"; }
+fail(){ echo "$1"; }
+'''
+            commands += 'patch_service_rpm_versions(){' + function + '\n}\n'
+            commands += '''
+if patch_service_rpm_versions; then exit 1; fi
+[ ! -s "$REGISTRY" ]
+cp -a "$2/modules" "$BASE_DIR/"
+patch_service_rpm_versions
+patch_service_rpm_versions
+[ "$(wc -l < "$REGISTRY")" = 1 ]
+'''
+            subprocess.run(['bash', '-c', commands, '_', directory, str(ROOT / 'shieldpress')],
+                           check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
     def test_transaction_guards(self):
         old = pkg('nginx', '1.26.2')
         def check(new, removed=None):

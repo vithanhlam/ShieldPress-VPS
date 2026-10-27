@@ -759,6 +759,26 @@ patch_service_security_updates(){
     ok "Version and security update menus enabled for Nginx, PHP, MariaDB and PostgreSQL"
 }
 
+patch_service_rpm_versions(){
+    local ID="SP_20261027_SERVICE_RPM_VERSIONS"
+    patch_applied "$ID" && return 0
+    # Source replacement installs the repair without changing server packages.
+    if ! python3 - "$BASE_DIR/modules/upgrade/service-updates.py" <<'PYTHON'
+import runpy
+import sys
+module = runpy.run_path(sys.argv[1])
+assert module['branch']('php84', '8.4.0~RC1') == '8.4'
+assert module['branch']('nginx', '1.0.0~rc') == '1.0'
+assert callable(module['package_version_allowed'])
+PYTHON
+    then
+        fail "Service RPM version repair remains pending; reinstall the updated source"
+        return 1
+    fi
+    patch_mark_done "$ID"
+    ok "Service RPM version, PHP extension and Nginx module checks repaired"
+}
+
 patch_shared_runtime_budget(){
     local ID="SP_20261026_CACHE_ACCESS_LOG_REPAIR"
     patch_applied "$ID" && return 0
@@ -834,6 +854,7 @@ apply_all_patches(){
     patch_nodejs_same_branch_updates || ssl_status=$?
     patch_service_security_updates || ssl_status=$?
     patch_service_versionlock_repair || ssl_status=$?
+    patch_service_rpm_versions || ssl_status=$?
     patch_nginx_worker_limits || ssl_status=$?
     local policy_timing="${DATA_DIR:-/var/shieldpress/data}/runtime-policy-timing"
     if install -d -m 700 "$policy_timing"; then

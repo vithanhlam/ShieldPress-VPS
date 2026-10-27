@@ -35,28 +35,51 @@ flock -n 9 || { echo "Backup already running: $DB_NAME" >&2; exit 1; }
 BACKUP_FILE="$BACKUP_DIR/${DB_NAME}_$(date '+%Y%m%d_%H%M%S').sql.gz"
 PARTIAL=$(mktemp "$BACKUP_DIR/.partial.XXXXXX")
 PROGRESS_PID=""
+# Source replacement upgrades existing manual and cron callers automatically.
+TIMING_FILE="$BACKUP_DIR/.dump-duration"
+DUMP_STARTED=$SECONDS
 stop_progress(){
     if [ -n "$PROGRESS_PID" ]; then
         kill "$PROGRESS_PID" 2>/dev/null || true
         wait "$PROGRESS_PID" 2>/dev/null || true
         PROGRESS_PID=""
+        printf '\r\033[K' >&3
     fi
 }
 start_progress(){
     [ "$INTERACTIVE_PROGRESS" -eq 1 ] || return 0
     local label="$1" progress_file="$2"
-    echo "$label" >&3
+    local estimate=60 basis="approximate estimate" previous
+    if [ -f "$TIMING_FILE" ]; then
+        read -r previous < "$TIMING_FILE" || true
+        if [[ "$previous" =~ ^[1-9][0-9]{0,6}$ ]]; then
+            estimate="$previous"
+            basis="previous successful run"
+        fi
+    fi
+    printf '[STAGE] %s: estimated duration ~%ss (%s).\n' "$label" "$estimate" "$basis" >&3
     (
         tick_pid=""
-        trap 'kill "$tick_pid" 2>/dev/null || true; exit 0' TERM
-        start=$(date +%s)
+        trap 'kill "$tick_pid" 2>/dev/null || true; wait "$tick_pid" 2>/dev/null || true; exit 0' TERM INT HUP
+        local frames='|/-\' index=0 elapsed remaining bytes=0 last=-1 detail
         while :; do
-            sleep 5 &
+            elapsed=$((SECONDS - DUMP_STARTED))
+            remaining=$((estimate - elapsed))
+            if [ "$elapsed" -ne "$last" ]; then
+                bytes=$(stat -c %s "$progress_file" 2>/dev/null || echo 0)
+                last="$elapsed"
+            fi
+            if [ "$remaining" -gt 0 ]; then
+                detail="ETA ~${remaining}s"
+            else
+                detail="taking longer than estimated; still running"
+            fi
+            printf '\r\033[K[%s] %s | %s | backup size: %s bytes' \
+                "${frames:index%4:1}" "$label" "$detail" "$bytes" >&3
+            index=$((index + 1))
+            sleep 0.2 &
             tick_pid=$!
             wait "$tick_pid" || exit 0
-            elapsed=$(( $(date +%s) - start ))
-            bytes=$(stat -c %s "$progress_file" 2>/dev/null || echo 0)
-            printf '  %s | %ds | backup size: %s bytes\n' "$label" "$elapsed" "$bytes" >&3
         done
     ) >/dev/null &
     PROGRESS_PID=$!
@@ -81,6 +104,15 @@ stop_progress
 [ "$INTERACTIVE_PROGRESS" -eq 1 ] && echo "Dump complete. Verifying backup..." >&3
 gzip -t "$PARTIAL"
 mv "$PARTIAL" "$BACKUP_FILE"
+# Advisory timing must never turn a completed backup into a failure.
+if timing_tmp=$(mktemp "$BACKUP_DIR/.timing.XXXXXX"); then
+    duration=$((SECONDS - DUMP_STARTED))
+    if printf '%s\n' "$((duration > 0 ? duration : 1))" > "$timing_tmp"; then
+        mv -f -- "$timing_tmp" "$TIMING_FILE" || rm -f -- "$timing_tmp"
+    else
+        rm -f -- "$timing_tmp"
+    fi
+fi
 # Delete old completed backups only after a successful dump.
 mapfile -t backups < <(find "$BACKUP_DIR" -maxdepth 1 -type f -name "${DB_NAME}_*.sql.gz" -printf '%f\n' | sort -r)
 for ((i=KEEP; i<${#backups[@]}; i++)); do

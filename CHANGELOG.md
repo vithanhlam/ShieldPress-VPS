@@ -1,3 +1,12 @@
+## v1.3.124 — 2026-10-27 — Repair RPM module updates and animate PostgreSQL backups
+
+- Accept numeric RPM versions with prerelease and snapshot suffixes such as `2.0.6~RC1` and `1.0.0~rc` during service update checks.
+- Apply the server branch policy to independently versioned PHP PECL extensions and Nginx modules. Retain DNF dependency resolution, cross-stack isolation, core branch restrictions and downgrade protection.
+- Automatically verify the updated service checker through a retryable, idempotent source migration without changing installed service packages.
+- Replace PostgreSQL backup messages printed every five seconds with a single-line spinner refreshed every 0.2 seconds, remaining-time estimates and output size. Calibrate estimates from successful dumps, keep cron logs quiet and preserve stdout for the backup path. Existing callers receive the fix through source replacement.
+- Cover RPM suffixes, extension/module updates, blocked branches and downgrades, migration handoff/repeat execution, terminal animation and estimate overruns, failed-dump cleanup and backup retention. Run backup regressions, cross-stack archive checks, repository smoke tests, Bash syntax and whitespace checks.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.123 — 2026-10-26 — Exclude deployment staging from domain boundary migration
 
 - Skip real deployment workspace directories matching `.deploy-<name>-YYYYMMDD-HHMMSS` while scanning the active domain registry. Leave staging contents, ownership and permissions untouched and exclude them from trusted domain backup jobs.

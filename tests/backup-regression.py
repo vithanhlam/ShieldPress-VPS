@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Isolated regression checks; never connects to a real database."""
 import os
+import pty
 from pathlib import Path
 import subprocess
 import tempfile
@@ -16,7 +17,7 @@ BACKUP_GLOBAL_DIR='{root}/backups'
 ''')
     (root / 'data/laravel-databases/demo.env').touch()
     mock = root / 'bin/runuser'
-    mock.write_text('#!/bin/bash\nprintf "partial or complete SQL\\n"\nexit "${DUMP_EXIT:-0}"\n')
+    mock.write_text('#!/bin/bash\nsleep "${DUMP_DELAY:-0}"\nprintf "partial or complete SQL\\n"\nexit "${DUMP_EXIT:-0}"\n')
     mock.chmod(0o755)
     runner = root / 'bin/laravel-pg-backup'
     runner.write_text((ROOT / 'bin/laravel-pg-backup').read_text().replace(
@@ -36,6 +37,34 @@ BACKUP_GLOBAL_DIR='{root}/backups'
     assert Path(good.stdout.strip()).is_file()
     assert not old.exists()
     subprocess.run(['gzip', '-t', good.stdout.strip()], check=True)
+    # Real terminal: animate one line, reserve stdout for the path, and stop
+    # before returning. Repeated source upgrades reuse advisory timing safely.
+    timing = dest / '.dump-duration'
+    assert timing.read_text().strip().isdigit()
+    timing.write_text('1\n')
+    master, slave = pty.openpty()
+    try:
+        process = subprocess.Popen([str(runner), 'demo', '1', '--progress', '--local-only'],
+                                   env={**os.environ, 'DUMP_DELAY': '1.5'},
+                                   stdout=subprocess.PIPE, stderr=slave, text=True)
+        output, _ = process.communicate(timeout=5)
+        assert process.returncode == 0
+        terminal = os.read(master, 65536).decode()
+        assert Path(output.strip()).is_file()
+        assert 'previous successful run' in terminal
+        assert '[|]' in terminal and '[/]' in terminal
+        assert 'ETA ~' in terminal and 'taking longer than estimated; still running' in terminal
+        assert '\r\x1b[K' in terminal
+        assert terminal.rfind('\r\x1b[K') < terminal.index('Dump complete.')
+        assert 'backup size:' not in output
+    finally:
+        os.close(master)
+        os.close(slave)
+    saved = timing.read_text()
+    failed = subprocess.run([str(runner), 'demo', '1'],
+                            env={**os.environ, 'DUMP_EXIT': '1'}, capture_output=True)
+    assert failed.returncode != 0 and timing.read_text() == saved
+    assert not list(dest.glob('.partial.*'))
     # Execute only the updater's staging preservation block in a sandbox fixture.
     oldroot, newroot = root / 'old', root / 'new'
     (oldroot / 'config/config').mkdir(parents=True)
