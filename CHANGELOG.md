@@ -1,3 +1,11 @@
+## v1.3.126 — 2026-10-29 — Numeric update shortcut
+
+- Add `2` as a shell command for `shieldpress update`, preserving normal update confirmation and the `1` admin menu shortcut.
+- Install both command paths on new servers and automatically repair them from newly installed migration code, including the first upgrade launched by an old updater. Retry pending failures safely.
+- Verify argument forwarding, exit status, old-updater handoff, repeated repair and failure reporting; run repository smoke and shell syntax checks.
+
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.125 — 2026-10-29 — Separate domain synchronization keys
 
 - Add independent create/show/revoke options for domain-scoped CRM synchronization keys with explicit product sync permissions. Label the creation option "Create Key". Preserve existing search-only keys and their menu numbers.

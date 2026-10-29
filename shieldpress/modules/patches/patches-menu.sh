@@ -849,6 +849,14 @@ apply_all_patches(){
         fail "Orphaned backup schedule cleanup remains pending"
         ssl_status=1
     fi
+    # The running updater may be from the previous release. Repair the shortcut
+    # from the newly installed source and retry failures on subsequent runs.
+    if source "$BASE_DIR/core/update-shortcut.sh" && sp_install_update_shortcut; then
+        ok "Update shortcut installed: 2 (shieldpress update)"
+    else
+        fail "Update shortcut repair remains pending"
+        ssl_status=1
+    fi
     patch_recover_backup_config
     patch_server_migration_storage || ssl_status=$?
     patch_nodejs_same_branch_updates || ssl_status=$?

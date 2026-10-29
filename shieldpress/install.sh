@@ -43,10 +43,10 @@ done
 restorecon /usr/bin/1 /usr/local/bin/1 2>/dev/null || true
 restorecon -RF "$BASE_DIR" 2>/dev/null || true
 
-# Remove action shortcuts from older installs (e.g. /usr/bin/2 -> update,
-# /usr/bin/6 -> backup): a single stray digit typed in any shell on the server
-# could silently trigger a full update/backup. Use `shieldpress <word>` instead.
-for NUM in 2 3 4 5 6; do
+# Keep the requested update shortcut; retire other legacy action shortcuts.
+source "$BASE_DIR/core/update-shortcut.sh" || exit 1
+sp_install_update_shortcut || { echo "[ERROR] Cannot install update shortcut"; exit 1; }
+for NUM in 3 4 5 6; do
     if [ -f "/usr/bin/$NUM" ] && grep -q "exec shieldpress" "/usr/bin/$NUM" 2>/dev/null; then
         rm -f "/usr/bin/$NUM"
     fi
@@ -66,7 +66,7 @@ if [ -z "$SHIELDPRESS_HELP_SHOWN" ] && [ -t 1 ] && [ "$(id -u)" -eq 0 ] && comma
     echo -e "\e[1m\e[97mShieldPress VPS v${_SP_VER} - Quick Commands\e[0m"
     echo -e "\e[36m──────────────────────────────────────\e[0m"
     echo -e "  \e[36m1\e[0m                    Admin Menu"
-    echo -e "  \e[33mshieldpress update\e[0m   Update"
+    echo -e "  \e[33m2\e[0m                    Update (shieldpress update)"
     echo -e "  \e[35mshieldpress cache\e[0m    Clear All Cache"
     echo -e "  \e[32mshieldpress domain\e[0m   Add Domain"
     echo -e "  \e[34mshieldpress ssl\e[0m      Install SSL"

@@ -375,6 +375,11 @@ automatically granting write permissions to existing search credentials.
 
 ## 14. Updates and rollback
 
+At the shell prompt, `1` opens the admin menu and `2` runs `shieldpress update`
+with the normal update confirmation. Existing servers receive the `2` command
+automatically during their next update; use `shieldpress update` for that first
+upgrade if the numeric command is not installed yet.
+
 Use:
 
 ```bash

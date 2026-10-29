@@ -363,6 +363,8 @@ exec /opt/shieldpress/shieldpress.sh menu "$@"
 SHORTCUT_EOF
     chmod 755 "$shortcut"
 done || fail "Cannot chmod admin menu shortcut"
+source "$BASE_DIR/core/update-shortcut.sh" || fail "Cannot load update shortcut installer"
+sp_install_update_shortcut || fail "Cannot install update shortcut"
 if command -v restorecon >/dev/null 2>&1; then
     restorecon -RF "$BASE_DIR" /usr/bin/1 /usr/local/bin/1 || fail "Cannot restore ShieldPress SELinux contexts"
 fi
