@@ -1,3 +1,11 @@
+## v1.3.125 — 2026-10-29 — Separate domain synchronization keys
+
+- Add independent create/show/revoke options for domain-scoped CRM synchronization keys with explicit product sync permissions. Label the creation option "Create Key". Preserve existing search-only keys and their menu numbers.
+- Store CRM credentials separately in domain settings and accept them in the literal settings reader. Updated installations receive the new menu through source replacement without elevating existing credentials.
+- Cover existing settings, index scope, permissions, failed creation, cancelled rotation, successful rotation, repeat creation and independent revocation with an isolated API stub.
+
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.124 — 2026-10-27 — Repair RPM module updates and animate PostgreSQL backups
 
 - Accept numeric RPM versions with prerelease and snapshot suffixes such as `2.0.6~RC1` and `1.0.0~rc` during service update checks.

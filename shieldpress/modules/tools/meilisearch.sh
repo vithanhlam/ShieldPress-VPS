@@ -1,5 +1,5 @@
 #!/bin/bash
-# Meilisearch installer and per-domain search-key manager.
+# Meilisearch installer and per-domain search and CRM key manager.
 set -euo pipefail
 
 MEILI_VERSION="v1.12.0"
@@ -106,13 +106,13 @@ select_domain(){
 save_domain_key(){
     local uid="$1" value="$2" expires_at="$3" env_tmp
     env_tmp=$(mktemp "${DOMAIN_ENV}.XXXXXX")
-    awk '!/^MEILI_(HOST|INDEX|KEY|KEY_UID|KEY_EXPIRES_AT)=/' "$DOMAIN_ENV" > "$env_tmp"
+    awk -v prefix="$KEY_PREFIX" '$0 !~ "^" prefix "(_UID|_EXPIRES_AT)?=" && $0 !~ /^MEILI_(HOST|INDEX)=/' "$DOMAIN_ENV" > "$env_tmp"
     {
         printf 'MEILI_HOST=%s\n' "$MEILI_URL"
         printf 'MEILI_INDEX=%s\n' "$DOMAIN_INDEX"
-        printf 'MEILI_KEY=%s\n' "$value"
-        printf 'MEILI_KEY_UID=%s\n' "$uid"
-        printf 'MEILI_KEY_EXPIRES_AT=%s\n' "$expires_at"
+        printf '%s=%s\n' "$KEY_PREFIX" "$value"
+        printf '%s_UID=%s\n' "$KEY_PREFIX" "$uid"
+        printf '%s_EXPIRES_AT=%s\n' "$KEY_PREFIX" "$expires_at"
     } >> "$env_tmp"
     cat "$env_tmp" > "$DOMAIN_ENV"
     rm -f "$env_tmp"
@@ -121,21 +121,29 @@ save_domain_key(){
 
 manage_key(){
     local action="$1" master response uid value expires_at old_uid="" confirm env_tmp
+    local purpose="${2:-search}" KEY_PREFIX=MEILI_KEY label="Search-only" actions='"search"' suffix=""
+    if [[ "$purpose" == crm ]]; then
+        KEY_PREFIX=MEILI_CRM_KEY
+        label="CRM sync"
+        suffix="-crm"
+        actions='"search","indexes.get","indexes.create","documents.add","documents.delete","settings.get","settings.update","tasks.get"'
+    fi
     select_domain
     master=$(read_master_key)
+    [[ -n "$master" ]] || fail "No master key found in $MEILI_CONFIG."
     curl -fsS "$MEILI_URL/health" >/dev/null || fail "Meilisearch is not responding at $MEILI_URL."
     case "$action" in
         create)
-            if grep -q '^MEILI_KEY_UID=' "$DOMAIN_ENV"; then
-                read -r -p "A key is already saved. Create and replace it? [y/N]: " confirm
+            if grep -q "^${KEY_PREFIX}_UID=" "$DOMAIN_ENV"; then
+                read -r -p "A $label key is already saved. Create and replace it? [y/N]: " confirm
                 [[ "$confirm" =~ ^[yY]$ ]] || return 0
-                old_uid=$(sed -n 's/^MEILI_KEY_UID=//p' "$DOMAIN_ENV" | head -n1)
+                old_uid=$(sed -n "s/^${KEY_PREFIX}_UID=//p" "$DOMAIN_ENV" | head -n1)
             fi
             curl -fsS -X POST "$MEILI_URL/indexes" -H "Authorization: Bearer $master" -H 'Content-Type: application/json' \
                 -d "{\"uid\":\"$DOMAIN_INDEX\",\"primaryKey\":\"post_id\"}" >/dev/null || true
             expires_at=$(date -u -d '+10 years' '+%Y-%m-%dT%H:%M:%SZ')
             response=$(curl -sS -X POST "$MEILI_URL/keys" -H "Authorization: Bearer $master" -H 'Content-Type: application/json' \
-                -d "{\"name\":\"shieldpress-$DOMAIN_NAME\",\"description\":\"Search-only key for $DOMAIN_NAME\",\"actions\":[\"search\"],\"indexes\":[\"$DOMAIN_INDEX\"],\"expiresAt\":\"$expires_at\"}") || fail "Could not connect to the Meilisearch key API."
+                -d "{\"name\":\"shieldpress-$DOMAIN_NAME$suffix\",\"description\":\"$label key for $DOMAIN_NAME\",\"actions\":[$actions],\"indexes\":[\"$DOMAIN_INDEX\"],\"expiresAt\":\"$expires_at\"}") || fail "Could not connect to the Meilisearch key API."
             uid=$(printf '%s' "$response" | sed -nE 's/.*"uid"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
             value=$(printf '%s' "$response" | sed -nE 's/.*"key"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
             [[ -n "$uid" && -n "$value" ]] || fail "Key creation failed: $response"
@@ -144,28 +152,29 @@ manage_key(){
                 curl -fsS -X DELETE "$MEILI_URL/keys/$old_uid" -H "Authorization: Bearer $master" >/dev/null \
                     && ok "Previous key revoked" || warn "Previous key could not be revoked; revoke it from the menu."
             fi
-            ok "Search-only key created and saved to $DOMAIN_ENV (expires $expires_at)"
+            ok "$label key created and saved to $DOMAIN_ENV (expires $expires_at)"
             ;;
         show)
-            value=$(sed -n 's/^MEILI_KEY=//p' "$DOMAIN_ENV" | head -n1)
-            [[ -n "$value" ]] || fail "No key saved for $DOMAIN_NAME."
-            expires_at=$(sed -n 's/^MEILI_KEY_EXPIRES_AT=//p' "$DOMAIN_ENV" | head -n1)
+            value=$(sed -n "s/^${KEY_PREFIX}=//p" "$DOMAIN_ENV" | head -n1)
+            [[ -n "$value" ]] || fail "No $label key saved for $DOMAIN_NAME."
+            expires_at=$(sed -n "s/^${KEY_PREFIX}_EXPIRES_AT=//p" "$DOMAIN_ENV" | head -n1)
             printf '\nDomain: %s\nEndpoint: %s\nIndex: %s\nKey: %s\nExpires: %s\n' "$DOMAIN_NAME" "$MEILI_URL" "$DOMAIN_INDEX" "$value" "${expires_at:-unknown}"
             ;;
         revoke)
-            uid=$(sed -n 's/^MEILI_KEY_UID=//p' "$DOMAIN_ENV" | head -n1)
+            uid=$(sed -n "s/^${KEY_PREFIX}_UID=//p" "$DOMAIN_ENV" | head -n1)
             [[ -n "$uid" ]] || fail "No managed key found for $DOMAIN_NAME."
-            read -r -p "Revoke this domain's key? [y/N]: " confirm
+            read -r -p "Revoke this domain's $label key? [y/N]: " confirm
             [[ "$confirm" =~ ^[yY]$ ]] || return 0
             curl -fsS -X DELETE "$MEILI_URL/keys/$uid" -H "Authorization: Bearer $master" >/dev/null || fail "Key revocation failed."
             env_tmp=$(mktemp "${DOMAIN_ENV}.XXXXXX")
-            awk '!/^MEILI_(HOST|INDEX|KEY|KEY_UID|KEY_EXPIRES_AT)=/' "$DOMAIN_ENV" > "$env_tmp"
+            awk -v prefix="$KEY_PREFIX" '$0 !~ "^" prefix "(_UID|_EXPIRES_AT)?="' "$DOMAIN_ENV" > "$env_tmp"
             cat "$env_tmp" > "$DOMAIN_ENV"; rm -f "$env_tmp"; chmod 600 "$DOMAIN_ENV"
-            ok "Domain key revoked and removed from domain.env."
+            ok "$label key revoked and removed from domain.env."
             ;;
     esac
     echo
-    echo "Connect your app with MEILI_HOST, MEILI_INDEX, and MEILI_KEY from domain.env."
+    echo "Connect your app with MEILI_HOST, MEILI_INDEX, and $KEY_PREFIX from domain.env."
+    echo "Search-only keys cannot sync products. Keep CRM sync keys in server-side configuration only."
     echo "The endpoint is localhost-only; connect through the app on this server or a private tunnel."
 }
 
@@ -173,14 +182,17 @@ if declare -F sp_header >/dev/null; then
     sp_header "Meilisearch" "Install and domain keys"
     sp_menu_grid \
         "1|Install / Update|blue" \
-        "2|Create Domain Key|green" \
-        "3|Show Saved Key|yellow" \
-        "4|Revoke Domain Key|red" \
+        "2|Create Search Key|green" \
+        "3|Show Search Key|yellow" \
+        "4|Revoke Search Key|red" \
+        "5|Create Key|green" \
+        "6|Show CRM Sync Key|yellow" \
+        "7|Revoke CRM Sync Key|red" \
         "0|Back|white"
     sp_prompt choice
 else
     printf '\nMeilisearch — Install and domain keys\n'
-    printf '  [1] Install / Update\n  [2] Create Domain Key\n  [3] Show Saved Key\n  [4] Revoke Domain Key\n  [0] Back\n'
+    printf '  [1] Install / Update\n  [2] Create Search Key\n  [3] Show Search Key\n  [4] Revoke Search Key\n  [5] Create Key\n  [6] Show CRM Sync Key\n  [7] Revoke CRM Sync Key\n  [0] Back\n'
     read -r -p "Select option: " choice
 fi
 case "$choice" in
@@ -188,6 +200,9 @@ case "$choice" in
     2) manage_key create ;;
     3) manage_key show ;;
     4) manage_key revoke ;;
+    5) manage_key create crm ;;
+    6) manage_key show crm ;;
+    7) manage_key revoke crm ;;
     0) exit 0 ;;
     *) fail "Invalid selection." ;;
 esac

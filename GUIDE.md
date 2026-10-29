@@ -358,6 +358,21 @@ account state. Tools provides configuration editors, reloads, logs, Meilisearch,
 service monitors and database exports. Disk Manager shows storage usage and
 large files; RAM Manager controls swap/ZRAM-related operations.
 
+In Tools → Meilisearch, use **Create Search Key** for search-only access or
+**Create Key** for server-side product synchronization. Both keys are
+restricted to the selected domain's product index. CRM keys can search, read and
+create that index, add/delete documents, read/update settings and read tasks.
+They cannot manage API keys or delete indexes.
+
+For an existing domain, choose **Create Key**, then **Show CRM Sync Key**.
+Copy `MEILI_CRM_KEY` into the CRM's Meilisearch API key field and use the displayed
+endpoint and index. Test the connection and run product synchronization in the
+CRM. The key is saved separately from `MEILI_KEY`; existing search keys remain
+unchanged on upgrade and when creating, rotating or revoking a CRM key. Each key
+type has its own show and revoke options. Keep the CRM key in server-side
+configuration only. An upgrade makes these options available without
+automatically granting write permissions to existing search credentials.
+
 ## 14. Updates and rollback
 
 Use:

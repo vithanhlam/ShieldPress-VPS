@@ -148,9 +148,12 @@ class SecurityBoundaries(unittest.TestCase):
         with self.env.open('a') as stream:
             stream.write('MEILI_HOST=http://127.0.0.1:7700\nMEILI_INDEX=products_example_com\n'
                          'MEILI_KEY=literal$(touch SHOULD_NOT_EXIST)\nMEILI_KEY_UID=test-uid\n'
-                         'MEILI_KEY_EXPIRES_AT=2036-10-26T00:00:00Z\n')
+                         'MEILI_KEY_EXPIRES_AT=2036-10-26T00:00:00Z\n'
+                         'MEILI_CRM_KEY=literal$(touch CRM_SHOULD_NOT_EXIST)\n'
+                         'MEILI_CRM_KEY_UID=crm-uid\nMEILI_CRM_KEY_EXPIRES_AT=2036-10-29T00:00:00Z\n')
         original = self.env.read_text()
         self.assertEqual(security.read_settings(self.env)['MEILI_KEY'], 'literal$(touch SHOULD_NOT_EXIST)')
+        self.assertEqual(security.read_settings(self.env)['MEILI_CRM_KEY'], 'literal$(touch CRM_SHOULD_NOT_EXIST)')
         old = self.home / 'config/auto-backup-db.sh'
         marker = self.root / 'executed'
         old.write_text(f'#!/bin/bash\nRETENTION=5\ntouch {marker}\n')
