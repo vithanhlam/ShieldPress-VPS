@@ -1,3 +1,14 @@
+## v1.3.129 — 2026-10-30 — Clear stale FastCGI cache after PHP 502 recovery
+
+- Fix WordPress sites staying on an error page after PHP-FPM returned from a 502: the cached error page kept being served until the cache was cleared by hand.
+- WordPress Auto-Recovery now also fetches each site's URL like a visitor (no query string, so the FastCGI cache is not bypassed). When an error page (HTTP 50x, critical error, database connection error, 502/503/504 text) is served from cache while PHP is healthy, it purges only that domain's cache. PHP-FPM is not restarted and the per-domain cooldown does not apply.
+- Add 502 Bad Gateway, 503 and 504 page text to the error signatures the recovery scan recognises.
+- PHP-FPM Auto-Reload now purges the FastCGI cache of every domain on the restarted PHP version after a successful restart and logs each purge. Add the non-interactive `auto-reload-php.sh --refresh` that regenerates the checker of an enabled auto-reload and never enables a disabled one.
+- Existing installations are repaired automatically during the update migration (`SP_20261030_WP_CACHE_RECOVERY`): the PHP-FPM auto-reload checker is regenerated and a running recovery daemon is restarted to load the new code. The step is idempotent, reports pending failures for retry and appears in Patch Status.
+- Translate the touched legacy comments in `wp-auto-recovery.sh` to English.
+- Add `tests/wp-cache-recovery.sh` (disposable AlmaLinux 9 test server, WordPress domain with FastCGI cache): stale error cache purged while PHP is healthy, healthy cached page left alone, 502 → restart → cache purged, old-version-to-new-version migration, repeat execution and a disabled auto-reload staying disabled. Run repository smoke tests, Bash syntax and whitespace checks.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.128 — 2026-10-30 — Guided server stack install from the bootstrap
 
 - Ask `Install the server stack now? [Y/n]` after the bootstrap installs the toolkit, reading the answer from the terminal also when piped (`curl ... | bash`). The stack installer receives terminal input instead of the curl pipe. Servers with an installed stack are not reinstalled; failures report the exit status and the retry path (`shieldpress` → [1] Install Stack).

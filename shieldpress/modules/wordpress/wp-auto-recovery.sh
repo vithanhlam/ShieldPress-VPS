@@ -20,6 +20,7 @@ COOLDOWN_SECONDS=300   # 5 min between recovery per domain
 DAEMON_INTERVAL=60     # Check every 60 seconds in daemon mode
 SERVICE_FILE="/etc/systemd/system/shieldpress-wp-recovery.service"
 RECOVERY_LOCK="/run/lock/shieldpress-wp-recovery.lock"
+ERROR_BODY_RE='There has been a critical error on this website|Error establishing a database connection|This site is experiencing technical difficulties|<b>Fatal error</b>:|<b>Parse error</b>:|Fatal error:.*on line|Parse error:.*on line|502 Bad Gateway|503 Service (Temporarily )?Unavailable|504 Gateway Time-?out'
 
 # Source safely - daemon mode may not have all files
 [ -f "$BASE_DIR/core/ui.sh" ] && source "$BASE_DIR/core/ui.sh" || {
@@ -253,12 +254,11 @@ check_site_http(){
     echo "$code"
 }
 
-# Nhiều lỗi WordPress phổ biến nhất (critical error, mất kết nối DB, xung đột
-# plugin/theme) vẫn trả về HTTP 200 kèm thông báo lỗi trong nội dung trang -
-# is_server_error() (chỉ nhìn status code) bỏ sót hoàn toàn các trường hợp
-# này, khiến trang lỗi bị FastCGI cache giữ lại cả 6h mà daemon không hề hay
-# biết để tự xoá cache (đây chính là lý do phải vào VPS xoá tay). Kiểm tra
-# thêm ~20KB đầu nội dung trang để bắt các dấu hiệu lỗi phổ biến.
+# The most common WordPress failures (critical error, lost database connection,
+# plugin/theme conflict) still return HTTP 200 with the error in the page body.
+# is_server_error() only looks at the status code, so those pages stayed in the
+# FastCGI cache for hours without the daemon noticing. Inspect the first ~20KB
+# of the body for the common error signatures as well.
 check_site_body_error(){
     local domain="$1"
     local probe="shieldpress_health=$(date +%s%N)"
@@ -270,8 +270,37 @@ check_site_body_error(){
         -H "User-Agent: ShieldPress-Recovery/1.0" \
         "http://${domain}/?${probe}" 2>/dev/null)
 
-    echo "$body" | grep -qiE \
-        'There has been a critical error on this website|Error establishing a database connection|This site is experiencing technical difficulties|<b>Fatal error</b>:|<b>Parse error</b>:|Fatal error:.*on line|Parse error:.*on line'
+    echo "$body" | grep -qiE "$ERROR_BODY_RE"
+}
+
+# Health probes carry a query string, so they always bypass FastCGI cache. When
+# PHP-FPM comes back (self-reload, restart) the cache can still hold the error
+# page and the probe reports "healthy" - visitors stay stuck on the bad page
+# until someone clears cache by hand. Fetch the URL exactly as a visitor would
+# (no query) and flag it only when an error page is being served FROM cache.
+check_cached_view_error(){
+    local domain="$1"
+    local hdr code xcache body scheme
+    hdr=$(mktemp) || return 1
+    for scheme in https http; do
+        body=$(curl -s -D "$hdr" --connect-timeout 5 --max-time 10 \
+            -H "User-Agent: ShieldPress-Recovery/1.0" \
+            "${scheme}://${domain}/" 2>/dev/null | head -c 20000)
+        [ -s "$hdr" ] && break
+    done
+    code=$(awk 'toupper($1) ~ /^HTTP/ {c=$2} END {print c}' "$hdr")
+    xcache=$(tr -d '\r' < "$hdr" | awk -F': *' 'tolower($1)=="x-cache" {print toupper($2)}' | tail -1)
+    rm -f "$hdr"
+
+    [[ "$xcache" =~ ^(HIT|STALE|UPDATING|REVALIDATED)$ ]] || return 1
+    is_server_error "$code" && return 0
+    echo "$body" | grep -qiE "$ERROR_BODY_RE"
+}
+
+purge_domain_fastcgi_cache(){
+    local dir="/var/cache/nginx/$(domain_to_clean "$1")"
+    [ -d "$dir" ] || return 1
+    find "$dir" -type f -delete 2>/dev/null
 }
 
 is_server_error(){
@@ -426,8 +455,8 @@ scan_all_sites()(
         sites_checked=$((sites_checked + 1))
         local http_code=$(check_site_http "$domain")
         local content_error=0
-        # Chỉ cần soi nội dung khi status không đã là lỗi rõ ràng (200/301/302/304) -
-        # tránh 1 lượt curl thừa cho site đang chắc chắn lỗi hoặc chắc chắn ổn theo cách khác.
+        # Inspect the body only for HTTP 200; any other status is already
+        # decisive, so the extra request would be wasted.
         if is_healthy "$http_code" && [ "$http_code" = "200" ] && check_site_body_error "$domain"; then
             content_error=1
         fi
@@ -449,6 +478,13 @@ scan_all_sites()(
             else
                 [ -z "$silent" ] && echo -e "    \e[31m✗ STILL DOWN\e[0m — manual check needed"
             fi
+        elif is_healthy "$http_code" && check_cached_view_error "$domain"; then
+            # PHP is healthy but FastCGI cache still serves the error page.
+            # Purge only this domain's cache; no PHP-FPM restart, no cooldown.
+            purge_domain_fastcgi_cache "$domain"
+            log "[$domain] Stale error page served from FastCGI cache while PHP is healthy — cache purged"
+            sites_recovered=$((sites_recovered + 1))
+            [ -z "$silent" ] && echo -e "  \e[33m[HTTP $http_code]\e[0m $domain — stale error in cache, \e[32mpurged\e[0m"
         else
             [ -z "$silent" ] && echo -e "  \e[32m[HTTP $http_code]\e[0m $domain — OK"
         fi

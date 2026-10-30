@@ -670,6 +670,32 @@ EOF
     ok "WordPress recovery service output repaired"
 }
 
+patch_wp_cache_recovery(){
+    local ID="SP_20261030_WP_CACHE_RECOVERY"
+    local unit="shieldpress-wp-recovery.service"
+    patch_applied "$ID" && return 0
+    # Regenerate the PHP-FPM auto-reload checker so it purges FastCGI cache after
+    # a restart. A disabled auto-reload stays disabled.
+    if ! bash "$BASE_DIR/modules/tools/auto-reload-php.sh" --refresh; then
+        fail "PHP-FPM auto-reload refresh remains pending; retry the update"
+        return 1
+    fi
+    # Load the new stale-cache detection into a running recovery daemon.
+    if systemctl is-active --quiet "$unit"; then
+        if ! systemctl restart "$unit"; then
+            fail "WordPress recovery restart failed; migration remains pending"
+            return 1
+        fi
+        sleep 2
+        if ! systemctl is-active --quiet "$unit"; then
+            fail "WordPress recovery is not running; migration remains pending"
+            return 1
+        fi
+    fi
+    patch_mark_done "$ID"
+    ok "WordPress cache recovery after PHP 502 enabled"
+}
+
 # Repair only previously restored WordPress sites whose local DB login is broken.
 # Working sites and non-WordPress applications are left alone.
 patch_restored_wordpress_db(){
@@ -887,6 +913,7 @@ apply_all_patches(){
     patch_1331_resize_php_pools || ssl_status=$?
     patch_ssl_auto_renew || ssl_status=$?
     patch_wp_recovery_output || ssl_status=$?
+    patch_wp_cache_recovery || ssl_status=$?
 
     # Add new patch calls here ↑
 
@@ -941,6 +968,7 @@ show_patch_status(){
     _status "SP_20261001_SSL_AUTO_RENEW"          "Repair SSL auto-renew and standalone mail certificates"
     _status "SP_20261005_WP_RECOVERY_OUTPUT"      "Repair WordPress recovery daemon startup output"
     _status "SP_20261005_WP_RECOVERY_SCAN_LOCK"   "Restart WordPress recovery with scan-scoped locking"
+    _status "SP_20261030_WP_CACHE_RECOVERY"       "Purge stale error cache after PHP 502 recovery"
 
     echo ""
     echo "  Registry: $PATCH_REGISTRY"

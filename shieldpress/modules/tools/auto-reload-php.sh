@@ -35,6 +35,18 @@ for svc in php81-php-fpm php82-php-fpm php83-php-fpm php84-php-fpm; do
 
         if systemctl is-active --quiet "$svc"; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') | $svc restarted OK" >> "$LOG_FILE"
+            # Pages cached during the 502 window would otherwise keep serving
+            # the error after PHP is back. Purge every domain on this PHP version.
+            ver="${svc#php}"; ver="${ver%%-*}"
+            for env_file in /home/domains/*/config/domain.env; do
+                [ -f "$env_file" ] || continue
+                dom_ver=$(sed -n 's/^PHP_VERSION=//p' "$env_file" | tr -d '".[:space:]')
+                [ "$dom_ver" = "$ver" ] || continue
+                clean=$(basename "$(dirname "$(dirname "$env_file")")")
+                [ -d "/var/cache/nginx/$clean" ] || continue
+                find "/var/cache/nginx/$clean" -type f -delete 2>/dev/null
+                echo "$(date '+%Y-%m-%d %H:%M:%S') | $clean FastCGI cache purged after $svc restart" >> "$LOG_FILE"
+            done
         else
             echo "$(date '+%Y-%m-%d %H:%M:%S') | $svc restart FAILED" >> "$LOG_FILE"
         fi
@@ -84,6 +96,14 @@ view_log(){
     touch "$LOG_FILE"
     tail -f "$LOG_FILE"
 }
+
+# Non-interactive: regenerate the checker script of an already enabled
+# installation (used by the update migration). Never enables a disabled one.
+if [ "${1:-}" = "--refresh" ]; then
+    crontab -l 2>/dev/null | grep -q "$CRON_TAG" || exit 0
+    install_checker
+    exit $?
+fi
 
 while true; do
     clear
