@@ -1,3 +1,15 @@
+## v1.3.127 — 2026-10-30 — Roundcube security updates and OS security patches
+
+- Raise the Roundcube offline fallback from 1.7.3 to the 1.7.5 security release. Roundcube 1.7.4/1.7.5 (1.6.19/1.6.20) fix zero-click stored XSS via TNEF, IMAP command injection, mail header injection, session object injection, SSRF and CSRF bypasses.
+- Verify every Roundcube download against SHA-256: the GitHub release digest, or the pinned hash for the offline fallback. Refuse unverified packages.
+- Add Email > Webmail > `[5] Update Roundcube`: back up `/var/www/webmail`, run upstream `bin/installto.sh` (keeps config and SQLite data, applies schema updates), remove the installer directory and restore the backup automatically on failure. Branch upgrades (e.g. 1.6 → 1.7) require explicit confirmation.
+- Update existing webmail installations automatically during the ShieldPress update migration to the newest verified release of their installed branch. The step is idempotent, never crosses branches and reports pending failures for retry.
+- Apply security-only OS updates (`dnf upgrade-minimal --security`) during every ShieldPress update instead of a full `dnf update`. Nginx, PHP, MariaDB, PostgreSQL and Node.js stay excluded and keep their Upgrade Manager backup and policy path. Keep Valkey on its installed major branch and restart it only when its package changed. Report services and reboots needed for updated libraries without restarting them. Opt out with `OS_SECURITY_AUTO_UPDATE="no"` in `config/upgrade-policy.conf`.
+- Show loading indicators with estimates for Roundcube backup, download and update, and for OS security transactions; DNF output is logged to `os-security.log`.
+- Webmail info and the CVE audit report Roundcube versions below their branch security release, and the CVE audit shows the Valkey version.
+- Add `tests/webmail-os-security.sh` (disposable AlmaLinux 9): 1.7.3 → 1.7.5 update with config, permission and installer checks, repeat execution, 1.6 branch retention, failed-update restore, checksum refusal, OS security apply/repeat with Valkey 8.0.10 and policy opt-out. Run repository smoke tests, Bash syntax and whitespace checks.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.126 — 2026-10-29 — Numeric update shortcut
 
 - Add `2` as a shell command for `shieldpress update`, preserving normal update confirmation and the `1` admin menu shortcut.

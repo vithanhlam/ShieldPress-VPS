@@ -969,6 +969,28 @@ if [ "${1:-}" = "--auto" ]; then
         patch_status=1
     fi
 
+    # Security-only OS updates (managed stacks excluded, Valkey same-branch).
+    echo ""
+    info "Applying OS security updates..."
+    if bash "$BASE_DIR/modules/security/os-security-patch.sh" --apply; then
+        ok "OS security update step completed"
+    else
+        fail "OS security update remains pending; retry: bash $BASE_DIR/modules/security/os-security-patch.sh --apply"
+        patch_status=1
+    fi
+
+    # Existing webmail installs: newest verified release of the installed branch.
+    if [ -f /var/www/webmail/program/include/iniset.php ]; then
+        echo ""
+        info "Checking Roundcube security release..."
+        if bash "$BASE_DIR/modules/email/update-webmail.sh" --auto; then
+            ok "Roundcube security update step completed"
+        else
+            fail "Roundcube update remains pending; retry: bash $BASE_DIR/modules/email/update-webmail.sh --auto"
+            patch_status=1
+        fi
+    fi
+
     exit "$patch_status"
 fi
 

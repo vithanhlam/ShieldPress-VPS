@@ -248,3 +248,124 @@ get_relay_info(){
         *)       RELAY_STATUS="Direct (no relay)" ;;
     esac
 }
+
+# ============================================================
+#  Roundcube release helpers (install + in-place update)
+# ============================================================
+
+WEBMAIL_DIR="/var/www/webmail"
+# Offline fallback: keep this on the newest 1.7 security release and update
+# the hash together with the version (GitHub release asset digest).
+RC_FALLBACK_VERSION="1.7.5"
+RC_FALLBACK_SHA256="93a66c94e3efff7db93187c1c9d7f35546647a3e1e7b9327cc87911564edf9d1"
+# Minimum security release per supported branch; older branches are unsupported.
+RC_SECURITY_BASELINES="1.6.20 1.7.5"
+
+rc_version_ge(){
+    [ "$(printf '%s\n' "$2" "$1" | sort -V | head -1)" = "$2" ]
+}
+
+# True when <version> meets the security baseline of its branch.
+rc_security_ok(){
+    local version="$1" baseline
+    for baseline in $RC_SECURITY_BASELINES; do
+        [ "${baseline%.*}" = "${version%.*}" ] && { rc_version_ge "$version" "$baseline"; return; }
+    done
+    return 1
+}
+
+# Sets RC_VERSION and RC_SHA256 for roundcubemail-<ver>-complete.tar.gz.
+# Without an argument: newest stable release. With a branch (e.g. 1.6): the
+# newest release of that branch. Only releases with a published SHA-256 count.
+rc_resolve_release(){
+    local branch="${1:-}" json tag="" digest=""
+    RC_VERSION=""
+    RC_SHA256=""
+
+    json=$(curl -fsSL --connect-timeout 3 --max-time 10 \
+        "https://api.github.com/repos/roundcube/roundcubemail/releases?per_page=50" 2>/dev/null) || json=""
+    if [ -n "$json" ]; then
+        read -r tag digest < <(printf '%s' "$json" | python3 -I -c '
+import json, re, sys
+branch = sys.argv[1]
+best = None
+for rel in json.load(sys.stdin):
+    tag = rel.get("tag_name", "")
+    if rel.get("draft") or rel.get("prerelease") or not re.fullmatch(r"\d+\.\d+\.\d+", tag):
+        continue
+    if branch and tag.rsplit(".", 1)[0] != branch:
+        continue
+    name = "roundcubemail-%s-complete.tar.gz" % tag
+    dg = next((a.get("digest") or "" for a in rel.get("assets", []) if a.get("name") == name), "")
+    if not dg.startswith("sha256:"):
+        continue
+    key = tuple(int(x) for x in tag.split("."))
+    if best is None or key > best[0]:
+        best = (key, tag, dg[7:])
+print(best[1], best[2]) if best else print("- -")
+' "$branch" 2>/dev/null)
+    fi
+
+    if [[ "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [[ "$digest" =~ ^[0-9a-f]{64}$ ]]; then
+        # Never let a stale API answer pull in something older than the fallback.
+        if [ -n "$branch" ] && [ "$branch" != "${RC_FALLBACK_VERSION%.*}" ] || rc_version_ge "$tag" "$RC_FALLBACK_VERSION"; then
+            RC_VERSION="$tag"
+            RC_SHA256="$digest"
+            return 0
+        fi
+    fi
+    # The pinned fallback only serves its own branch.
+    if [ -z "$branch" ] || [ "$branch" = "${RC_FALLBACK_VERSION%.*}" ]; then
+        RC_VERSION="$RC_FALLBACK_VERSION"
+        RC_SHA256="$RC_FALLBACK_SHA256"
+        return 0
+    fi
+    return 1
+}
+
+# Downloads, verifies and extracts the release into <tmpdir>/roundcubemail-<ver>.
+rc_fetch_release(){
+    local tmp="$1" actual
+    local url="https://github.com/roundcube/roundcubemail/releases/download/${RC_VERSION}/roundcubemail-${RC_VERSION}-complete.tar.gz"
+
+    if ! curl -fsSL --connect-timeout 10 --max-time 300 "$url" -o "$tmp/roundcube.tar.gz"; then
+        fail "Failed to download Roundcube ${RC_VERSION}"
+        return 1
+    fi
+    actual=$(sha256sum "$tmp/roundcube.tar.gz" | awk '{print $1}')
+    if [ "$actual" != "$RC_SHA256" ]; then
+        fail "Roundcube ${RC_VERSION} checksum mismatch; refusing unverified package"
+        return 1
+    fi
+    if ! tar --no-same-owner -xzf "$tmp/roundcube.tar.gz" -C "$tmp"; then
+        fail "Failed to extract Roundcube ${RC_VERSION}"
+        return 1
+    fi
+    if [ ! -f "$tmp/roundcubemail-${RC_VERSION}/program/include/iniset.php" ]; then
+        fail "Roundcube ${RC_VERSION} package layout not recognized"
+        return 1
+    fi
+}
+
+rc_installed_version(){
+    grep -oE "RCMAIL_VERSION'?, *'[0-9]+\.[0-9]+\.[0-9]+" \
+        "$WEBMAIL_DIR/program/include/iniset.php" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+$'
+}
+
+# PHP CLI for Roundcube's bin/ scripts (Remi SCL first, then system php).
+rc_php_bin(){
+    local v
+    for v in 84 83 82 81; do
+        [ -x "/opt/remi/php${v}/root/usr/bin/php" ] && { echo "/opt/remi/php${v}/root/usr/bin/php"; return 0; }
+    done
+    command -v php 2>/dev/null
+}
+
+# Ownership/permissions applied after install and after every update.
+rc_fix_permissions(){
+    chown -R nginx:nginx "$WEBMAIL_DIR"
+    chmod -R 755 "$WEBMAIL_DIR"
+    chmod -R 770 "$WEBMAIL_DIR/temp" "$WEBMAIL_DIR/logs"
+    [ -f "$WEBMAIL_DIR/db/roundcube.db" ] && chmod 640 "$WEBMAIL_DIR/db/roundcube.db"
+    return 0
+}

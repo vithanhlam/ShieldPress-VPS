@@ -49,15 +49,13 @@ fi
 echo ""
 sp_hr
 echo ""
-WEBMAIL_DIR="/var/www/webmail"
 RC_CONFIG="$WEBMAIL_DIR/config/config.inc.php"
-RC_VERSION="unknown"
-if [ -d "$WEBMAIL_DIR/program" ]; then
-    RC_VERSION=$(grep -RhoE "RCMAIL_VERSION[^0-9]*[0-9]+\.[0-9]+\.[0-9]+" \
-        "$WEBMAIL_DIR/program" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-    RC_VERSION="${RC_VERSION:-unknown}"
+RC_INSTALLED=$(rc_installed_version)
+RC_INSTALLED="${RC_INSTALLED:-unknown}"
+echo -e "  ${BOLD}Roundcube:${RESET} ${CYAN}${RC_INSTALLED}${RESET}"
+if [ "$RC_INSTALLED" != "unknown" ] && ! rc_security_ok "$RC_INSTALLED"; then
+    echo -e "  ${RED}  → Below the current security release. Select [5] to update${RESET}"
 fi
-echo -e "  ${BOLD}Roundcube:${RESET} ${CYAN}${RC_VERSION}${RESET}"
 echo ""
 
 # Show session info
@@ -76,6 +74,7 @@ fi
 echo -e "  ${GREEN}[1]${RESET} Change HTTP Auth password"
 echo -e "  ${CYAN}[3]${RESET} Fix session logout (ip_check + session lifetime)"
 echo -e "  ${YELLOW}[4]${RESET} Reinstall Webmail"
+echo -e "  ${GREEN}[5]${RESET} Update Roundcube (keeps config & data)"
 echo -e "  ${RED}[2]${RESET} Uninstall Webmail"
 echo -e "  ${WHITE}[0]${RESET} Back"
 echo ""
@@ -146,6 +145,9 @@ case $CHOICE in
         bash $MODULE_DIR/uninstall-webmail.sh
         bash $MODULE_DIR/install-webmail.sh
         break
+        ;;
+    5)
+        bash $MODULE_DIR/update-webmail.sh
         ;;
     0|*)
         exit 0

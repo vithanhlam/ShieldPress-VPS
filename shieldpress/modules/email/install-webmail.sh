@@ -13,6 +13,7 @@ DOMAINS_ROOT="/home/domains"
 
 source "$BASE_DIR/core/ui.sh"
 source "$MODULE_DIR/helpers.sh"
+source "$BASE_DIR/modules/helpers/task-progress.sh"
 
 clear
 sp_header "Install Webmail" "Roundcube web client"
@@ -168,32 +169,25 @@ info "Step 2/5 - Downloading Roundcube..."
 
 WEBMAIL_DIR="/var/www/webmail"
 
-# Get latest stable version
-RC_VERSION=$(curl -fsSL --connect-timeout 3 --max-time 8 \
-    https://api.github.com/repos/roundcube/roundcubemail/releases/latest 2>/dev/null \
-    | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' | head -1)
-# Keep the fallback on the current stable security branch, never an old release.
-[ -z "$RC_VERSION" ] && RC_VERSION="1.7.3"
-
-RC_URL="https://github.com/roundcube/roundcubemail/releases/download/${RC_VERSION}/roundcubemail-${RC_VERSION}-complete.tar.gz"
+# Latest stable release with a published SHA-256, else the pinned fallback
+rc_resolve_release
 
 mkdir -p "$WEBMAIL_DIR"
+RC_TMP=$(mktemp -d /tmp/roundcube.XXXXXX)
 
-if curl -fsSL "$RC_URL" -o /tmp/roundcube.tar.gz 2>/dev/null; then
-    tar -xzf /tmp/roundcube.tar.gz -C /tmp/
-    cp -rf /tmp/roundcubemail-${RC_VERSION}/* "$WEBMAIL_DIR/"
-    rm -rf /tmp/roundcube.tar.gz /tmp/roundcubemail-${RC_VERSION}
-    ok "Roundcube ${RC_VERSION} downloaded"
+if run_with_loading "Downloading Roundcube ${RC_VERSION}" "$DATA_DIR/roundcube-download.time" 15 \
+        rc_fetch_release "$RC_TMP"; then
+    cp -rf "$RC_TMP/roundcubemail-${RC_VERSION}"/* "$WEBMAIL_DIR/"
+    rm -rf "$RC_TMP"
+    ok "Roundcube ${RC_VERSION} downloaded (SHA-256 verified)"
 else
-    fail "Failed to download Roundcube"
+    rm -rf "$RC_TMP"
     read -p "Press Enter..."
     exit 1
 fi
 
 # Set permissions
-chown -R nginx:nginx "$WEBMAIL_DIR"
-chmod -R 755 "$WEBMAIL_DIR"
-chmod -R 770 "$WEBMAIL_DIR/temp" "$WEBMAIL_DIR/logs"
+rc_fix_permissions
 
 # ============================================================
 #  Step 3: Configure Roundcube
