@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.127`
+**Current version:** `1.3.128`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -116,7 +116,7 @@ long headers place the subtitle on a separate line.
 ## Start here
 
 1. Use a fresh AlmaLinux 9 or 10 VPS with root SSH access.
-2. Connect to the server and run the installer below.
+2. Connect to the server and run the installer below, then answer `Y` to install the server stack.
 3. Type `shieldpress` to open the dashboard.
 4. For bugs or setup problems, [open a GitHub Issue](https://github.com/vithanhlam/ShieldPress-VPS/issues).
 
@@ -164,15 +164,37 @@ bash /tmp/shieldpress-install.sh
 rm -f /tmp/shieldpress-install.sh
 ```
 
-The installer will:
+Downloading first lets you review the script before running it. The one-line
+form also works, including on a terminal where the prompt below is read from
+the keyboard:
 
-1. Verify OS compatibility (AlmaLinux 9/10 only).
-2. Check minimum RAM (900 MB) and disk space (5 GB).
-3. Install the full server stack (Nginx, PHP, MariaDB, Valkey, etc.).
-4. Set up the `shieldpress` command for quick access.
-5. Display the dashboard on completion.
+```bash
+curl -fsSL https://install.shieldpress.net | bash
+```
 
-After installation, type `shieldpress` to open the admin panel.
+Not logged in as root? The installer re-runs itself with `sudo` (also when
+piped), or use `curl -fsSL https://install.shieldpress.net | sudo bash`.
+
+The installer runs in two stages:
+
+1. **ShieldPress toolkit** (about a minute): downloads the latest GitHub
+   release, verifies its SHA-256 checksum (refusing unverified packages),
+   installs it to `/opt/shieldpress` and sets up the `shieldpress` command.
+2. **Server stack** (approximately 10-20 minutes): after the prompt
+   `Install the server stack now? [Y/n]`, it verifies AlmaLinux 9/10, the
+   minimum RAM (900 MB) and disk space (5 GB), then installs Nginx, PHP,
+   MariaDB, Valkey, firewall and the other core services.
+
+If you answer `n`, or the installer runs without a terminal (for example from
+cloud-init), only stage 1 runs. Install the stack later with `shieldpress` →
+**[1] Install Stack**. For unattended installs, answer in advance:
+
+```bash
+curl -fsSL https://install.shieldpress.net | SHIELDPRESS_INSTALL_STACK=yes bash
+```
+
+Servers that already have the stack are not reinstalled. After installation,
+type `shieldpress` to open the admin panel.
 
 ## First steps after installation
 

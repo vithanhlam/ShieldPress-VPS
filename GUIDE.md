@@ -17,10 +17,14 @@ rm -f /tmp/shieldpress-install.sh
 shieldpress
 ```
 
-The installer checks the operating system and resources, installs the selected
-server stack, creates the `shieldpress` command and starts the dashboard. The
-base installation does not install PostgreSQL or pgBackRest unless selected or
-needed by a feature.
+The installer first installs the verified ShieldPress toolkit and the
+`shieldpress` command, then asks `Install the server stack now? [Y/n]`.
+Answering `Y` checks the operating system and resources and installs the server
+stack (approximately 10-20 minutes). Answering `n`, or running without a
+terminal, installs only the toolkit; install the stack later with
+`shieldpress` → **[1] Install Stack**, or answer in advance with
+`SHIELDPRESS_INSTALL_STACK=yes`. The base installation does not install
+PostgreSQL or pgBackRest unless selected or needed by a feature.
 
 ## 2. Dashboard and menu map
 

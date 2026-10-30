@@ -1,3 +1,14 @@
+## v1.3.128 — 2026-10-30 — Guided server stack install from the bootstrap
+
+- Ask `Install the server stack now? [Y/n]` after the bootstrap installs the toolkit, reading the answer from the terminal also when piped (`curl ... | bash`). The stack installer receives terminal input instead of the curl pipe. Servers with an installed stack are not reinstalled; failures report the exit status and the retry path (`shieldpress` → [1] Install Stack).
+- Support unattended answers with `SHIELDPRESS_INSTALL_STACK=yes|no`; runs without a terminal (e.g. cloud-init) install only the toolkit and print the next step.
+- Fix the non-root re-run when piped: `$0` is not a script file there, so the bootstrap now fetches itself from the configured GitHub source and re-runs with `sudo`, keeping prompts on the terminal. Report a clear root requirement when `sudo` is unavailable.
+- Show loading indicators with approximate estimates for the package download and extraction.
+- Correct the README and guide: the installer runs in two stages (toolkit, then the optional server stack), document the one-line and `sudo` forms and unattended installs.
+- Fresh installs only; existing installations are unaffected and need no migration.
+- Add `tests/bootstrap-install.sh` (disposable AlmaLinux 9): piped root install without a terminal, terminal prompt while piped (answer `n`, default `Y` launches the stack installer), existing stack, unattended answer, piped `sudo` re-run and missing `sudo`. Run repository smoke tests, Bash syntax and whitespace checks.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.127 — 2026-10-30 — Roundcube security updates and OS security patches
 
 - Raise the Roundcube offline fallback from 1.7.3 to the 1.7.5 security release. Roundcube 1.7.4/1.7.5 (1.6.19/1.6.20) fix zero-click stored XSS via TNEF, IMAP command injection, mail header injection, session object injection, SSRF and CSRF bypasses.
