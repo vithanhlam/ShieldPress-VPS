@@ -17,6 +17,7 @@ sp_menu_grid \
     "8|Malware Scan|red" \
     "9|Reset Admin Password|yellow" \
     "10|Auto-Recovery (500 Fix)|green" \
+    "11|Change DB Password / Salt Keys|yellow" \
     "0|Back|white"
 sp_prompt choice
 
@@ -31,6 +32,7 @@ case $choice in
     8) bash $MODULE_DIR/malware-scan.sh ;;
     9) bash $MODULE_DIR/reset-password.sh ;;
     10) bash $MODULE_DIR/wp-auto-recovery.sh ;;
+    11) bash $MODULE_DIR/rotate-secrets.sh ;;
     0) break ;;
     *) sp_invalid ;;
 esac

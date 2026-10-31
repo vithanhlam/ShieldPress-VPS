@@ -1,3 +1,13 @@
+## v1.3.130 — 2026-10-31 — Change DB password and salt keys from WordPress Manager
+
+- Add WordPress Manager > `[11] Change DB Password / Salt Keys` for a selected domain: change the database password, regenerate the eight `wp-config.php` salts/security keys, or both.
+- The DB password change updates every MariaDB host entry of the site user, verifies the login with the new password, then updates `wp-config.php`, `domain.env` and `db.txt`. PostgreSQL domains are limited to the salt option.
+- Missing salt constants are added to `wp-config.php`; values are written without shell or PHP quoting issues. Regenerating salts logs every user out, which the prompt states before running.
+- Back up `wp-config.php` first and roll back automatically (file restored, MariaDB password reverted) when the connection test fails or the edited file does not pass `php -l`. Keep the file at mode 600 with its original owner, then reload PHP-FPM.
+- New feature only: no migration is required for existing installations.
+- Add `tests/wp-rotate-secrets.sh` (disposable AlmaLinux 9 test server, WordPress domain with MariaDB): DB-only, salts-only and combined runs, MariaDB login with the new and old password, `domain.env` sync, syntax, permissions and owner, appending of a missing salt, and rollback on failure. Run repository smoke tests, Bash syntax and whitespace checks.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.129 — 2026-10-30 — Clear stale FastCGI cache after PHP 502 recovery
 
 - Fix WordPress sites staying on an error page after PHP-FPM returned from a 502: the cached error page kept being served until the cache was cleared by hand.
