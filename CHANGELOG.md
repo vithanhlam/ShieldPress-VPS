@@ -1,3 +1,19 @@
+## v1.3.131 — 2026-10-31 — Intrusion Guard, Telegram intrusion alerts and SSH login toggles
+
+- Add Security Center > `[22] Intrusion Guard`, which detects account takeover and backdoor installs such as an unknown sudo user created outside the OS, then used to edit `sshd_config` and run a remote install script:
+  - Save a baseline of login users, sudo members, `NOPASSWD` entries, SSH key fingerprints, `sshd_config`, shell profiles and cron/systemd units; report anything new as CRIT/WARN.
+  - Flag extra UID 0 accounts, empty passwords, users with no `useradd` log (created through a console, rescue mode, provider panel or guest agent), console (`tty`/`ttyS`/`hvc`) logins, console autologin, SSH logins by users outside the baseline and a running `qemu-guest-agent`.
+  - Scan persistence locations, command history, open connections and processes for known indicators (`vibepass.us`, `79.124.56.242`, `SERVER_ID=81144`, "Linux Panel", plus your own list in `/etc/shieldpress/intrusion-ioc.list`), processes running from `/tmp`, `/dev/shm` or deleted files, and `curl|sh` in cron/systemd.
+  - Run a scheduled scan every 5 minutes and 1 minute after boot; a CRIT result turns the Security Center header to `CHECK` and adds an alert line.
+  - Lock a suspicious user (password, shell, expiry, SSH keys, sudo, sessions) after confirmation, with an evidence backup and without deleting the account; disable and mask `qemu-guest-agent` after confirmation.
+- Add a realtime watch service (`sp-intrusion-watch`) that sends Telegram `security_alert` messages for: every SSH or console login (user, source IP and reverse DNS, method, key fingerprint, baseline status, sudo rights, new-IP flag and open sessions), new users, additions to `wheel`/`sudo`, password changes, and `sudo` from unknown users or with sensitive commands.
+- Alert on abnormal traffic: inbound/outbound bandwidth and ESTABLISHED/SYN-RECV connection counts above an absolute limit or a multiple of the learned normal level, with top IPs, targeted ports and CPU processes. Thresholds live in `/etc/shieldpress/intrusion-guard.conf` and can be changed from the menu; alerts are rate limited.
+- Rework the Security Center status panel: aligned label/value columns, a right-aligned `OK`/`CHECK` badge, aligned `ALERT`/`WARN` lines, and a fix for the IP rules counter printing `0` twice.
+- Rework SSH Hardening: `[2]` toggles `PermitRootLogin` (`yes` ⇄ `prohibit-password`, so root can still log in with an SSH key), `[3]` toggles `PasswordAuthentication`, `[4]` creates or adds a root SSH key. Before any toggle the root `authorized_keys` is checked; without a key the menu offers to generate one (private key shown once, saved only after confirmation) or to paste a public key. Changes are applied to `sshd_config.d` drop-ins too, validated with `sshd -t` and rolled back when sshd fails to restart.
+- New feature only: no migration is required for existing installations. Intrusion Guard and the realtime watch are opt-in.
+- Add `tests/intrusion-guard.sh` (unprivileged): login, console, `useradd`, `wheel`, `sudo` and filter alerts, the SSH option setter, a scan run and an English-only check. Run repository smoke tests, Bash syntax and whitespace checks.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.130 — 2026-10-31 — Change DB password and salt keys from WordPress Manager
 
 - Add WordPress Manager > `[11] Change DB Password / Salt Keys` for a selected domain: change the database password, regenerate the eight `wp-config.php` salts/security keys, or both.

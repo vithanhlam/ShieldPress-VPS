@@ -183,8 +183,10 @@ security_dashboard_compact(){
     ensure_firewall
     ensure_fail2ban
 
-    BLOCKED=$(firewall-cmd --list-rich-rules 2>/dev/null | grep -c reject || echo 0)
-    WHITE=$(firewall-cmd --list-rich-rules 2>/dev/null | grep -c accept || echo 0)
+    local RICH
+    RICH=$(firewall-cmd --list-rich-rules 2>/dev/null)
+    BLOCKED=$(grep -c reject <<< "$RICH"); BLOCKED=${BLOCKED:-0}
+    WHITE=$(grep -c accept <<< "$RICH");   WHITE=${WHITE:-0}
     PORT_COUNT=$(ss -tuln | awk 'NR>1 {print $5}' | grep -oP '(?<=:)\d+$' | sort -n | uniq | wc -l)
     FAIL2BAN=$(fail2ban-client status 2>/dev/null | grep "Jail list" | cut -d: -f2 | xargs)
     JAIL_COUNT=$(echo "$FAIL2BAN" | tr ',' '\n' | awk 'NF' | wc -l)
@@ -202,7 +204,7 @@ security_dashboard_compact(){
     fi
 
     SSH_WARN="no"
-    if grep -Eiq "^[[:space:]]*PermitRootLogin[[:space:]]+yes|^[[:space:]]*PasswordAuthentication[[:space:]]+yes" /etc/ssh/sshd_config 2>/dev/null; then
+    if [ "$(_ssh_get_opt PermitRootLogin yes)" = "yes" ] || [ "$(_ssh_get_opt PasswordAuthentication yes)" = "yes" ]; then
         SSH_WARN="yes"
     fi
 
@@ -212,32 +214,48 @@ security_dashboard_compact(){
     [ "$F2B_STATUS" = "active" ] || { HEALTH_COLOR="$RED"; HEALTH_TEXT="CHECK"; }
     [ "$DB_PUBLIC" = "yes" ] && { HEALTH_COLOR="$RED"; HEALTH_TEXT="CHECK"; }
 
+    local IG_STATE; IG_STATE=$(head -1 "${DATA_DIR:-/var/shieldpress/data}/intrusion-alert.flag" 2>/dev/null)
+    [ "$IG_STATE" = "CRIT" ] && { HEALTH_COLOR="$RED"; HEALTH_TEXT="CHECK"; }
+
+    local LINE="===================================================="
+    local SEP="----------------------------------------------------"
+    local PLURAL="s"; [ "$JAIL_COUNT" = "1" ] && PLURAL=""
+
     echo ""
-    echo "===================================================="
-    echo -e "  SECURITY CENTER                         ${HEALTH_COLOR}${HEALTH_TEXT}${RESET}"
-    echo "===================================================="
-    printf "  %-13s %s\n" "Firewall" "$FW_STATUS"
-    printf "  %-13s %s (%s jail%s)\n" "Fail2ban" "$F2B_STATUS" "$JAIL_COUNT" "$([ "$JAIL_COUNT" = "1" ] || echo s)"
-    printf "  %-13s blocked: %s | whitelist: %s\n" "IP rules" "$BLOCKED" "$WHITE"
-    printf "  %-13s %s listening\n" "Ports" "$PORT_COUNT"
-    echo "----------------------------------------------------"
-    printf "  %-13s requests: %s | 4xx: %s | wp-login/xmlrpc: %s\n" "Last 10 min" "$RECENT_TOTAL" "$RECENT_4XX" "$WP_HITS"
+    echo "$LINE"
+    # Title: left label in 44 columns, status right-aligned
+    printf "  %-44s" "SECURITY CENTER"
+    printf "${HEALTH_COLOR}%6s${RESET}\n" "$HEALTH_TEXT"
+    echo "$LINE"
+    printf "  %-13s : %s\n" "Firewall"    "$FW_STATUS"
+    printf "  %-13s : %s (%s jail%s)\n" "Fail2ban" "$F2B_STATUS" "$JAIL_COUNT" "$PLURAL"
+    printf "  %-13s : blocked %s | whitelist %s\n" "IP rules" "$BLOCKED" "$WHITE"
+    printf "  %-13s : %s listening\n" "Ports" "$PORT_COUNT"
+    echo "$SEP"
+    printf "  %-13s : requests %s | 4xx %s\n" "Last 10 min" "$RECENT_TOTAL" "$RECENT_4XX"
+    printf "  %-13s : %s\n" "WP login hits" "$WP_HITS"
 
     # Auto-Guard status
     if systemctl is-active --quiet sp-auto-guard.timer 2>/dev/null; then
-        echo -e "  ${GREEN}Auto-Guard  : ENABLED${RESET} (auto-block khi vượt ngưỡng)"
+        printf "  %-13s : ${GREEN}ENABLED${RESET} (auto-block above thresholds)\n" "Auto-Guard"
     else
-        echo -e "  ${DIM}Auto-Guard  : off${RESET}"
+        printf "  %-13s : ${DIM}off${RESET}\n" "Auto-Guard"
     fi
+    echo "$SEP"
 
     ALERTS=0
-    [ "$DB_PUBLIC" = "yes" ] && { echo -e "  ${RED}ALERT${RESET} Database port is public"; ALERTS=$((ALERTS+1)); }
-    [ "$SSH_WARN" = "yes" ] && { echo -e "  ${YELLOW}WARN ${RESET} SSH root/password login enabled"; ALERTS=$((ALERTS+1)); }
-    [ "$F2B_STATUS" = "active" ] || { echo -e "  ${RED}ALERT${RESET} Fail2ban is not active"; ALERTS=$((ALERTS+1)); }
-    [ "$FW_STATUS" = "active" ] || { echo -e "  ${RED}ALERT${RESET} Firewalld is not active"; ALERTS=$((ALERTS+1)); }
+    [ "$DB_PUBLIC" = "yes" ] && { printf "  ${RED}%-6s${RESET} %s\n" "ALERT" "Database port is public"; ALERTS=$((ALERTS+1)); }
+    [ "$SSH_WARN" = "yes" ] && { printf "  ${YELLOW}%-6s${RESET} %s\n" "WARN" "SSH root/password login enabled"; ALERTS=$((ALERTS+1)); }
+    if [ "$IG_STATE" = "CRIT" ]; then
+        printf "  ${RED}%-6s${RESET} %s\n" "ALERT" "Intrusion Guard: signs of intrusion (menu 22)"; ALERTS=$((ALERTS+1))
+    elif [ "$IG_STATE" = "WARN" ]; then
+        printf "  ${YELLOW}%-6s${RESET} %s\n" "WARN" "Intrusion Guard has warnings (menu 22)"; ALERTS=$((ALERTS+1))
+    fi
+    [ "$F2B_STATUS" = "active" ] || { printf "  ${RED}%-6s${RESET} %s\n" "ALERT" "Fail2ban is not active"; ALERTS=$((ALERTS+1)); }
+    [ "$FW_STATUS" = "active" ] || { printf "  ${RED}%-6s${RESET} %s\n" "ALERT" "Firewalld is not active"; ALERTS=$((ALERTS+1)); }
     [ "$ALERTS" -eq 0 ] && echo -e "  ${GREEN}No critical alerts${RESET}"
 
-    echo "===================================================="
+    echo "$LINE"
     echo ""
 }
 
@@ -1112,9 +1130,174 @@ fail2ban_nginx_manager(){
 # SSH HARDENING
 # ==================================================
 
-ssh_hardening(){
-    local SSHD_CONF="/etc/ssh/sshd_config"
+# --- SSH helpers ---------------------------------------------------------
 
+SSHD_CONF="/etc/ssh/sshd_config"
+ROOT_AUTH_KEYS="/root/.ssh/authorized_keys"
+
+# Effective value of an option (sshd_config.d drop-ins take precedence)
+_ssh_get_opt(){
+    local OPT="$1" DEF="$2" V=""
+    V=$(grep -hEi "^[[:space:]]*${OPT}[[:space:]]" /etc/ssh/sshd_config.d/*.conf "$SSHD_CONF" 2>/dev/null \
+        | awk 'NR==1{print tolower($2)}')
+    echo "${V:-$DEF}"
+}
+
+# Set an option in sshd_config and in every drop-in that declares it
+_ssh_set_opt(){
+    local OPT="$1" VAL="$2" f
+    for f in /etc/ssh/sshd_config.d/*.conf; do
+        [ -f "$f" ] || continue
+        grep -qEi "^[[:space:]]*${OPT}[[:space:]]" "$f" && \
+            sed -i -E "s/^[[:space:]]*${OPT}[[:space:]].*/${OPT} ${VAL}/I" "$f"
+    done
+    if grep -qEi "^[[:space:]]*${OPT}[[:space:]]" "$SSHD_CONF"; then
+        sed -i -E "s/^[[:space:]]*${OPT}[[:space:]].*/${OPT} ${VAL}/I" "$SSHD_CONF"
+    elif grep -qEi "^[[:space:]]*#[[:space:]]*${OPT}[[:space:]]" "$SSHD_CONF"; then
+        sed -i -E "0,/^[[:space:]]*#[[:space:]]*${OPT}[[:space:]]/{s/^[[:space:]]*#[[:space:]]*${OPT}[[:space:]].*/${OPT} ${VAL}/I}" "$SSHD_CONF"
+    else
+        echo "${OPT} ${VAL}" >> "$SSHD_CONF"
+    fi
+}
+
+_ssh_key_count(){
+    [ -f "$ROOT_AUTH_KEYS" ] || { echo 0; return; }
+    local N
+    N=$(grep -Ecv '^[[:space:]]*(#|$)' "$ROOT_AUTH_KEYS" 2>/dev/null)
+    echo "${N:-0}"
+}
+
+# Apply an sshd change safely: test -> restart -> roll back on failure
+_ssh_apply(){
+    local BAK="$1" DESC="$2"
+    if ! sshd -t 2>/dev/null; then
+        fail "sshd config test failed! Reverting..."
+        cp "$BAK" "$SSHD_CONF"
+        return 1
+    fi
+    systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null
+    if systemctl is-active --quiet sshd 2>/dev/null || systemctl is-active --quiet ssh 2>/dev/null; then
+        ok "$DESC"
+        log "$DESC"
+        return 0
+    fi
+    fail "sshd failed to restart! Reverting..."
+    cp "$BAK" "$SSHD_CONF"
+    systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null
+    return 1
+}
+
+# Make sure root has an SSH key. Returns 0 if one exists or was just created and saved.
+ssh_ensure_key(){
+    local COUNT
+    COUNT=$(_ssh_key_count)
+    if [ "$COUNT" -gt 0 ]; then
+        echo -e "  ${GREEN}✔${RESET} Found $COUNT SSH key(s) in $ROOT_AUTH_KEYS (root can log in with a key)."
+        return 0
+    fi
+
+    echo ""
+    warn "No SSH key is configured for root!"
+    echo "  An SSH key is required before changing SSH login settings."
+    echo ""
+    echo "  1) Generate a new SSH key on the server (ed25519) and save it to authorized_keys"
+    echo "  2) Paste your existing public key"
+    echo "  0) Cancel"
+    read -p "Select [1]: " KOPT
+    KOPT="${KOPT:-1}"
+
+    mkdir -p /root/.ssh && chmod 700 /root/.ssh
+    case "$KOPT" in
+        1)
+            read -p "Generate an SSH key and save it to authorized_keys? (yes/no): " C
+            [ "$C" = "yes" ] || { echo "Cancelled."; return 1; }
+            local KEY="/root/.ssh/shieldpress_root_$(date +%Y%m%d%H%M%S)"
+            if ! ssh-keygen -t ed25519 -N "" -C "shieldpress-root@$(hostname)" -f "$KEY" >/dev/null 2>&1; then
+                fail "ssh-keygen failed"
+                return 1
+            fi
+            cat "${KEY}.pub" >> "$ROOT_AUTH_KEYS"
+            chmod 600 "$ROOT_AUTH_KEYS"
+            command -v restorecon >/dev/null 2>&1 && restorecon -R /root/.ssh 2>/dev/null
+            ok "Key generated and public key saved to $ROOT_AUTH_KEYS"
+            echo ""
+            echo -e "  ${YELLOW}${BOLD}COPY THE PRIVATE KEY below and save it on your computer (e.g. ~/.ssh/id_vps, chmod 600):${RESET}"
+            echo "  ----------------------------------------------------"
+            cat "$KEY"
+            echo "  ----------------------------------------------------"
+            echo "  (The private key is also stored at: $KEY)"
+            echo ""
+            read -p "Have you saved the private key safely? (yes/no): " SAVED
+            if [ "$SAVED" != "yes" ]; then
+                warn "Key storage not confirmed - stopping without changing the SSH configuration."
+                return 1
+            fi
+            ;;
+        2)
+            read -p "Paste the public key (ssh-ed25519 / ssh-rsa ...): " PUB
+            if ! [[ "$PUB" =~ ^(ssh-|ecdsa-|sk-) ]]; then
+                fail "Invalid public key"
+                return 1
+            fi
+            echo "$PUB" >> "$ROOT_AUTH_KEYS"
+            chmod 600 "$ROOT_AUTH_KEYS"
+            command -v restorecon >/dev/null 2>&1 && restorecon -R /root/.ssh 2>/dev/null
+            ok "Public key saved to $ROOT_AUTH_KEYS"
+            ;;
+        *) echo "Cancelled."; return 1 ;;
+    esac
+
+    [ "$(_ssh_key_count)" -gt 0 ]
+}
+
+# Toggle PermitRootLogin. "Off" = prohibit-password: root can still log in with an SSH key.
+ssh_toggle_root_login(){
+    local CUR NEW
+    CUR=$(_ssh_get_opt PermitRootLogin yes)
+    echo ""
+    ssh_ensure_key || return
+
+    if [ "$CUR" = "yes" ]; then
+        NEW="prohibit-password"
+        echo ""
+        warn "Disabling root password login: root can ONLY log in with an SSH key."
+    else
+        NEW="yes"
+        echo ""
+        warn "Enabling PermitRootLogin yes: root can log in with a key and with a password (if Password Auth is enabled)."
+    fi
+    read -p "Change PermitRootLogin: $CUR -> $NEW ? (yes/no): " C
+    [ "$C" = "yes" ] || { echo "Cancelled."; return; }
+
+    local BAK="${SSHD_CONF}.bak.$(date +%s)"
+    cp "$SSHD_CONF" "$BAK"
+    _ssh_set_opt PermitRootLogin "$NEW"
+    _ssh_apply "$BAK" "SSH PermitRootLogin = $NEW"
+}
+
+ssh_toggle_password_auth(){
+    local CUR NEW
+    CUR=$(_ssh_get_opt PasswordAuthentication yes)
+    echo ""
+    ssh_ensure_key || return
+
+    if [ "$CUR" = "yes" ]; then
+        NEW="no"
+        echo ""
+        warn "After this, only SSH key login works (root can still log in with a key)."
+    else
+        NEW="yes"
+    fi
+    read -p "Change PasswordAuthentication: $CUR -> $NEW ? (yes/no): " C
+    [ "$C" = "yes" ] || { echo "Cancelled."; return; }
+
+    local BAK="${SSHD_CONF}.bak.$(date +%s)"
+    cp "$SSHD_CONF" "$BAK"
+    _ssh_set_opt PasswordAuthentication "$NEW"
+    _ssh_apply "$BAK" "SSH PasswordAuthentication = $NEW"
+}
+
+ssh_hardening(){
     if [ ! -f "$SSHD_CONF" ]; then
         fail "sshd_config not found"
         return
@@ -1126,36 +1309,38 @@ ssh_hardening(){
         echo "  SSH HARDENING"
         echo "======================================"
 
-        # Current status
         local CURRENT_PORT=$(grep -E "^[[:space:]]*Port[[:space:]]" "$SSHD_CONF" 2>/dev/null | awk '{print $2}' | head -1)
         CURRENT_PORT="${CURRENT_PORT:-22}"
-        local PASS_AUTH=$(grep -Ei "^[[:space:]]*PasswordAuthentication[[:space:]]" "$SSHD_CONF" 2>/dev/null | awk '{print $2}' | head -1)
-        PASS_AUTH="${PASS_AUTH:-yes}"
-        local ROOT_LOGIN=$(grep -Ei "^[[:space:]]*PermitRootLogin[[:space:]]" "$SSHD_CONF" 2>/dev/null | awk '{print $2}' | head -1)
-        ROOT_LOGIN="${ROOT_LOGIN:-yes}"
+        local PASS_AUTH=$(_ssh_get_opt PasswordAuthentication yes)
+        local ROOT_LOGIN=$(_ssh_get_opt PermitRootLogin yes)
+        local KEY_COUNT=$(_ssh_key_count)
 
-        local KEY_COUNT=$(cat /root/.ssh/authorized_keys 2>/dev/null | grep -c "^ssh-" || echo 0)
+        local PA_C="$RED" RL_C="$RED"
+        [ "$PASS_AUTH" = "yes" ] || PA_C="$GREEN"
+        [ "$ROOT_LOGIN" = "yes" ] || RL_C="$GREEN"
 
         echo ""
         echo "  Current SSH config:"
         echo "  ─────────────────────────────────────"
-        printf "  SSH Port              : %s\n" "$CURRENT_PORT"
-        printf "  Password Auth         : %s\n" "$PASS_AUTH"
-        printf "  Root Login            : %s\n" "$ROOT_LOGIN"
-        printf "  Authorized Keys       : %s key(s)\n" "$KEY_COUNT"
+        printf "  %-22s: %s\n" "SSH Port" "$CURRENT_PORT"
+        printf "  %-22s: ${PA_C}%s${RESET}\n" "PasswordAuthentication" "$PASS_AUTH"
+        printf "  %-22s: ${RL_C}%s${RESET}\n" "PermitRootLogin" "$ROOT_LOGIN"
+        printf "  %-22s: %s key(s)\n" "Root authorized keys" "$KEY_COUNT"
         echo "  ─────────────────────────────────────"
         echo ""
         echo "  1) Change SSH Port"
-        echo "  2) Disable Password Auth (key-only)"
-        echo "  3) Enable Password Auth"
+        echo "  2) Toggle PermitRootLogin        (yes <-> prohibit-password)"
+        echo "  3) Toggle PasswordAuthentication (yes <-> no)"
+        echo "  4) Create / Add SSH Key (root)"
         echo "  0) Back"
         echo ""
         read -p "Select: " sub
 
         case $sub in
             1) ssh_change_port "$CURRENT_PORT" ;;
-            2) ssh_disable_password "$KEY_COUNT" ;;
-            3) ssh_enable_password ;;
+            2) ssh_toggle_root_login ;;
+            3) ssh_toggle_password_auth ;;
+            4) ssh_ensure_key ;;
             0) break ;;
             *) echo "Invalid" ;;
         esac
@@ -1256,93 +1441,6 @@ ssh_change_port(){
         systemctl restart sshd
         firewall-cmd --zone="$ZONE" --permanent --remove-port="${NEW_PORT}/tcp" >/dev/null 2>&1
         firewall-cmd --reload >/dev/null 2>&1
-    fi
-}
-
-ssh_disable_password(){
-    local KEY_COUNT="${1:-0}"
-    local SSHD_CONF="/etc/ssh/sshd_config"
-
-    echo ""
-
-    # Safety: check if user has SSH keys
-    if [ "$KEY_COUNT" -eq 0 ]; then
-        echo ""
-        fail "NO SSH KEYS FOUND!"
-        echo ""
-        echo -e "  ${RED}You have no authorized_keys configured.${RESET}"
-        echo -e "  ${RED}Disabling password auth will LOCK YOU OUT!${RESET}"
-        echo ""
-        echo "  First add your SSH key:"
-        echo "    1. On your LOCAL machine, run: ssh-keygen"
-        echo "    2. Copy key to server: ssh-copy-id root@your-server"
-        echo "    3. Then come back and disable password auth"
-        echo ""
-        return
-    fi
-
-    echo "  Found $KEY_COUNT SSH key(s) in authorized_keys."
-    echo ""
-    warn "After this change, you can ONLY login with SSH key."
-    echo "  Password login will be completely disabled."
-    echo ""
-    read -p "Confirm disable password auth? (yes/no): " CONFIRM
-    [ "$CONFIRM" = "yes" ] || { echo "Cancelled."; return; }
-
-    # Backup
-    cp "$SSHD_CONF" "${SSHD_CONF}.bak.$(date +%s)"
-
-    # Update config
-    if grep -qEi "^[[:space:]]*PasswordAuthentication" "$SSHD_CONF"; then
-        sed -i 's/^[[:space:]]*PasswordAuthentication.*/PasswordAuthentication no/' "$SSHD_CONF"
-    elif grep -qEi "^[[:space:]]*#[[:space:]]*PasswordAuthentication" "$SSHD_CONF"; then
-        sed -i 's/^[[:space:]]*#[[:space:]]*PasswordAuthentication.*/PasswordAuthentication no/' "$SSHD_CONF"
-    else
-        echo "PasswordAuthentication no" >> "$SSHD_CONF"
-    fi
-
-    if ! sshd -t 2>/dev/null; then
-        fail "sshd config test failed! Reverting..."
-        cp "${SSHD_CONF}.bak."* "$SSHD_CONF" 2>/dev/null
-        return
-    fi
-
-    systemctl restart sshd
-    if systemctl is-active --quiet sshd; then
-        ok "Password authentication disabled (key-only)"
-        log "SSH password auth disabled"
-    else
-        fail "sshd failed! Reverting..."
-        cp "${SSHD_CONF}.bak."* "$SSHD_CONF" 2>/dev/null
-        systemctl restart sshd
-    fi
-}
-
-ssh_enable_password(){
-    local SSHD_CONF="/etc/ssh/sshd_config"
-
-    cp "$SSHD_CONF" "${SSHD_CONF}.bak.$(date +%s)"
-
-    if grep -qEi "^[[:space:]]*PasswordAuthentication" "$SSHD_CONF"; then
-        sed -i 's/^[[:space:]]*PasswordAuthentication.*/PasswordAuthentication yes/' "$SSHD_CONF"
-    else
-        echo "PasswordAuthentication yes" >> "$SSHD_CONF"
-    fi
-
-    if ! sshd -t 2>/dev/null; then
-        fail "sshd config test failed! Reverting..."
-        cp "${SSHD_CONF}.bak."* "$SSHD_CONF" 2>/dev/null
-        return
-    fi
-
-    systemctl restart sshd
-    if systemctl is-active --quiet sshd; then
-        ok "Password authentication enabled"
-        log "SSH password auth enabled"
-    else
-        fail "sshd failed! Reverting..."
-        cp "${SSHD_CONF}.bak."* "$SSHD_CONF" 2>/dev/null
-        systemctl restart sshd
     fi
 }
 
@@ -1787,6 +1885,7 @@ while true; do
         "19|Security Audit|magenta" \
         "20|CVE / Dependency Audit|red" \
         "21|YARA Malware Scan|magenta" \
+        "22|Intrusion Guard|red" \
         "0|Back|white"
 
     sp_prompt choice
@@ -1813,6 +1912,7 @@ while true; do
         19) security_audit ;;
         20) bash "$BASE_DIR/modules/security/cve-audit.sh" ;;
         21) bash "$BASE_DIR/modules/security/yara-menu.sh" ;;
+        22) bash "$BASE_DIR/modules/security/intrusion-guard.sh" ;;
         0)  break ;;
         *)  sp_invalid; continue ;;
     esac
