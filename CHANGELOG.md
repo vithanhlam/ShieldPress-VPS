@@ -1,3 +1,16 @@
+## v1.3.132 — 2026-11-01 — WordPress updates: plugin/theme from a ZIP file, clearer core output
+
+- Add WordPress > Updates actions `[5] Plugin from a local ZIP file` and `[6] Theme from a local ZIP file`: update or install one plugin/theme package on one website or on all WordPress websites without going through wordpress.org.
+  - The ZIP is validated first: it must be a valid archive with a single top-level folder, no unsafe paths and a plugin (`Plugin Name`) or theme (`Theme Name`) header. Slug, name and version are read from the file.
+  - A preview lists every website with `installed -> ZIP version`, flags same-version replacements and downgrades, and shows sites that cannot be read. Websites where the package is not installed are skipped unless you choose to install it there (left inactive).
+  - The package is installed with `wp plugin|theme install --force` from a staged, site-readable copy that is removed afterwards. The installed version is read back and a mismatch is reported as a failure. The existing pre-update backup, per-site failure isolation and summary apply.
+- Core updates now check for a newer version first. Websites already on the latest version print `WordPress core is already the latest version` instead of `Updating WordPress core...` followed by `WordPress is up to date`; the database upgrade check still runs.
+- Use a dedicated WP-CLI cache directory (`/var/cache/shieldpress/wp-cli/<user>`) to remove the `Failed to create directory .../.wp-cli/cache/` warning.
+- Every update action now prints a cache-clearing stage and clears the object cache, the site's FastCGI page cache and reloads PHP-FPM after core, plugin, theme and ZIP updates.
+- New feature and output fixes only: no migration is required for existing installations.
+- Extend `tests/wordpress-update-regression.py` (ZIP validation, staging, preview, skip/install-new, downgrade and version mismatch handling, up-to-date core) and verify on a disposable AlmaLinux 9.8 server with a real WordPress site. Run repository smoke tests, Bash syntax and whitespace checks.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.131 — 2026-10-31 — Intrusion Guard, Telegram intrusion alerts and SSH login toggles
 
 - Add Security Center > `[22] Intrusion Guard`, which detects account takeover and backdoor installs such as an unknown sudo user created outside the OS, then used to edit `sshd_config` and run a remote install script:

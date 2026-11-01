@@ -41,7 +41,11 @@ load_site() {
 wp() {
     # Keep plugin updater hooks loaded (including premium plugin providers).
     # Use the site's PHP and Unix account, never a string evaluated by the shell.
-    sudo -H -u "$SITE_USER" "$PHP_BIN" \
+    # The site account's home is not writable, so give WP-CLI its own cache dir
+    # (otherwise every run prints "Failed to create directory .../.wp-cli/cache").
+    local cache_dir="/var/cache/shieldpress/wp-cli/$SITE_USER"
+    [ -d "$cache_dir" ] || install -d -m 700 -o "$SITE_USER" "$cache_dir" 2>/dev/null || cache_dir=/tmp
+    sudo -H -u "$SITE_USER" env WP_CLI_CACHE_DIR="$cache_dir" "$PHP_BIN" \
         -d 'error_reporting=E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED' \
         -d display_errors=0 "$WP_CLI_BIN" --path="$ROOT" --no-color "$@" 9>&-
 }
@@ -226,18 +230,12 @@ version_note() {
     esac
 }
 
-show_core_preview() {
-    local current output target suffix=""
-    [[ "$ACTION" = 1 || "$ACTION" = 4 ]] || suffix=" (not selected)"
-    if ! current=$(wp core version); then
-        echo "  WordPress core: unknown [version check failed]$suffix"
-        return
-    fi
-    if ! output=$(wp core check-update --format=json); then
-        echo "  WordPress core: $current -> unknown [update check failed]$suffix"
-        return
-    fi
-    if ! target=$(printf '%s' "$output" | "$PHP_BIN" -r '
+# Prints the available core version (nothing when already up to date).
+# Returns 1 for an invalid response and 2 when the check itself failed.
+core_update_target() {
+    local output
+    output=$(wp core check-update --format=json) || return 2
+    printf '%s' "$output" | "$PHP_BIN" -r '
         try {
             $rows = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
             if (!is_array($rows)) { exit(1); }
@@ -246,12 +244,146 @@ show_core_preview() {
             if (!preg_match("/^[0-9][a-zA-Z0-9.+_-]*$/D", $version)) { exit(1); }
             echo $version;
         } catch (Throwable $error) { exit(1); }
-    '); then
+    '
+}
+
+show_core_preview() {
+    local current target status=0 suffix=""
+    [[ "$ACTION" = 1 || "$ACTION" = 4 ]] || suffix=" (not selected)"
+    if ! current=$(wp core version); then
+        echo "  WordPress core: unknown [version check failed]$suffix"
+        return
+    fi
+    target=$(core_update_target) || status=$?
+    if [ "$status" -eq 2 ]; then
+        echo "  WordPress core: $current -> unknown [update check failed]$suffix"
+    elif [ "$status" -ne 0 ]; then
         echo "  WordPress core: $current -> unknown [invalid update response]$suffix"
     elif [ -n "$target" ]; then
         echo "  WordPress core: $(version_note "$current" "$target" available)$suffix"
     else
         echo "  WordPress core: $(version_note "$current" "$current" none)$suffix"
+    fi
+}
+
+# --- Plugin / theme from a local ZIP file -----------------------------------
+
+package_kind() {
+    case "$ACTION" in 5) echo plugin ;; 6) echo theme ;; esac
+}
+
+# Reads a header value ("Version", "Plugin Name", ...) from a file inside the ZIP.
+zip_header() {
+    local zip="$1" entry="$2" field="$3" head
+    head=$({ unzip -p "$zip" "$entry" 2>/dev/null | head -c 8192; } || true)
+    printf '%s\n' "$head" | tr -d '\r' |
+        sed -n "s/^[[:space:]*#\\/]*$field:[[:space:]]*//Ip" | head -n 1
+}
+
+# Validates the archive and sets PKG_SLUG / PKG_NAME / PKG_VERSION.
+inspect_package() {
+    local kind="$1" zip="$2" entries entry top="" first main="" name version
+    command -v unzip >/dev/null 2>&1 || { echo "[FAIL] 'unzip' is not installed."; return 1; }
+    unzip -tq "$zip" >/dev/null 2>&1 || { echo "[FAIL] The file is not a valid ZIP archive."; return 1; }
+    entries=$(unzip -Z1 "$zip" | grep -v '^__MACOSX/') || true
+    [ -n "$entries" ] || { echo "[FAIL] The ZIP archive is empty."; return 1; }
+    while IFS= read -r entry; do
+        if [[ "$entry" = /* || "$entry" =~ (^|/)\.\.(/|$) ]]; then
+            echo "[FAIL] Unsafe path in ZIP: $entry"
+            return 1
+        fi
+        first=${entry%%/*}
+        if [ "$first" = "$entry" ]; then
+            echo "[FAIL] The ZIP must contain a single top-level folder (found file: $entry)."
+            return 1
+        fi
+        if [ -z "$top" ]; then
+            top=$first
+        elif [ "$top" != "$first" ]; then
+            echo "[FAIL] The ZIP has more than one top-level folder ($top, $first)."
+            return 1
+        fi
+    done <<< "$entries"
+    if ! [[ "$top" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+        echo "[FAIL] Unsupported folder name in ZIP: $top"
+        return 1
+    fi
+    if [ "$kind" = theme ]; then
+        grep -Fxq "$top/style.css" <<< "$entries" && main="$top/style.css"
+        name=$([ -n "$main" ] && zip_header "$zip" "$main" 'Theme Name')
+    else
+        while IFS= read -r entry; do
+            [[ "$entry" =~ ^"$top"/[a-zA-Z0-9._-]+\.php$ ]] || continue
+            if [ -n "$(zip_header "$zip" "$entry" 'Plugin Name')" ]; then main=$entry; break; fi
+        done <<< "$entries"
+        name=$([ -n "$main" ] && zip_header "$zip" "$main" 'Plugin Name')
+    fi
+    if [ -z "$main" ] || [ -z "$name" ]; then
+        echo "[FAIL] This ZIP does not look like a WordPress $kind (no $kind header found)."
+        return 1
+    fi
+    version=$(zip_header "$zip" "$main" 'Version')
+    [[ "$version" =~ ^[0-9][a-zA-Z0-9.+_~-]*$ ]] || version=unknown
+    PKG_SLUG=$top
+    PKG_NAME=${name//[^[:print:]]/ }
+    PKG_VERSION=$version
+}
+
+cleanup_package() {
+    [ -n "$PKG_STAGE" ] && [ -d "$PKG_STAGE" ] && rm -rf -- "$PKG_STAGE"
+    PKG_STAGE=""
+}
+
+choose_package() {
+    [[ "$ACTION" = 5 || "$ACTION" = 6 ]] || return 0
+    local kind source answer
+    kind=$(package_kind)
+    PKG_STAGE=""
+    PKG_INSTALL_NEW=0
+    read -rp "Path to the $kind ZIP file (empty = back): " source || return 1
+    source=${source#\'}; source=${source%\'}; source=${source#\"}; source=${source%\"}
+    [ -n "$source" ] || return 1
+    if [ ! -f "$source" ] || [ ! -r "$source" ] || [[ "${source,,}" != *.zip ]]; then
+        echo "[FAIL] Not a readable .zip file: $source"
+        return 1
+    fi
+    inspect_package "$kind" "$source" || return 1
+    # Site accounts run WP-CLI, so stage a copy they can read.
+    PKG_STAGE=$(mktemp -d) || return 1
+    chmod 755 "$PKG_STAGE"
+    PKG_FILE="$PKG_STAGE/package.zip"
+    if ! cp -- "$source" "$PKG_FILE" || ! chmod 644 "$PKG_FILE"; then
+        echo "[FAIL] Could not stage the ZIP file."
+        cleanup_package
+        return 1
+    fi
+    echo "Package: $PKG_NAME (slug $PKG_SLUG, version $PKG_VERSION)"
+    read -rp "Also install it on websites where it is not installed yet (left inactive)? [y/N]: " answer || return 1
+    case "$answer" in y|Y) PKG_INSTALL_NEW=1 ;; esac
+}
+
+package_site_note() {
+    local kind="$1" installed
+    if ! wp core is-installed >/dev/null 2>&1; then
+        echo "unknown [cannot read this WordPress installation]"
+        return
+    fi
+    if ! wp "$kind" is-installed "$PKG_SLUG"; then
+        if [ "$PKG_INSTALL_NEW" -eq 1 ]; then
+            echo "not installed -> $PKG_VERSION [will be installed, inactive]"
+        else
+            echo "not installed [skipped]"
+        fi
+        return
+    fi
+    installed=$(wp "$kind" get "$PKG_SLUG" --field=version) || installed=unknown
+    if [ "$installed" = "$PKG_VERSION" ]; then
+        echo "$installed -> $PKG_VERSION [same version, files will be replaced]"
+    elif [ "$PKG_VERSION" != unknown ] && [ "$installed" != unknown ] &&
+        [ "$(printf '%s\n%s\n' "$installed" "$PKG_VERSION" | sort -V | head -n 1)" = "$PKG_VERSION" ]; then
+        echo "$installed -> $PKG_VERSION [WARNING: older than installed]"
+    else
+        echo "$installed -> $PKG_VERSION [update from file]"
     fi
 }
 
@@ -282,6 +414,9 @@ show_update_preview() {
         show_core_preview
         if [[ "$ACTION" = 2 || "$ACTION" = 4 ]]; then show_component_preview plugin "$path"; fi
         if [[ "$ACTION" = 3 || "$ACTION" = 4 ]]; then show_component_preview theme "$path"; fi
+        if [[ "$ACTION" = 5 || "$ACTION" = 6 ]]; then
+            printf '  %-36s %s\n' "$PKG_SLUG" "$(package_site_note "$(package_kind)")"
+        fi
     done
 }
 
@@ -333,12 +468,14 @@ cleanup_backup() {
 }
 
 purge_site_cache() {
+    echo "Clearing caches (object cache, FastCGI page cache, PHP-FPM opcache)..."
     wp cache flush || echo "[WARN] Could not flush the WordPress object cache."
     # Do not purge the legacy shared FastCGI cache for other websites.
     local cache_dir="/var/cache/nginx/$CLEAN_DOMAIN"
     if [ -d "$cache_dir" ]; then
         find "$cache_dir" -type f -delete || echo "[WARN] FastCGI cache purge failed."
     fi
+    echo "[OK] Caches cleared for $SELECTED_DOMAIN."
     systemctl reload "php${PHP_SHORT}-php-fpm" || echo "[WARN] PHP-FPM reload failed."
 }
 
@@ -374,14 +511,28 @@ update_site() {
             return 2
         fi
     fi
+    if [[ "$ACTION" = 5 || "$ACTION" = 6 ]]; then
+        if ! wp "$(package_kind)" is-installed "$PKG_SLUG" && [ "${PKG_INSTALL_NEW:-0}" -ne 1 ]; then
+            echo "[SKIP] $PKG_SLUG is not installed on $SELECTED_DOMAIN."
+            return 2
+        fi
+    fi
     if [ "${BACKUP_ENABLED:-1}" -eq 1 ]; then
         backup_site || return 1
     else
         echo "[INFO] Backup disabled by user."
     fi
     if [[ "$ACTION" = 1 || "$ACTION" = 4 ]]; then
-        echo "Updating WordPress core..."
-        if wp core update; then
+        local target status=0 run_db=1
+        target=$(core_update_target) || status=$?
+        if [ "$status" -eq 0 ] && [ -z "$target" ]; then
+            echo "[OK] WordPress core is already the latest version ($(wp core version)); nothing to download."
+        else
+            [ "$status" -eq 0 ] || echo "[WARN] Could not check for a core update; trying the update anyway."
+            echo "Updating WordPress core..."
+            wp core update || { failed=1; run_db=0; }
+        fi
+        if [ "$run_db" -eq 1 ]; then
             if ! multisite=$(wp eval 'echo is_multisite() ? "yes" : "no";'); then
                 failed=1
             elif [ "$multisite" = yes ]; then
@@ -389,8 +540,6 @@ update_site() {
             else
                 wp core update-db || failed=1
             fi
-        else
-            failed=1
         fi
     fi
     if [[ "$ACTION" = 2 || "$ACTION" = 4 ]]; then
@@ -402,6 +551,20 @@ update_site() {
     fi
     if [[ "$ACTION" = 3 || "$ACTION" = 4 ]]; then
         wp theme update --all || failed=1
+    fi
+    if [[ "$ACTION" = 5 || "$ACTION" = 6 ]]; then
+        local kind installed
+        kind=$(package_kind)
+        echo "Installing $kind $PKG_SLUG from the ZIP file..."
+        if wp "$kind" install "$PKG_FILE" --force; then
+            installed=$(wp "$kind" get "$PKG_SLUG" --field=version) || installed=""
+            if [ "$PKG_VERSION" != unknown ] && [ "$installed" != "$PKG_VERSION" ]; then
+                echo "[FAIL] Installed version is '${installed:-unknown}', expected $PKG_VERSION."
+                failed=1
+            fi
+        else
+            failed=1
+        fi
     fi
     purge_site_cache
     if [ "$failed" -ne 0 ]; then
@@ -450,11 +613,13 @@ main() {
     echo "2) Plugins"
     echo "3) Themes"
     echo "4) Core + plugins + themes"
+    echo "5) Plugin from a local ZIP file (update/install on the selected websites)"
+    echo "6) Theme from a local ZIP file (update/install on the selected websites)"
     echo "0) Back"
     read -rp "Update action: " ACTION || return 0
     case "$ACTION" in
         0) return 0 ;;
-        [1-4]) ;;
+        [1-6]) ;;
         *) echo "Invalid action."; return 1 ;;
     esac
     # Find a usable PHP runtime for WP-CLI setup without excluding failed sites
@@ -466,10 +631,15 @@ main() {
     [ "$ready" -eq 1 ] || return 1
     ensure_wpcli || { echo "[FAIL] WP-CLI is unavailable. No websites updated."; return 1; }
     choose_plugins || return 0
+    choose_package || return 0
+    trap cleanup_package EXIT
     show_update_preview
     echo ""
     echo "Websites (${#TARGET_PATHS[@]}): ${TARGET_NAMES[*]}"
-    echo "Action: $ACTION (1=core, 2=plugins, 3=themes, 4=all)"
+    echo "Action: $ACTION (1=core, 2=plugins, 3=themes, 4=all, 5=plugin ZIP, 6=theme ZIP)"
+    if [[ "$ACTION" = 5 || "$ACTION" = 6 ]]; then
+        echo "Package: $PKG_NAME $PKG_VERSION ($PKG_SLUG) from a local ZIP file"
+    fi
     if [[ "$ACTION" = 2 || "$ACTION" = 4 ]]; then
         echo "Plugins: ${SELECTED_PLUGINS[*]:-all installed plugins}"
     fi

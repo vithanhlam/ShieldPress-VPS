@@ -35,6 +35,9 @@ wp() {
             esac
             ;;
         'theme list '*) printf '%s\n' '[{"name":"demo-theme","status":"active","version":"2.0","update":"available","update_version":"2.1"}]' ;;
+        'plugin is-installed zipplug'|'theme is-installed ziptheme') [ "$SELECTED_DOMAIN" != beta ] || return 1 ;;
+        'plugin get zipplug --field=version') echo "${INSTALLED_AFTER:-2.0}" ;;
+        'theme get ziptheme --field=version') echo "${INSTALLED_AFTER:-2.0}" ;;
         'core version') echo '6.8' ;;
         'core check-update '*)
             if [ -n "${CORE_UPDATES+x}" ]; then printf '%s\n' "$CORE_UPDATES"; else echo '[{"version":"6.9"}]'; fi
@@ -266,5 +269,77 @@ mkdir -p "$PRE_UPDATE_BACKUP"
 cleanup_backup
 [[ -d "$PRE_UPDATE_BACKUP" ]] || exit 1
 ''', FIXTURE=tmp)
+
+    # Core is not downloaded again when already current, but the DB check still runs.
+    commands.write_text('')
+    output = run(MOCKS + r'''
+ACTION=1; CORE_UPDATES='[]'
+update_site alpha || exit 1
+''', **common)
+    text = commands.read_text()
+    assert 'alpha: core update\n' not in text and 'alpha: core update-db\n' in text
+    assert 'already the latest version' in output and 'Updating WordPress core' not in output
+
+    # Plugin/theme from a local ZIP: validation of the archive layout.
+    zips = root / 'zips'
+    zips.mkdir()
+    def make_zip(name, files):
+        import zipfile
+        with zipfile.ZipFile(zips / name, 'w') as z:
+            for entry, data in files.items():
+                z.writestr(entry, data)
+        return str(zips / name)
+    plugin = make_zip('plugin.zip', {'zipplug/readme.txt': 'x', 'zipplug/zipplug.php':
+                      '<?php\n/*\n * Plugin Name: Zip Plugin\n * Version: 2.0\n */\n'})
+    theme = make_zip('theme.zip', {'ziptheme/style.css': '/*\nTheme Name: Zip Theme\nVersion: 2.0.1\n*/'})
+    bad = [make_zip('flat.zip', {'a.php': 'x'}),
+           make_zip('two.zip', {'a/a.php': 'x', 'b/b.php': 'x'}),
+           make_zip('evil.zip', {'a/../../x.php': 'x'}),
+           make_zip('nohdr.zip', {'a/a.php': '<?php // nothing'}),
+           make_zip('wrongkind.zip', {'a/style.css': '/*\nTheme Name: T\n*/'})]
+    output = run(r'''
+inspect_package plugin "$PLUGIN" || exit 1
+[[ "$PKG_SLUG|$PKG_NAME|$PKG_VERSION" == 'zipplug|Zip Plugin|2.0' ]] || exit 1
+inspect_package theme "$THEME" || exit 1
+[[ "$PKG_SLUG|$PKG_NAME|$PKG_VERSION" == 'ziptheme|Zip Theme|2.0.1' ]] || exit 1
+for f in $BAD; do ! inspect_package plugin "$f" || { echo "accepted $f"; exit 1; }; done
+! inspect_package plugin "$THEME" || exit 1
+''', PLUGIN=plugin, THEME=theme, BAD=' '.join(bad))
+
+    # choose_package stages a readable copy; the preview reports per-site state;
+    # sites without the plugin are skipped unless installing is requested.
+    commands.write_text('')
+    output = run(MOCKS + r'''
+ACTION=5; BACKUP_ENABLED=0
+choose_package <<< "\"$PLUGIN\""$'\nn' || exit 1
+[[ "$PKG_SLUG" == zipplug && "$PKG_INSTALL_NEW" == 0 ]] || exit 1
+[[ "$(stat -c %a "$PKG_STAGE")" == 755 && "$(stat -c %a "$PKG_FILE")" == 644 ]] || exit 1
+TARGET_PATHS=(alpha beta)
+show_update_preview
+update_site alpha || exit 1
+update_site beta; [ $? -eq 2 ] || exit 1
+PKG_INSTALL_NEW=1
+update_site beta || exit 1
+INSTALLED_AFTER=1.0
+! update_site alpha || exit 1
+cleanup_package
+[[ ! -e "$PKG_STAGE" ]] || exit 1
+! choose_package <<< $'/nonexistent.zip' || exit 1
+ACTION=2; choose_package || exit 1
+''', PLUGIN=plugin, **common)
+    assert '2.0 -> 2.0 [same version, files will be replaced]' in output
+    assert 'not installed [skipped]' in output
+    assert 'Installed version is' in output
+    lines = commands.read_text().splitlines()
+    installs = [l for l in lines if ' plugin install ' in l]
+    assert len(installs) == 3 and all(l.endswith('package.zip --force') for l in installs)
+    assert [l.split(':')[0] for l in installs] == ['alpha', 'beta', 'alpha']
+
+    commands.write_text('')
+    run(MOCKS + r'''
+ACTION=6; BACKUP_ENABLED=0; PKG_SLUG=ziptheme; PKG_VERSION=2.0; PKG_FILE=/stage/package.zip; PKG_INSTALL_NEW=0
+update_site alpha || exit 1
+''', **common)
+    assert 'alpha: theme install /stage/package.zip --force' in commands.read_text()
 
 print('WordPress update regression checks passed.')
