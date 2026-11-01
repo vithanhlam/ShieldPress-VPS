@@ -7,6 +7,10 @@ current version in `README.md`, add a dated entry to `CHANGELOG.md`, and publish
 the release archive with SHA-256 and MD5 checksum files. Use the existing release
 workflow so checksums match the exact uploaded archive.
 
+After the release workflow finishes, sign the release on the maintainer's own
+machine with `tools/sign-release.sh sign <version>`; servers refuse unsigned
+releases. Never place the private signing key in GitHub, CI or this repository.
+
 Run the relevant tests before every push. At minimum, run the repository smoke
 test, shell syntax checks, and `git diff --check`. For behavior changes, add or
 run targeted regression and integration checks before publishing.

@@ -9,7 +9,7 @@
 # =====================================================
 
 main(){
-    local BASE_DIR="/opt/shieldpress" force=0 current remote newest installed lock_fd
+    local BASE_DIR="/opt/shieldpress" force=0 current remote newest installed lock_fd reason
 
     [ "${1:-}" = "--now" ] && force=1
     [ "$(id -u)" -eq 0 ] || { echo "Run as root."; return 1; }
@@ -34,8 +34,14 @@ main(){
         tail -n 50 "$AU_STATUS_FILE" > "$AU_STATUS_FILE.tmp" && mv -f "$AU_STATUS_FILE.tmp" "$AU_STATUS_FILE"
         log "$1: $2"
     }
+    # One alert per failing version, so a refused release does not spam every run.
     notify(){
         [ -f "$BASE_DIR/modules/notification/telegram-notify.sh" ] || return 0
+        if [ "$1" = "server_alert" ]; then
+            local alerted_file="$(dirname "$AU_STATUS_FILE")/autoupdate.alerted" key="${remote:-unknown}|$2"
+            [ "$(cat "$alerted_file" 2>/dev/null || true)" = "$key" ] && return 0
+            echo "$key" > "$alerted_file"
+        fi
         bash "$BASE_DIR/modules/notification/telegram-notify.sh" send "$1" "$2" "$3" >/dev/null 2>&1 || true
     }
 
@@ -59,10 +65,30 @@ main(){
         return 0
     fi
 
+    # Optional cooling-off period: gives time to notice a bad release before
+    # it reaches this server. The age comes from the GitHub release record.
+    if [ "$AU_DELAY_HOURS" -gt 0 ]; then
+        local published published_epoch age_hours
+        published=$(curl -fsSL --connect-timeout 5 --max-time 15 \
+            "https://api.github.com/repos/${SHIELDPRESS_GITHUB_REPO}/releases/tags/v${remote}" 2>/dev/null \
+            | sed -n 's/.*"published_at"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        published_epoch=$(date -d "$published" +%s 2>/dev/null || true)
+        if [ -z "$published_epoch" ]; then
+            record "waiting" "cannot read the publish time of v$remote; retrying at the next run"
+            return 0
+        fi
+        age_hours=$(( ($(date +%s) - published_epoch) / 3600 ))
+        if [ "$age_hours" -lt "$AU_DELAY_HOURS" ]; then
+            record "waiting" "v$remote is ${age_hours}h old; waiting for ${AU_DELAY_HOURS}h"
+            return 0
+        fi
+    fi
+
     log "Updating $current -> $remote"
     if ! SHIELDPRESS_TARGET_VERSION="$remote" bash "$BASE_DIR/modules/update/updater.sh" >> "$log_file" 2>&1; then
-        record "failed" "update to $remote failed and was rolled back; see $LOG_DIR/update.log"
-        notify server_alert "Auto-Update failed" "Update $current -> $remote failed. See $LOG_DIR/update.log."
+        reason=$(grep -F '[FAIL]' "$LOG_DIR/update.log" 2>/dev/null | tail -1 | sed 's/^[^|]*| //')
+        record "failed" "update to $remote not installed: ${reason:-see $LOG_DIR/update.log}"
+        notify server_alert "Auto-Update failed" "Update $current -> $remote was not installed. ${reason:-See $LOG_DIR/update.log.}"
         return 1
     fi
 

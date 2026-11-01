@@ -19,6 +19,7 @@ LOCK_FILE="/tmp/shieldpress_update.lock"
 VERSION_FILE="$BASE_DIR/version.txt"
 source "$BASE_DIR/core/paths.sh"
 source "$BASE_DIR/core/update-source.sh"
+source "$BASE_DIR/core/release-verify.sh"
 LOG_FILE="$LOG_DIR/update.log"
 
 mkdir -p "$BACKUP_DIR" "$TMP_DIR" "$LOG_DIR"
@@ -128,6 +129,14 @@ if [ -z "$TARGET_VERSION" ]; then
     fail "Cannot detect latest version from $SHIELDPRESS_GITHUB_REPO"
 fi
 
+# Never move to an older release: an attacker who controls the version file
+# could otherwise point servers at an old, validly signed, vulnerable build.
+if [ "$TARGET_VERSION" != "$CURRENT" ] && \
+   [ "$(printf '%s\n%s\n' "$CURRENT" "$TARGET_VERSION" | sort -V | tail -1)" != "$TARGET_VERSION" ] && \
+   [ "${SHIELDPRESS_ALLOW_DOWNGRADE:-0}" != "1" ]; then
+    fail "Refusing to downgrade from $CURRENT to $TARGET_VERSION"
+fi
+
 log "Update source: github.com/$SHIELDPRESS_GITHUB_REPO"
 log "Current version: $CURRENT"
 log "Target version: $TARGET_VERSION"
@@ -209,6 +218,21 @@ fi
 [ -n "$EXPECTED" ] || fail "Release checksum unavailable; refusing unverified update"
 log "Release checksum: $CHECKSUM_ALGO"
 
+# Signed manifest: the real protection against a compromised repository.
+# The checksums above only detect corrupted downloads.
+MANIFEST_URL=$(sp_release_manifest_url "$TARGET_VERSION")
+SIGNATURE_URL=$(sp_release_signature_url "$TARGET_VERSION")
+for attempt in 1 2 3; do
+    if curl -fsSL --connect-timeout 5 --max-time 20 "$MANIFEST_URL" -o shieldpress.manifest 2>/dev/null && \
+       curl -fsSL --connect-timeout 5 --max-time 20 "$SIGNATURE_URL" -o shieldpress.sig 2>/dev/null; then
+        break
+    fi
+    rm -f shieldpress.manifest shieldpress.sig
+    [ "$attempt" -lt 3 ] && sleep 3
+done
+[ -s shieldpress.manifest ] && [ -s shieldpress.sig ] || \
+    fail "Release signature unavailable; refusing unsigned update (v$TARGET_VERSION has no signature from the maintainer)"
+
 SOURCE_ROOT=""
 PACKAGE_USED=""
 
@@ -238,6 +262,16 @@ while IFS= read -r CANDIDATE_URL; do
         ok "Integrity verified"
     fi
 
+    VERIFY_RC=0
+    sp_verify_release shieldpress.tar.gz "$TARGET_VERSION" shieldpress.manifest shieldpress.sig || VERIFY_RC=$?
+    if [ "$VERIFY_RC" -ne 0 ]; then
+        log "$(sp_verify_release_message "$VERIFY_RC"); package rejected"
+        # A bad signature or missing key is not fixed by another mirror.
+        [ "$VERIFY_RC" -eq 2 ] && fail "No trusted release key; refusing update"
+        continue
+    fi
+    ok "Signature verified"
+
     if ! tar --no-same-owner -xzf shieldpress.tar.gz -C "$EXTRACT_DIR" 2>/dev/null; then
         log "Extraction failed, trying next source"
         continue
@@ -252,7 +286,7 @@ while IFS= read -r CANDIDATE_URL; do
     log "Package has no runtime source, trying next source"
 done < <(sp_package_urls "$TARGET_VERSION")
 
-[ -n "$SOURCE_ROOT" ] || fail "Cannot download a valid package from GitHub"
+[ -n "$SOURCE_ROOT" ] || fail "Cannot download a valid, signed package from GitHub"
 ok "Package ready: $PACKAGE_USED"
 
 # =========================================
@@ -343,6 +377,8 @@ mv "$NEW_DIR" "$BASE_DIR"
 source "$BASE_DIR/core/paths.sh"
 ensure_shieldpress_dirs || fail "Cannot ensure ShieldPress runtime directories"
 create_compat_symlinks || fail "Cannot create ShieldPress compatibility symlinks"
+# The new tree was signature-verified: accept any new release keys it ships.
+source "$BASE_DIR/core/release-verify.sh" 2>/dev/null && sp_release_keys_sync || log "[WARN] Cannot sync release keys"
 
 # =========================================
 # FIX PERMISSION

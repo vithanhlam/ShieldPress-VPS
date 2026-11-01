@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.133`
+**Current version:** `1.3.134`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -308,6 +308,17 @@ Scheduled runs use the same verified, backed-up, rollback-protected updater as
 a manual update, install only a strictly newer version, and write to
 `/var/shieldpress/logs/autoupdate.log`. A failed update sends a Telegram
 `server_alert` when Telegram notifications are configured.
+
+`shieldpress autoupdate delay 48` makes a server wait 48 hours after a release
+is published before installing it, which leaves time to notice a bad release.
+
+### Signed releases
+
+Every update must be signed by the maintainer's offline key. Servers check the
+checksums and then the Ed25519 signature before extracting a package, so an
+attacker who takes over the GitHub repository still cannot push code to your
+servers. Unsigned or mis-signed releases are refused and logged in
+`/var/shieldpress/logs/update.log`.
 
 ## What is included
 

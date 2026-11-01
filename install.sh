@@ -80,7 +80,7 @@ run_stage(){
 }
 
 
-for cmd in curl tar; do
+for cmd in curl tar openssl; do
     command -v "$cmd" >/dev/null 2>&1 || dnf install -y "$cmd" >/dev/null 2>&1 || true
 done
 
@@ -132,6 +132,32 @@ if [ -z "$SOURCE_DIR" ]; then
     ACTUAL_SHA=$(sha256sum "$WORK_DIR/source.tar.gz" | awk '{print $1}')
     [ -n "$EXPECTED_SHA" ] && [ "$EXPECTED_SHA" = "$ACTUAL_SHA" ] \
         || { echo "[ERROR] Source checksum mismatch; refusing install"; exit 1; }
+
+    # Signature check: checksums alone cannot detect a compromised repository.
+    # The public key below is the maintainer's release key; the private key
+    # never leaves the maintainer's machine.
+    RELEASE_BASE="https://github.com/${SHIELDPRESS_GITHUB_REPO}/releases/download/v${SOURCE_VERSION}"
+    curl -fsSL --connect-timeout 10 --max-time 30 "$RELEASE_BASE/shieldpress.manifest" -o "$WORK_DIR/source.manifest" \
+        && curl -fsSL --connect-timeout 10 --max-time 30 "$RELEASE_BASE/shieldpress.sig" -o "$WORK_DIR/source.sig" \
+        || { echo "[ERROR] Release v${SOURCE_VERSION} has no maintainer signature; refusing install"; exit 1; }
+    cat > "$WORK_DIR/release-key.pem" <<'RELEASE_KEY_EOF'
+# BEGIN RELEASE PUBLIC KEY
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEATSiTAZgbs8/2rgzv3QMmmoPoMSIZlzMsAH1jjhSAGKo=
+-----END PUBLIC KEY-----
+# END RELEASE PUBLIC KEY
+RELEASE_KEY_EOF
+    sed -i '/^# /d' "$WORK_DIR/release-key.pem"
+    openssl pkey -pubin -in "$WORK_DIR/release-key.pem" -noout >/dev/null 2>&1 \
+        || { echo "[ERROR] This installer has no release signing key; refusing install"; exit 1; }
+    openssl pkeyutl -verify -pubin -inkey "$WORK_DIR/release-key.pem" -rawin \
+        -in "$WORK_DIR/source.manifest" -sigfile "$WORK_DIR/source.sig" >/dev/null 2>&1 \
+        || { echo "[ERROR] Release signature is NOT valid; refusing install"; exit 1; }
+    [ "$(sed -n 1p "$WORK_DIR/source.manifest")" = "shieldpress-release" ] \
+        && [ "$(sed -n 's/^version=//p' "$WORK_DIR/source.manifest" | head -1)" = "$SOURCE_VERSION" ] \
+        && [ "$(sed -n 's/^sha256=//p' "$WORK_DIR/source.manifest" | head -1)" = "$ACTUAL_SHA" ] \
+        || { echo "[ERROR] Signed manifest does not match the downloaded package; refusing install"; exit 1; }
+    echo "[OK] Release signature verified"
 
     mkdir -p "$WORK_DIR/extract"
     run_stage "Extracting package" 5 tar --no-same-owner -xzf "$WORK_DIR/source.tar.gz" -C "$WORK_DIR/extract" \

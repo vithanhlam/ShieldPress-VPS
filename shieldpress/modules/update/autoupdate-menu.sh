@@ -4,6 +4,7 @@
 #   shieldpress autoupdate                      interactive menu
 #   shieldpress autoupdate on|off|status|run
 #   shieldpress autoupdate set <daily|weekly|monthly> <HH:MM> [weekday|day]
+#   shieldpress autoupdate delay <hours>     wait N hours (0-720) after a release is published
 #     weekday: 0-6 or sun..sat   day: 1-28
 # =====================================================
 
@@ -40,6 +41,7 @@ show_status(){
     schedule="$(au_describe)"
     echo -e "  Auto-Update : $state"
     echo -e "  Schedule    : $schedule (server time: $(date '+%Z %H:%M'))"
+    echo -e "  Release age : $(au_describe_delay)"
     echo -e "  Installed   : $(tr -d '[:space:]' < "$BASE_DIR/version.txt" 2>/dev/null || echo unknown)"
     echo -e "  Last run    : $(au_last_run)"
     echo -e "  Log         : $LOG_DIR/autoupdate.log"
@@ -101,6 +103,23 @@ choose_time(){
     save_and_apply && echo "[OK] Schedule: $(au_describe)"
 }
 
+choose_delay(){
+    local value
+    au_load
+    echo ""
+    echo "A cooling-off period gives you time to notice a bad release before this server installs it."
+    read -r -p "Hours to wait after a release is published [0-720, Enter keeps $AU_DELAY_HOURS]: " value
+    [ -n "$value" ] || return 0
+    set_delay "$value"
+}
+
+set_delay(){
+    [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -le 720 ] || { echo "[ERROR] Hours must be a number from 0 to 720"; return 1; }
+    au_load
+    AU_DELAY_HOURS=$((10#$1))
+    save_and_apply && echo "[OK] Auto-Update will $(au_describe_delay)"
+}
+
 run_check_now(){
     echo ""
     echo "Checking GitHub and updating if a newer version exists."
@@ -136,8 +155,10 @@ case "${1:-}" in
         echo "[OK] Schedule: $(au_describe) (Auto-Update is $([ "$AU_ENABLED" = 1 ] && echo ON || echo OFF))"
         exit 0
         ;;
+    delay)  set_delay "${2:-}"; exit $? ;;
     -h|--help|help)
         echo "Usage: shieldpress autoupdate [on|off|status|run]"
+        echo "       shieldpress autoupdate delay <hours>"
         echo "       shieldpress autoupdate set <daily|weekly|monthly> <HH:MM> [weekday|day]"
         exit 0
         ;;
@@ -156,8 +177,9 @@ while true; do
         "1|$toggle_label|$toggle_color" \
         "2|Frequency (daily/weekly/monthly)|yellow" \
         "3|Time of day|yellow" \
-        "4|Check and update now|cyan" \
-        "5|View log|blue" \
+        "4|Wait after release (delay)|yellow" \
+        "5|Check and update now|cyan" \
+        "6|View log|blue" \
         "0|Back|white"
     sp_prompt CHOICE
 
@@ -165,8 +187,9 @@ while true; do
         1) if [ "$AU_ENABLED" = "1" ]; then set_enabled 0; else set_enabled 1; fi; pause ;;
         2) choose_frequency; pause ;;
         3) choose_time; pause ;;
-        4) run_check_now; pause ;;
-        5) tail -n 40 "$LOG_DIR/autoupdate.log" 2>/dev/null || echo "No Auto-Update log yet."; pause ;;
+        4) choose_delay; pause ;;
+        5) run_check_now; pause ;;
+        6) tail -n 40 "$LOG_DIR/autoupdate.log" 2>/dev/null || echo "No Auto-Update log yet."; pause ;;
         0) exit 0 ;;
         *) sp_invalid ;;
     esac

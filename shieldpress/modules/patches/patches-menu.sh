@@ -562,6 +562,19 @@ patch_1331_resize_php_pools(){
 # }
 # --------------------------------------------------
 
+# The updater that ran may predate signature checks, so accept the keys shipped
+# with the source that was just installed (one-time trust of this update).
+patch_20261101_release_signing(){
+    local ID="SP_20261101_RELEASE_SIGNING"
+    patch_applied "$ID" && { skip "Release signing keys already installed"; return 0; }
+    if ! ( source "$BASE_DIR/core/release-verify.sh" && sp_release_keys_sync && sp_release_keys_bootstrap ); then
+        fail "Release signing key install remains pending"
+        return 1
+    fi
+    patch_mark_done "$ID"
+    ok "Release signing key installed; updates must now be signed by the maintainer"
+}
+
 # v1.3.133 — Quick-command list with explicit shortcuts, and Auto-Update.
 # The updater that is running may be the previous release, so install the new
 # login banner and restore an enabled Auto-Update schedule from the new source.
@@ -908,6 +921,7 @@ apply_all_patches(){
     fi
     patch_recover_backup_config
     patch_20261101_quick_commands_autoupdate || ssl_status=$?
+    patch_20261101_release_signing || ssl_status=$?
     patch_server_migration_storage || ssl_status=$?
     patch_nodejs_same_branch_updates || ssl_status=$?
     patch_service_security_updates || ssl_status=$?

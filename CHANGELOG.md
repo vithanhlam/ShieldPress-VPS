@@ -1,3 +1,17 @@
+## v1.3.134 — 2026-11-01 — Signed releases and Auto-Update delay
+
+- Require a maintainer signature on every update. A compromised GitHub account or repository could previously publish a malicious package with matching `shieldpress.sha256`/`shieldpress.md5` files, which Auto-Update would install as root. Releases now carry `shieldpress.manifest` (version and package SHA-256) and `shieldpress.sig`, an Ed25519 signature made on the maintainer's own machine with a private key that is never stored on GitHub.
+  - `updater.sh` verifies the checksums (corrupted downloads) and then the signature (forgery) before it extracts anything. An unsigned release, a signature from another key, a manifest for another version or a modified package is refused, for manual updates and Auto-Update alike. There is no bypass switch.
+  - Trusted public keys live in `/etc/shieldpress/release-keys`. They are seeded from the key shipped with the already-installed source, never from the package being downloaded. A verified package may ship an additional key (key rotation); existing keys are kept.
+  - Refuse downgrades (`SHIELDPRESS_ALLOW_DOWNGRADE=1` for a deliberate rollback), so an old, validly signed, vulnerable release cannot be forced on a server.
+  - `install.sh` embeds the public key and verifies the signature before installing from GitHub.
+  - Add `tools/sign-release.sh` (`keygen`, `sign <version>`, `verify <version>`, `fingerprint`) for the maintainer. `sign` refuses unless the published package is byte-for-byte the content of the local git tag.
+- Add an Auto-Update delay: `shieldpress autoupdate delay <hours>` or the menu item `[4]` makes a server wait 0-720 hours after a release is published before installing it, so a bad release can be noticed first. Auto-Update failures send one Telegram alert per failing version and show the updater's reason.
+- Add the idempotent migration `SP_20261101_RELEASE_SIGNING`, run automatically after every update, which installs the release key on existing servers. This update from v1.3.133 is the last one installed without a signature check; every later update is verified.
+- Add `tests/release-signing.sh` (valid, tampered, wrong-key, missing, replayed and edited-manifest releases, key bootstrap and rotation, ordering of the checks). Run repository smoke tests, Bash syntax and whitespace checks.
+- Release signing key fingerprint (SHA-256 of the DER public key): `5438cf485340ca0612118c27cb1bcbdfb5b27075593c1d0e781a0f950b0c0df4`.
+- Release procedure: push the tag, wait for the workflow, then run `tools/sign-release.sh sign <version>` on the maintainer's machine. Until a release is signed, servers refuse it.
+
 ## v1.3.133 — 2026-11-01 — Auto-Update and a complete quick-command list
 
 - Add Auto-Update. `shieldpress autoupdate` (also Core Server > Update > `[3] Auto-Update`) turns scheduled ShieldPress VPS updates on or off and sets the frequency (daily, weekly on a chosen weekday, or monthly on day 1-28) and the time of day in server time. CLI forms: `on`, `off`, `status`, `run` and `set <daily|weekly|monthly> <HH:MM> [weekday|day]`.

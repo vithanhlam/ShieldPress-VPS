@@ -51,6 +51,10 @@ sp_install_update_shortcut || { echo "[ERROR] Cannot install numeric shortcuts";
 source "$BASE_DIR/core/quick-commands.sh" || exit 1
 sp_install_login_banner || { echo "[ERROR] Cannot install login banner"; exit 1; }
 
+# Trust the release signing keys shipped with this verified source tree.
+source "$BASE_DIR/core/release-verify.sh" || exit 1
+sp_release_keys_bootstrap || { echo "[ERROR] No release signing key found in $BASE_DIR/core/release-keys"; exit 1; }
+
 # Restore the Auto-Update schedule when it is enabled (settings live in /etc/shieldpress).
 source "$BASE_DIR/core/autoupdate.sh" && au_load && au_apply || echo "[WARN] Cannot restore the Auto-Update schedule"
 chmod 755 "$BASE_DIR/bin/shieldpress-autoupdate"
