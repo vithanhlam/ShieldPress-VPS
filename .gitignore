@@ -54,3 +54,6 @@ GITHUB.MD
 # Python interpreter artifacts
 __pycache__/
 *.py[cod]
+
+# Public release verification keys must be tracked (private keys never live in this repo)
+!shieldpress/core/release-keys/*.pem

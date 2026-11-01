@@ -83,6 +83,7 @@ check "updater refuses downgrades" grep -q 'Refusing to downgrade' "$SRC/modules
 check "updater still verifies checksums" grep -q 'Integrity verified' "$SRC/modules/update/updater.sh"
 check "bootstrap installer verifies the signature" grep -q 'Release signature verified' "$ROOT/install.sh"
 check "scripts have valid syntax" bash -c "for f in '$SRC/core/release-verify.sh' '$ROOT/tools/sign-release.sh' '$SRC/modules/update/updater.sh' '$ROOT/install.sh'; do bash -n \"\$f\" || exit 1; done"
+check "release public key is tracked by git" bash -c "cd '$ROOT' && [ -n \"\$(git ls-files shieldpress/core/release-keys/*.pem)\" ]"
 check "private key patterns are ignored by git" bash -c "cd '$ROOT' && git check-ignore -q release.key"
 
 exit "$FAIL"
