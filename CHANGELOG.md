@@ -1,3 +1,15 @@
+## v1.3.133 — 2026-11-01 — Auto-Update and a complete quick-command list
+
+- Add Auto-Update. `shieldpress autoupdate` (also Core Server > Update > `[3] Auto-Update`) turns scheduled ShieldPress VPS updates on or off and sets the frequency (daily, weekly on a chosen weekday, or monthly on day 1-28) and the time of day in server time. CLI forms: `on`, `off`, `status`, `run` and `set <daily|weekly|monthly> <HH:MM> [weekday|day]`.
+  - Auto-Update is off by default. Settings live in `/etc/shieldpress/autoupdate.conf` and the schedule in `/etc/cron.d/shieldpress-autoupdate`, so both survive updates; the installer and the migration restore the schedule when it is enabled.
+  - The scheduled runner uses the existing updater (checksum verification, backup, health check and automatic rollback), installs only a strictly newer version, takes a lock against overlapping runs, logs to `/var/shieldpress/logs/autoupdate.log` and records the last result shown in the menu. A failed update sends a Telegram `server_alert`.
+- The quick-command list (`shieldpress help` and the SSH login banner) now shows the full command for every shortcut: `shieldpress menu (1)`, `shieldpress update (2)`, `shieldpress cache (3)`, `shieldpress domain (4)`, `shieldpress ssl (5)`, `shieldpress backup (6)` and `shieldpress autoupdate`, and the login banner shows the Auto-Update state. Both screens read one list in `core/quick-commands.sh`.
+- Restore the numeric shortcuts `3` (cache), `4` (domain), `5` (ssl) and `6` (backup) beside `1` and `2`; the installer, updater and migration install them, replacing the retirement of `3`-`6` from earlier releases.
+- Add the idempotent migration `SP_20261101_QUICK_COMMANDS_AUTOUPDATE`, run automatically after every update: it replaces `/etc/profile.d/shieldpress.sh` with a thin hook so existing servers get the new login banner, and restores an enabled Auto-Update schedule.
+- Verify on a disposable AlmaLinux 9.8 server: migration step, numeric shortcuts `2`-`6`, login banner, `autoupdate on|off|set|status|run`, cron entry with its SELinux context, input validation and the no-downgrade check.
+- Add `tests/autoupdate.sh` (schedule rendering, validation, enable/disable, banner and an English-only check). Run repository smoke tests, Bash syntax and whitespace checks.
+- Publish the release archive with SHA-256 and MD5 checksum assets through the existing GitHub Actions workflow.
+
 ## v1.3.132 — 2026-11-01 — WordPress updates: plugin/theme from a ZIP file, clearer core output
 
 - Add WordPress > Updates actions `[5] Plugin from a local ZIP file` and `[6] Theme from a local ZIP file`: update or install one plugin/theme package on one website or on all WordPress websites without going through wordpress.org.

@@ -44,6 +44,7 @@ shieldpress ssl
 shieldpress backup
 shieldpress cache
 shieldpress update
+shieldpress autoupdate
 ```
 
 ## 3. Domains, Nginx and SSL

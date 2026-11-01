@@ -27,7 +27,7 @@ find "$BASE_DIR" -type d -exec chmod 755 {} +
 find "$BASE_DIR" -type f -name '*.sh' -exec chmod 755 {} +
 find "$BASE_DIR" -type f ! -name '*.sh' -exec chmod 644 {} +
 
-chmod 755 "$BASE_DIR/bin/laravel-pg-backup"
+chmod 755 "$BASE_DIR/bin/laravel-pg-backup" "$BASE_DIR/bin/shieldpress-autoupdate"
 
 # Create global command
 ln -sf "$BASE_DIR/shieldpress.sh" /usr/bin/shieldpress
@@ -43,57 +43,17 @@ done
 restorecon /usr/bin/1 /usr/local/bin/1 2>/dev/null || true
 restorecon -RF "$BASE_DIR" 2>/dev/null || true
 
-# Keep the requested update shortcut; retire other legacy action shortcuts.
+# Install the numeric shortcuts: 2 update, 3 cache, 4 domain, 5 ssl, 6 backup.
 source "$BASE_DIR/core/update-shortcut.sh" || exit 1
-sp_install_update_shortcut || { echo "[ERROR] Cannot install update shortcut"; exit 1; }
-for NUM in 3 4 5 6; do
-    if [ -f "/usr/bin/$NUM" ] && grep -q "exec shieldpress" "/usr/bin/$NUM" 2>/dev/null; then
-        rm -f "/usr/bin/$NUM"
-    fi
-done
+sp_install_update_shortcut || { echo "[ERROR] Cannot install numeric shortcuts"; exit 1; }
 
-# Show help guide on interactive VPS login (no auto-launch dashboard).
-cat > /etc/profile.d/shieldpress.sh <<'PROFILE_EOF'
-# ShieldPress VPS - show quick commands on root SSH login.
-if [ -z "$SHIELDPRESS_HELP_SHOWN" ] && [ -t 1 ] && [ "$(id -u)" -eq 0 ] && command -v shieldpress >/dev/null 2>&1; then
-    export SHIELDPRESS_HELP_SHOWN=1
+# Show the quick-command guide on interactive VPS login (no auto-launch dashboard).
+source "$BASE_DIR/core/quick-commands.sh" || exit 1
+sp_install_login_banner || { echo "[ERROR] Cannot install login banner"; exit 1; }
 
-    # Read current version
-    _SP_VER="unknown"
-    [ -f /opt/shieldpress/version.txt ] && _SP_VER=$(tr -d '[:space:]' < /opt/shieldpress/version.txt)
-
-    echo ""
-    echo -e "\e[1m\e[97mShieldPress VPS v${_SP_VER} - Quick Commands\e[0m"
-    echo -e "\e[36m──────────────────────────────────────\e[0m"
-    echo -e "  \e[36m1\e[0m                    Admin Menu"
-    echo -e "  \e[33m2\e[0m                    Update (shieldpress update)"
-    echo -e "  \e[35mshieldpress cache\e[0m    Clear All Cache"
-    echo -e "  \e[32mshieldpress domain\e[0m   Add Domain"
-    echo -e "  \e[34mshieldpress ssl\e[0m      Install SSL"
-    echo -e "  \e[36mshieldpress backup\e[0m   Backup"
-    echo -e "\e[36m──────────────────────────────────────\e[0m"
-
-    # Check for update (quick, 3s timeout)
-    if command -v curl >/dev/null 2>&1; then
-        _SP_VERSION_URL="https://raw.githubusercontent.com/vithanhlam/ShieldPress-VPS/main/shieldpress/version.txt"
-        [ -f /etc/shieldpress/update.conf ] && . /etc/shieldpress/update.conf 2>/dev/null
-        [ -n "$SHIELDPRESS_VERSION_URL" ] && _SP_VERSION_URL="$SHIELDPRESS_VERSION_URL"
-        _SP_REMOTE=$(curl -fsSL --connect-timeout 3 --max-time 5 "$_SP_VERSION_URL" 2>/dev/null | tr -d '[:space:]')
-        if [ -n "$_SP_REMOTE" ] && [ "$_SP_REMOTE" != "$_SP_VER" ]; then
-            echo -e "  \e[1m\e[33m⚡ Update available: v${_SP_REMOTE} (installed: v${_SP_VER})\e[0m"
-            echo -e "  \e[2mRun: shieldpress update\e[0m"
-            echo -e "\e[36m──────────────────────────────────────\e[0m"
-        fi
-    fi
-
-    echo -e "  \e[2mType 'shieldpress <command>' for quick access (e.g. shieldpress update)\e[0m"
-    echo -e "  \e[2mType 'shieldpress' for full dashboard\e[0m"
-    echo ""
-
-    unset _SP_VER _SP_REMOTE _SP_VERSION_URL
-fi
-PROFILE_EOF
-chmod 644 /etc/profile.d/shieldpress.sh
+# Restore the Auto-Update schedule when it is enabled (settings live in /etc/shieldpress).
+source "$BASE_DIR/core/autoupdate.sh" && au_load && au_apply || echo "[WARN] Cannot restore the Auto-Update schedule"
+chmod 755 "$BASE_DIR/bin/shieldpress-autoupdate"
 
 # Reload shell command cache
 hash -r 2>/dev/null || true

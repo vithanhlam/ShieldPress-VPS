@@ -562,6 +562,29 @@ patch_1331_resize_php_pools(){
 # }
 # --------------------------------------------------
 
+# v1.3.133 — Quick-command list with explicit shortcuts, and Auto-Update.
+# The updater that is running may be the previous release, so install the new
+# login banner and restore an enabled Auto-Update schedule from the new source.
+patch_20261101_quick_commands_autoupdate(){
+    local ID="SP_20261101_QUICK_COMMANDS_AUTOUPDATE"
+    patch_applied "$ID" && { skip "Quick commands and Auto-Update already migrated"; return 0; }
+    chmod 755 "$BASE_DIR/bin/shieldpress-autoupdate" || { fail "Cannot make the Auto-Update runner executable"; return 1; }
+    if ! ( source "$BASE_DIR/core/quick-commands.sh" && sp_install_login_banner ); then
+        fail "Login banner update remains pending"
+        return 1
+    fi
+    if ! ( source "$BASE_DIR/core/update-shortcut.sh" && sp_install_update_shortcut ); then
+        fail "Numeric shortcut install remains pending"
+        return 1
+    fi
+    if ! ( source "$BASE_DIR/core/autoupdate.sh" && au_load && au_apply ); then
+        fail "Auto-Update schedule restore remains pending"
+        return 1
+    fi
+    patch_mark_done "$ID"
+    ok "Login quick commands refreshed; Auto-Update available: shieldpress autoupdate"
+}
+
 # ==================================================
 # APPLY ALL — called by auto-apply and menu option 2
 # ==================================================
@@ -878,12 +901,13 @@ apply_all_patches(){
     # The running updater may be from the previous release. Repair the shortcut
     # from the newly installed source and retry failures on subsequent runs.
     if source "$BASE_DIR/core/update-shortcut.sh" && sp_install_update_shortcut; then
-        ok "Update shortcut installed: 2 (shieldpress update)"
+        ok "Numeric shortcuts installed: 2 update, 3 cache, 4 domain, 5 ssl, 6 backup"
     else
         fail "Update shortcut repair remains pending"
         ssl_status=1
     fi
     patch_recover_backup_config
+    patch_20261101_quick_commands_autoupdate || ssl_status=$?
     patch_server_migration_storage || ssl_status=$?
     patch_nodejs_same_branch_updates || ssl_status=$?
     patch_service_security_updates || ssl_status=$?

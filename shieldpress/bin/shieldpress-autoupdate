@@ -1,0 +1,84 @@
+#!/bin/bash
+# =====================================================
+# ShieldPress VPS - scheduled Auto-Update runner
+# Started by /etc/cron.d/shieldpress-autoupdate.
+#   shieldpress-autoupdate         run only when Auto-Update is ON
+#   shieldpress-autoupdate --now   check and update immediately
+# Updates only to a strictly newer version, through the same
+# verified, backed-up and rollback-protected updater as a manual update.
+# =====================================================
+
+main(){
+    local BASE_DIR="/opt/shieldpress" force=0 current remote newest installed lock_fd
+
+    [ "${1:-}" = "--now" ] && force=1
+    [ "$(id -u)" -eq 0 ] || { echo "Run as root."; return 1; }
+
+    # shellcheck disable=SC1091
+    source "$BASE_DIR/core/paths.sh" || return 1
+    # shellcheck disable=SC1091
+    source "$BASE_DIR/core/update-source.sh" || return 1
+    # shellcheck disable=SC1091
+    source "$BASE_DIR/core/autoupdate.sh" || return 1
+
+    au_load
+    if [ "$force" != "1" ] && [ "$AU_ENABLED" != "1" ]; then
+        return 0
+    fi
+
+    mkdir -p "$LOG_DIR" "$(dirname "$AU_STATUS_FILE")"
+    local log_file="$LOG_DIR/autoupdate.log"
+    log(){ echo "$(date '+%Y-%m-%d %H:%M:%S') | $1" >> "$log_file"; }
+    record(){
+        echo "$(date +%s)|$1|$2" >> "$AU_STATUS_FILE"
+        tail -n 50 "$AU_STATUS_FILE" > "$AU_STATUS_FILE.tmp" && mv -f "$AU_STATUS_FILE.tmp" "$AU_STATUS_FILE"
+        log "$1: $2"
+    }
+    notify(){
+        [ -f "$BASE_DIR/modules/notification/telegram-notify.sh" ] || return 0
+        bash "$BASE_DIR/modules/notification/telegram-notify.sh" send "$1" "$2" "$3" >/dev/null 2>&1 || true
+    }
+
+    exec {lock_fd}>/run/shieldpress-autoupdate.lock
+    if ! flock -n "$lock_fd"; then
+        log "Another Auto-Update run is active; skipping"
+        return 0
+    fi
+
+    current=$(tr -d '[:space:]' < "$BASE_DIR/version.txt" 2>/dev/null || true)
+    remote=$(sp_remote_version || true)
+    if [ -z "$current" ] || [ -z "$remote" ]; then
+        record "failed" "cannot read the installed or latest version (GitHub unreachable?)"
+        notify server_alert "Auto-Update failed" "Cannot reach GitHub to check for a new ShieldPress VPS version."
+        return 1
+    fi
+
+    newest=$(printf '%s\n%s\n' "$current" "$remote" | sort -V | tail -1)
+    if [ "$remote" = "$current" ] || [ "$newest" != "$remote" ]; then
+        record "latest" "version $current is up to date"
+        return 0
+    fi
+
+    log "Updating $current -> $remote"
+    if ! SHIELDPRESS_TARGET_VERSION="$remote" bash "$BASE_DIR/modules/update/updater.sh" >> "$log_file" 2>&1; then
+        record "failed" "update to $remote failed and was rolled back; see $LOG_DIR/update.log"
+        notify server_alert "Auto-Update failed" "Update $current -> $remote failed. See $LOG_DIR/update.log."
+        return 1
+    fi
+
+    installed=$(tr -d '[:space:]' < "$BASE_DIR/version.txt" 2>/dev/null || true)
+    if [ "$installed" != "$remote" ]; then
+        record "failed" "version.txt is $installed, expected $remote"
+        notify server_alert "Auto-Update failed" "version.txt is $installed after updating to $remote."
+        return 1
+    fi
+
+    record "updated" "$current -> $remote"
+    notify info "Auto-Update completed" "ShieldPress VPS updated from $current to $remote."
+    return 0
+}
+
+# Run inside a function and exit explicitly: the updater replaces
+# /opt/shieldpress while this script is executing.
+main "$@"
+exit $?

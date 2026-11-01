@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.132`
+**Current version:** `1.3.133`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -283,8 +283,31 @@ shieldpress cache    # Clear all cache
 shieldpress domain   # Add domain
 shieldpress ssl      # Install SSL
 shieldpress backup   # Backup menu
+shieldpress autoupdate  # Auto-Update: on/off, frequency and time
 shieldpress help     # Show help
 ```
+
+At the shell prompt, `1`-`6` are shortcuts: `1` menu, `2` update, `3` cache, `4` domain,
+`5` ssl, `6` backup.
+
+### Auto-Update
+
+Auto-Update is off by default. Open `shieldpress autoupdate` (or Admin Menu >
+Core Server > Update > Auto-Update) to turn it on and choose the frequency
+(daily, weekly or monthly) and the time of day, in server time. CLI forms:
+
+```bash
+shieldpress autoupdate on
+shieldpress autoupdate off
+shieldpress autoupdate status
+shieldpress autoupdate set weekly 03:30 mon
+shieldpress autoupdate run     # check and update now
+```
+
+Scheduled runs use the same verified, backed-up, rollback-protected updater as
+a manual update, install only a strictly newer version, and write to
+`/var/shieldpress/logs/autoupdate.log`. A failed update sends a Telegram
+`server_alert` when Telegram notifications are configured.
 
 ## What is included
 

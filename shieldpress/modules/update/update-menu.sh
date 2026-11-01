@@ -12,6 +12,7 @@ while true; do
     sp_menu_grid \
         "1|Update Now|yellow" \
         "2|Update Core Packages|yellow" \
+        "3|Auto-Update (on/off, schedule)|cyan" \
         "0|Back|white"
     sp_prompt CHOICE
 
@@ -82,6 +83,7 @@ while true; do
                 read -p "Press Enter..."
             fi
             ;;
+        3) bash "$BASE_DIR/modules/update/autoupdate-menu.sh" ;;
         2)
             echo ""
             read -p "Update OS/core packages now? (y/n): " CONFIRM

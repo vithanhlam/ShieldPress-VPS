@@ -9,6 +9,7 @@ fi
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh" 2>/dev/null || true
 source "$BASE_DIR/core/update-source.sh" 2>/dev/null || true
+source "$BASE_DIR/core/quick-commands.sh" 2>/dev/null || true
 MODULE_DIR="$BASE_DIR/modules"
 SHIELDPRESS_ACTION=""
 
@@ -24,6 +25,7 @@ fi
 case "$1" in
     menu|--menu)       SHIELDPRESS_ACTION="menu" ;;
     update|--update)   SHIELDPRESS_ACTION="update" ;;
+    autoupdate|--autoupdate) SHIELDPRESS_ACTION="autoupdate" ;;
     cache|--cache)     SHIELDPRESS_ACTION="cache" ;;
     domain|--domain)   SHIELDPRESS_ACTION="domain" ;;
     ssl|--ssl)         SHIELDPRESS_ACTION="ssl" ;;
@@ -498,10 +500,7 @@ if [ -n "$SHIELDPRESS_ACTION" ]; then
             echo ""
             echo -e "${BOLD}${WHITE}ShieldPress VPS - Quick Commands${RESET}"
             echo -e "${CYAN}──────────────────────────────────────${RESET}"
-            echo -e "  ${CYAN}[ 1]${RESET} Admin Menu              ${YELLOW}[ 2]${RESET} Update"
-            echo -e "  ${MAGENTA}[ 3]${RESET} Clear All Cache         ${GREEN}[ 4]${RESET} Add Domain"
-            echo -e "  ${BLUE}[ 5]${RESET} Install SSL             ${CYAN}[ 6]${RESET} Backup"
-            echo -e "  ${RED}[ 7]${RESET} Exit"
+            sp_quick_commands_print
             echo -e "${CYAN}──────────────────────────────────────${RESET}"
 
             # Check for new version and notify
@@ -523,6 +522,7 @@ if [ -n "$SHIELDPRESS_ACTION" ]; then
             ;;
         menu)   ;; # fall through to menu below
         update) check_shieldpress_update force; run_shieldpress_update; exit 0 ;;
+        autoupdate) shift; bash "$MODULE_DIR/update/autoupdate-menu.sh" "$@"; exit $? ;;
         cache)  bash "$MODULE_DIR/cache/clear-all-cache.sh"; exit 0 ;;
         domain) bash "$MODULE_DIR/domain/add-domain.sh"; exit 0 ;;
         ssl)    bash "$MODULE_DIR/ssl/install-ssl.sh"; exit 0 ;;
