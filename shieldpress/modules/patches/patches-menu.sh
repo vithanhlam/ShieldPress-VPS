@@ -598,6 +598,52 @@ patch_20261101_quick_commands_autoupdate(){
     ok "Login quick commands refreshed; Auto-Update available: shieldpress autoupdate"
 }
 
+# v1.3.135 — The author-enumeration rule matched "author=" anywhere in the query,
+# so WordPress bulk edit (post_author=-1) was answered with 403 by nginx.
+# Anchor it to the parameter name in the snippet and in every domain config.
+patch_20261102_author_rule_anchor(){
+    local ID="SP_20261102_AUTHOR_RULE_ANCHOR"
+    patch_applied "$ID" && { skip "Author enumeration rule already anchored"; return 0; }
+    if ! command -v nginx >/dev/null 2>&1; then
+        patch_mark_done "$ID"
+        return 0
+    fi
+    local CONF BAK OLD_FILES COUNT=0 FAILED=0
+    for CONF in /etc/nginx/snippets/security-wp.conf /etc/nginx/conf.d/*.conf; do
+        [ -f "$CONF" ] || continue
+        OLD_FILES='location ~* /(\.|wp-config\.php|readme\.html|license\.txt) { deny all; }'
+        if ! grep -Fq '$args ~* "author="' "$CONF" &&
+           ! { [ "${CONF##*/}" = security-wp.conf ] && grep -Fxq "$OLD_FILES" "$CONF"; }; then
+            continue
+        fi
+        BAK=$(mktemp "/tmp/spatch_author.XXXXXX") || { FAILED=1; continue; }
+        cp -a "$CONF" "$BAK"
+        sed -i 's/\$args ~\* "author="/$args ~* "(^|\&)author="/' "$CONF"
+        if [ "${CONF##*/}" = security-wp.conf ]; then
+            # Keep /.well-known/ reachable; only the root readme/license are hidden.
+            sed -i '/^location ~\* \/(\\\.|wp-config\\\.php|readme\\\.html|license\\\.txt) { deny all; }$/c\
+location ~* /\\.(?!well-known/) { deny all; }\
+location ~* /wp-config\\.php { deny all; }\
+location ~* ^/(readme\\.html|license\\.txt)$ { deny all; }' "$CONF"
+        fi
+        if nginx -t >/dev/null 2>&1; then
+            COUNT=$((COUNT+1))
+        else
+            fail "nginx -t failed after patching $CONF - reverted"
+            cp -a "$BAK" "$CONF"
+            FAILED=1
+        fi
+        rm -f "$BAK"
+    done
+    if [ "$FAILED" -ne 0 ]; then
+        fail "Author enumeration rule repair remains pending"
+        return 1
+    fi
+    [ "$COUNT" -gt 0 ] && { systemctl reload nginx 2>/dev/null || true; }
+    patch_mark_done "$ID"
+    ok "Author enumeration rule no longer blocks post_author ($COUNT config(s) updated)"
+}
+
 # ==================================================
 # APPLY ALL — called by auto-apply and menu option 2
 # ==================================================
@@ -920,6 +966,7 @@ apply_all_patches(){
         ssl_status=1
     fi
     patch_recover_backup_config
+    patch_20261102_author_rule_anchor || ssl_status=$?
     patch_20261101_quick_commands_autoupdate || ssl_status=$?
     patch_20261101_release_signing || ssl_status=$?
     patch_server_migration_storage || ssl_status=$?
@@ -1006,6 +1053,7 @@ show_patch_status(){
     _status "SP_20261001_SSL_AUTO_RENEW"          "Repair SSL auto-renew and standalone mail certificates"
     _status "SP_20261005_WP_RECOVERY_OUTPUT"      "Repair WordPress recovery daemon startup output"
     _status "SP_20261005_WP_RECOVERY_SCAN_LOCK"   "Restart WordPress recovery with scan-scoped locking"
+    _status "SP_20261102_AUTHOR_RULE_ANCHOR"      "Allow WordPress bulk edit (post_author) through nginx"
     _status "SP_20261030_WP_CACHE_RECOVERY"       "Purge stale error cache after PHP 502 recovery"
 
     echo ""

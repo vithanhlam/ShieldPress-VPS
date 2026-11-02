@@ -1,3 +1,12 @@
+## v1.3.135 — 2026-11-02 — Fix 403 on WordPress bulk edit
+
+- Fix nginx answering 403 to WordPress bulk edit. The author-enumeration rule `if ($args ~* "author=")` matched `author=` anywhere in the query, including `post_author=-1` sent by bulk post updates, so the request was blocked before PHP. The rule now matches only a parameter named `author` (`(^|&)author=`); `?author=1` probing is still blocked.
+- Add the idempotent migration `SP_20261102_AUTHOR_RULE_ANCHOR`, run automatically after every update: it rewrites the old rule in `/etc/nginx/snippets/security-wp.conf` and in `/etc/nginx/conf.d/*.conf`, runs `nginx -t` per file, reverts a file that fails the test and reloads nginx.
+- Fix WordPress > Security > Disable author enumeration, which detected any `author=` text and so never replaced the old rule.
+- Fix the `security-wp.conf` snippet's sensitive-file rule, which denied every path containing `/.` (including `/.well-known/`) and any `readme.html`/`license.txt` in subfolders. It now hides dotfiles except `/.well-known/`, `wp-config.php`, and only the root `readme.html`/`license.txt`; the same migration updates existing snippets. ACME challenges were already safe (`location ^~ /.well-known/acme-challenge/`).
+- Add `tests/author-rule.sh` (rule semantics, migration, revert on a failed `nginx -t`, idempotence). Verified on an AlmaLinux 9.8 test server: before the migration `post_author=-1` returned 403; after it `post_author` returns 200, `author=1` still returns 403, `/.well-known/` is reachable, and a second run changes nothing.
+- Audit the other generated nginx rules (cache-bypass maps, `location` deny rules, security headers): none match the query string, so no other legitimate WordPress request is blocked.
+
 ## v1.3.134 — 2026-11-01 — Signed releases and Auto-Update delay
 
 - Require a maintainer signature on every update. A compromised GitHub account or repository could previously publish a malicious package with matching `shieldpress.sha256`/`shieldpress.md5` files, which Auto-Update would install as root. Releases now carry `shieldpress.manifest` (version and package SHA-256) and `shieldpress.sig`, an Ed25519 signature made on the maintainer's own machine with a private key that is never stored on GitHub.

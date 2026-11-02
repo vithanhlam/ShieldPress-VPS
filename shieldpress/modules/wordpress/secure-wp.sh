@@ -102,14 +102,16 @@ HTEOF
 # Block xmlrpc
 location = /xmlrpc.php { deny all; access_log off; log_not_found off; }
 
-# Block access to sensitive files
-location ~* /(\.|wp-config\.php|readme\.html|license\.txt) { deny all; }
+# Block hidden files (except /.well-known/), wp-config.php and the root readme/license
+location ~* /\.(?!well-known/) { deny all; }
+location ~* /wp-config\.php { deny all; }
+location ~* ^/(readme\.html|license\.txt)$ { deny all; }
 
 # Block PHP execution in uploads
 location ~* /wp-content/uploads/.*\.php$ { deny all; }
 
 # Block author enumeration
-if ($args ~* "author=") { return 403; }
+if ($args ~* "(^|&)author=") { return 403; }
 
 # Security headers
 add_header X-Frame-Options "SAMEORIGIN" always;
@@ -309,8 +311,8 @@ EOF
 
     # Nginx level
     if [ -f "$NGINX_CONF" ]; then
-        if ! grep -q 'author=' "$NGINX_CONF"; then
-            sed -i '/server_name/a\    if ($args ~* "author=") { return 403; }' "$NGINX_CONF"
+        if ! grep -Fq '(^|&)author=' "$NGINX_CONF"; then
+            sed -i '/server_name/a\    if ($args ~* "(^|&)author=") { return 403; }' "$NGINX_CONF"
             nginx -t 2>/dev/null && systemctl reload nginx
             echo "[OK] Author enumeration blocked (nginx)"
         else
@@ -358,7 +360,7 @@ EOF
         grep -q "security-wp.conf"          "$NGINX_CONF" && echo "  Security snippet : ON" || echo "  Security snippet : OFF"
         grep -q "Strict-Transport-Security" "$NGINX_CONF" && echo "  HSTS             : ON" || echo "  HSTS             : OFF"
         grep -q "ssl-hardening.conf"        "$NGINX_CONF" && echo "  TLS hardening    : ON" || echo "  TLS hardening    : OFF"
-        grep -q 'author='                   "$NGINX_CONF" && echo "  Author enum block: ON" || echo "  Author enum block: OFF"
+        grep -Fq '(^|&)author='              "$NGINX_CONF" && echo "  Author enum block: ON" || echo "  Author enum block: OFF"
     }
     echo ""
 
