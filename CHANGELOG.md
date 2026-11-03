@@ -1,3 +1,13 @@
+## v1.3.137 — 2026-11-03 — Kernel updates without security advisory metadata
+
+- During each enabled OS security update, also refresh and upgrade installed `kernel*` packages on hosts with kernel-core RPMs. Kernel fixes can be available before repository advisory metadata; an empty CVE query no longer prevents kernel updates.
+- Preserve DNF version locks, exclusions, signature checks and enabled repository choices. Do not enable testing repositories or reboot automatically. Report running, installed and default boot kernels; surface boot-default inspection failures and remind administrators to verify the running kernel after a scheduled reboot.
+- Make unavailable repositories fail the OS/kernel update steps rather than silently skipping them. Report transaction failures without claiming an automatic RPM rollback.
+- Extend read-only OS audit to detect pending kernel packages independently of advisory metadata and preserve query failures.
+- Add the idempotent `SP_20261103_KERNEL_UPDATE_FALLBACK` migration. The existing update hook runs the replacement OS security script on the first upgrade and subsequent updates; the OS auto-update opt-out remains respected.
+- Cover system PHP, all Nginx modules and vendor MariaDB package names in managed stack exclusions. PHP, Nginx, MariaDB, PostgreSQL and Node.js retain their dedicated update flows; Roundcube retains its existing updater.
+- Add regression checks for missing advisory metadata, kernel update failures, boot-default verification, containers without kernel RPMs, repeated execution and old-version migration handoff. Run service regressions, repository smoke and release-signature tests. No production kernel upgrade or reboot is performed while publishing this release.
+
 ## v1.3.136 — 2026-11-03 — Nginx mainline patch updates and OS advisory checks
 
 - Allow Nginx 1.31 patch updates within the installed branch, including RPM epoch 2 packages. Retain branch migration, downgrade, dependency and signature guards.

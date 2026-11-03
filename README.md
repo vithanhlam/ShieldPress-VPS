@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.136`
+**Current version:** `1.3.137`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -971,3 +971,16 @@ See full policy: [PRIVACY-POLICY.md](PRIVACY-POLICY.md)
 ## Documentation
 
 - This README serves as feature documentation and reference for future upgrades.
+
+### Kernel fixes without repository advisories
+
+During ShieldPress updates, the OS security hook also runs a dedicated
+`dnf --refresh upgrade 'kernel*'` transaction for systems with an installed
+`kernel-core` RPM. This covers kernel updates published before their security
+advisory metadata. Normal DNF signature checks, version locks and exclusions
+remain active; unavailable repositories make this step fail and remain pending.
+`OS_SECURITY_AUTO_UPDATE="no"` disables this step along with OS advisory updates.
+Containers without kernel-core skip it. No automatic reboot is performed:
+verify the default boot kernel, schedule a reboot, and check `uname -r` against
+the vendor's fixed kernel version. Transaction success alone is not proof that
+a specific CVE has been fixed in the running kernel.

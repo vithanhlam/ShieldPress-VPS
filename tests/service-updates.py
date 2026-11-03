@@ -124,6 +124,86 @@ class Guards(unittest.TestCase):
             self.assertIn(expected, result.stdout)
             self.assertEqual(result.returncode, 0 if status == 0 and not output else 1)
 
+    def test_kernel_updates_without_advisories_and_repeat(self):
+        source = (ROOT / 'shieldpress/modules/security/os-security-patch.sh').read_text()
+        function = source.split('update_kernel_packages(){', 1)[1].split('\n}\n', 1)[0]
+        for scenario in ['success', 'failed', 'container', 'bootfail']:
+            script = """
+DATA_DIR=/tmp
+MANAGED_EXCLUDES=(--exclude=nginx --exclude=php8*-*)
+rpm(){ [ "$SCENARIO" != container ] || return 1; echo '5.14.0-fixed.x86_64'; }
+uname(){ echo '5.14.0-old.x86_64'; }
+grubby(){ [ "$SCENARIO" != bootfail ] || return 1; echo '/boot/vmlinuz-5.14.0-fixed.x86_64'; }
+run_with_loading(){ shift 3; "$@"; }
+logged(){ printf 'COMMAND'; printf ' <%s>' "$@"; echo; [ "$SCENARIO" != failed ]; }
+show_log_tail(){ :; }
+"""
+            script += 'update_kernel_packages(){' + function + '\n}\n'
+            script += 'update_kernel_packages || exit $?\nupdate_kernel_packages\n'
+            import os
+            result = subprocess.run(['bash', '-uc', script], env=dict(os.environ, SCENARIO=scenario), text=True, capture_output=True)
+            if scenario == 'failed':
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('remediation remains pending', result.stdout)
+            elif scenario == 'bootfail':
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('Cannot verify the default boot kernel', result.stdout)
+            elif scenario == 'container':
+                self.assertEqual(result.returncode, 0)
+                self.assertNotIn('COMMAND', result.stdout)
+            else:
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.count('<upgrade> <kernel*>'), 2)
+                self.assertIn('--setopt=skip_if_unavailable=false', result.stdout)
+                self.assertIn('no automatic reboot', result.stdout)
+                self.assertNotIn('<--security>', result.stdout)
+        hook = (ROOT / 'shieldpress/modules/patches/patches-menu.sh').read_text()
+        self.assertIn('os-security-patch.sh" --apply', hook)
+        self.assertIn('update_kernel_packages || status=1', source)
+        self.assertLess(source.index('if ! os_security_enabled;'), source.index('update_kernel_packages || status=1'))
+
+    def test_kernel_audit_without_advisory_metadata(self):
+        source = (ROOT / 'shieldpress/modules/security/os-security-patch.sh').read_text()
+        source = '\n'.join(line for line in source.splitlines() if not line.startswith('source '))
+        source = source.split('if [[ "${BASH_SOURCE[0]}"', 1)[0]
+        for status, expected in [(100, 'Kernel updates are pending'), (1, 'Kernel update query failed'), (0, 'Verify the running kernel')]:
+            script = 'LOG_DIR=/tmp\nDATA_DIR=/tmp\n' + source + """
+valkey_version(){ return 1; }
+rpm(){ return 0; }
+dnf(){ case " $* " in *' check-update '*) return "$KERNEL_STATUS" ;; *) return 0 ;; esac; }
+os_security_main --audit
+"""
+            import os
+            result = subprocess.run(['bash', '-uc', script], env=dict(os.environ, KERNEL_STATUS=str(status)), text=True, capture_output=True)
+            self.assertIn(expected, result.stdout)
+            self.assertEqual(result.returncode, 0 if status == 0 else 1)
+
+    def test_kernel_migration_handoff_and_repeat(self):
+        text = (ROOT / 'shieldpress/modules/patches/patches-menu.sh').read_text()
+        function = text.split('patch_kernel_update_fallback(){', 1)[1].split('\n}\n', 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            script = """
+set -e
+BASE_DIR="$1"
+REGISTRY="$BASE_DIR/registry"
+touch "$REGISTRY"
+patch_applied(){ grep -qxF "$1" "$REGISTRY"; }
+patch_mark_done(){ echo "$1" >> "$REGISTRY"; }
+ok(){ :; }
+fail(){ :; }
+"""
+            script += 'patch_kernel_update_fallback(){' + function + '\n}\n'
+            script += """
+if patch_kernel_update_fallback; then exit 1; fi
+[ ! -s "$REGISTRY" ]
+mkdir -p "$BASE_DIR/modules/security"
+cp "$2/modules/security/os-security-patch.sh" "$BASE_DIR/modules/security/"
+patch_kernel_update_fallback
+patch_kernel_update_fallback
+[ "$(wc -l < "$REGISTRY")" = 1 ]
+"""
+            subprocess.run(['bash', '-c', script, '_', directory, str(ROOT / 'shieldpress')], check=True, capture_output=True)
+
     def test_branches_and_policy(self):
         self.assertEqual(u.branch('nginx', '1.26.2'), '1.26')
         self.assertEqual(u.branch('mariadb', '10.11.9'), '10.11')

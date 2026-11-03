@@ -1,6 +1,6 @@
 #!/bin/bash
 # OS security updates, run automatically after every ShieldPress update.
-# Security advisories only (upgrade-minimal), never a full `dnf update`.
+# OS advisories plus installed kernel package updates, never a full `dnf update`.
 # Nginx/PHP/MariaDB/PostgreSQL/Node.js are excluded: they go through the
 # Upgrade Manager (backup + version policy) and php-security-patch.sh.
 # Valkey stays on its installed major branch and is restarted only if updated.
@@ -13,9 +13,9 @@ source "$BASE_DIR/modules/helpers/task-progress.sh"
 POLICY_FILE="$BASE_DIR/config/upgrade-policy.conf"
 OS_SECURITY_LOG="$LOG_DIR/os-security.log"
 MANAGED_EXCLUDES=(
-    --exclude='nginx' --exclude='nginx-core' --exclude='nginx-mod-*'
-    --exclude='php8*-*'
-    --exclude='mariadb' --exclude='mariadb-*'
+    --exclude='nginx*'
+    --exclude='php' --exclude='php-*' --exclude='php8*-*'
+    --exclude='mariadb' --exclude='mariadb-*' --exclude='MariaDB-*'
     --exclude='postgresql*'
     --exclude='nodejs' --exclude='nodejs-*' --exclude='npm'
 )
@@ -41,6 +41,44 @@ valkey_version(){
     rpm -q --qf '%{VERSION}-%{RELEASE}' valkey
 }
 
+# Kernel fixes can precede updateinfo metadata. Honor normal repository,
+# signature, exclude and versionlock settings; never enable testing repositories.
+update_kernel_packages(){
+    local installed running default_kernel
+    if ! installed=$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' kernel-core 2>/dev/null); then
+        echo '[INFO] No kernel-core RPM installed; kernel updates belong to the host provider'
+        return 0
+    fi
+    running=$(uname -r) || return 1
+    echo "[INFO] Running kernel: $running"
+    if ! run_with_loading "Updating installed kernel packages (including fixes without advisories)" "$DATA_DIR/os-security-kernel.time" 180 \
+            logged dnf --refresh --setopt=timeout=20 --setopt=retries=1 --setopt=skip_if_unavailable=false \
+            -y upgrade 'kernel*' "${MANAGED_EXCLUDES[@]}"; then
+        echo '[FAIL] Kernel update failed; remediation remains pending'
+        show_log_tail
+        return 1
+    fi
+    if ! installed=$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' kernel-core); then
+        echo '[FAIL] Cannot verify installed kernel packages'
+        return 1
+    fi
+    echo "[INFO] Installed kernels: $installed"
+    if command -v grubby >/dev/null; then
+        if default_kernel=$(grubby --default-kernel); then
+            echo "[INFO] Default boot kernel: $default_kernel"
+            if [ "${default_kernel##*/}" != "vmlinuz-$running" ]; then
+                echo '[WARN] Default boot kernel differs from the running kernel. Schedule a reboot and verify uname -r afterwards; no automatic reboot is performed'
+            fi
+        else
+            echo '[FAIL] Cannot verify the default boot kernel; inspect boot configuration before rebooting'
+            return 1
+        fi
+    else
+        echo '[WARN] Cannot inspect the boot default with grubby. Verify provider boot settings before rebooting; no automatic reboot is performed'
+    fi
+    echo '[INFO] Kernel transaction completed under repository policy; retained locks/excludes can prevent updates. This is not certification of any CVE fix'
+}
+
 os_security_main(){
     local mode="${1:---audit}" status=0 before after candidate valkey_active=0 services advisories
     case "$mode" in --audit|--apply) ;; *) echo 'Usage: os-security-patch.sh --audit|--apply'; return 2 ;; esac
@@ -48,7 +86,7 @@ os_security_main(){
 
     if [ "$mode" = --audit ]; then
         before=$(valkey_version) && echo "[INFO] Valkey package: $before"
-        if ! advisories=$(dnf -q --refresh updateinfo list --available --security "${MANAGED_EXCLUDES[@]}"); then
+        if ! advisories=$(dnf -q --refresh --setopt=skip_if_unavailable=false updateinfo list --available --security "${MANAGED_EXCLUDES[@]}"); then
             echo '[FAIL] OS advisory query failed; security status is unknown'
             return 1
         fi
@@ -56,7 +94,17 @@ os_security_main(){
             echo '[WARN] OS security advisories pending; they are applied on the next ShieldPress update'
             return 1
         fi
+        if rpm -q kernel-core >/dev/null 2>&1; then
+            local kernel_status=0
+            dnf -q --refresh --setopt=skip_if_unavailable=false check-update 'kernel*' || kernel_status=$?
+            case "$kernel_status" in
+                0) ;;
+                100) echo '[WARN] Kernel updates are pending, including possible fixes without advisory metadata'; return 1 ;;
+                *) echo '[FAIL] Kernel update query failed; security status is unknown'; return 1 ;;
+            esac
+        fi
         echo '[INFO] No pending security advisories reported by enabled repositories; this does not prove the OS or email stack has no vulnerabilities'
+        echo '[INFO] Version locks and excludes remain active. Verify the running kernel against vendor advisories after reboot'
         return 0
     fi
 
@@ -73,14 +121,16 @@ os_security_main(){
 
     mkdir -p "$LOG_DIR"
     if run_with_loading "Applying OS security advisories" "$DATA_DIR/os-security.time" 120 \
-            logged dnf --refresh --setopt=timeout=20 --setopt=retries=1 --setopt=skip_if_unavailable=true \
+            logged dnf --refresh --setopt=timeout=20 --setopt=retries=1 --setopt=skip_if_unavailable=false \
             -y upgrade-minimal --security "${MANAGED_EXCLUDES[@]}"; then
         echo "[OK] OS security advisories applied (details: $OS_SECURITY_LOG)"
     else
-        echo '[FAIL] OS security transaction failed; DNF rolls back incomplete transactions'
+        echo '[FAIL] OS security transaction failed; inspect the log and DNF history for partial changes'
         show_log_tail
         status=1
     fi
+
+    update_kernel_packages || status=1
 
     # Some repositories (e.g. EPEL) ship Valkey fixes without advisory metadata.
     if [ -n "$before" ]; then

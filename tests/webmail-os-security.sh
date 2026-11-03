@@ -64,7 +64,7 @@ out=$(bash -c 'source /opt/shieldpress/modules/email/helpers.sh; RC_VERSION=1.7.
 # 6. OS security step: apply, repeat, opt-out
 dnf install -y -q valkey >/dev/null 2>&1 || { dnf install -y -q epel-release >/dev/null 2>&1; dnf install -y -q valkey >/dev/null 2>&1; }
 rpm -q valkey >/dev/null && pass "valkey fixture installed ($(rpm -q valkey))" || bad "valkey install"
-before_nginx_excluded=$(grep -c "exclude='nginx'" /opt/shieldpress/modules/security/os-security-patch.sh)
+before_nginx_excluded=$(grep -c "exclude='nginx\*'" /opt/shieldpress/modules/security/os-security-patch.sh)
 [ "$before_nginx_excluded" -ge 1 ] && pass "managed stacks excluded" || bad "excludes missing"
 bash /opt/shieldpress/modules/security/os-security-patch.sh --apply >/tmp/o1.log 2>&1 && pass "OS security apply" || { bad "OS security apply"; cat /tmp/o1.log; }
 bash /opt/shieldpress/modules/security/os-security-patch.sh --apply >/tmp/o2.log 2>&1 && pass "OS security repeat" || { bad "OS security repeat"; cat /tmp/o2.log; }

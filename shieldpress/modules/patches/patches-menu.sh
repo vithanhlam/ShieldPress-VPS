@@ -909,6 +909,21 @@ PYTHON
     ok "Nginx mainline patch policy repaired; custom policy rules retained"
 }
 
+patch_kernel_update_fallback(){
+    local ID="SP_20261103_KERNEL_UPDATE_FALLBACK"
+    patch_applied "$ID" && return 0
+    # The recurring OS update hook executes the new source on the first update
+    # and every later update. Registration itself never changes kernel packages.
+    if ! bash -n "$BASE_DIR/modules/security/os-security-patch.sh" ||
+        ! grep -q '^update_kernel_packages(){' "$BASE_DIR/modules/security/os-security-patch.sh" ||
+        ! grep -q 'update_kernel_packages || status=1' "$BASE_DIR/modules/security/os-security-patch.sh"; then
+        fail "Kernel update fallback remains pending; reinstall the updated source"
+        return 1
+    fi
+    patch_mark_done "$ID"
+    ok "Kernel update fallback enabled; repository policy retained and automatic reboot disabled"
+}
+
 patch_shared_runtime_budget(){
     local ID="SP_20261026_CACHE_ACCESS_LOG_REPAIR"
     patch_applied "$ID" && return 0
@@ -997,6 +1012,7 @@ apply_all_patches(){
     patch_service_versionlock_repair || ssl_status=$?
     patch_service_rpm_versions || ssl_status=$?
     patch_nginx_mainline_policy || ssl_status=$?
+    patch_kernel_update_fallback || ssl_status=$?
     patch_nginx_worker_limits || ssl_status=$?
     local policy_timing="${DATA_DIR:-/var/shieldpress/data}/runtime-policy-timing"
     if install -d -m 700 "$policy_timing"; then
@@ -1055,6 +1071,7 @@ show_patch_status(){
 
     _status "SP_20261025_DOMAIN_PRIVILEGE_BOUNDARY" "Protect root control paths and rebuild domain jobs"
     _status "SP_20261026_NODEJS_SAME_BRANCH_UPDATES" "Enable same-branch Node.js updates"
+    _status "SP_20261103_KERNEL_UPDATE_FALLBACK" "Enable kernel fixes without advisory metadata"
     _status "SP_20261103_NGINX_MAINLINE_POLICY" "Repair Nginx mainline patch update policy"
     _status "SP_20261026_SERVICE_SECURITY_UPDATES" "Enable service version and security updates"
     _status "SP_20261026_SERVICE_VERSIONLOCK_REPAIR" "Repair service update package protection"
