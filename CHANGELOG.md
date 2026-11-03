@@ -1,3 +1,12 @@
+## v1.3.136 — 2026-11-03 — Nginx mainline patch updates and OS advisory checks
+
+- Allow Nginx 1.31 patch updates within the installed branch, including RPM epoch 2 packages. Retain branch migration, downgrade, dependency and signature guards.
+- Add the idempotent `SP_20261103_NGINX_MAINLINE_POLICY` migration to repair the old stock Nginx allowlist while retaining custom policy and blocked-version rules.
+- Explain when a newer same-branch repository package is excluded by upgrade policy instead of silently reporting no eligible update.
+- Refresh OS advisory metadata and preserve DNF query failures; an unavailable repository must not be reported as a clean security assessment.
+- OS security updates continue to run during ShieldPress updates when enabled. Kernel fixes depend on vendor repository advisories; a newly installed kernel requires an administrator-scheduled reboot. This release does not itself certify remediation of a specific CVE on a server.
+- Add regression coverage for Nginx 1.31 updates, policy diagnostics, repeated migration, custom rules and OS advisory query failures. Run service update regressions, repository smoke tests and shell syntax checks.
+
 ## v1.3.135 — 2026-11-02 — Fix 403 on WordPress bulk edit
 
 - Fix nginx answering 403 to WordPress bulk edit. The author-enumeration rule `if ($args ~* "author=")` matched `author=` anywhere in the query, including `post_author=-1` sent by bulk post updates, so the request was blocked before PHP. The rule now matches only a parameter named `author` (`(^|&)author=`); `?author=1` probing is still blocked.

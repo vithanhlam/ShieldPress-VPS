@@ -274,6 +274,7 @@ def resolve(base, service, security):
         raise RuntimeError('Managed server package not found; client-only installations are not updated')
     old = {identity(p): p for p in installed}
     blocked = []
+    policy_blocked = set()
     for pkg in base.sack.query().available():
         kind = family(pkg.name)
         if kind and kind != service:
@@ -282,6 +283,11 @@ def resolve(base, service, security):
             previous = old.get(identity(pkg))
             if not package_version_allowed(service, pkg, previous, anchor):
                 blocked.append(pkg)
+                if (previous and branch(service, pkg.version) == branch(service, previous.version)
+                        and not allowed(service, pkg.version) and compare(pkg, previous) > 0):
+                    policy_blocked.add((pkg.name, pkg.version))
+    for name, version in sorted(policy_blocked):
+        print(f'[WARN] Repository update {name} {version} is blocked by config/upgrade-policy.conf; review the allowed/blocked patterns.', flush=True)
     base.sack.add_excludes(blocked)
     if security:
         base.add_security_filters('gte', types=['security'])

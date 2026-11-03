@@ -74,6 +74,56 @@ class Guards(unittest.TestCase):
             self.assertEqual(output.getvalue(), finished)
         self.assertIn('ETA ~', finished)
 
+    def test_nginx_mainline_policy_and_diagnostics(self):
+        old = pkg('nginx', '1.31.4', epoch=2)
+        new = pkg('nginx', '1.31.8', epoch=2)
+        other = pkg('nginx', '1.29.8', epoch=2)
+        self.assertTrue(u.package_version_allowed('nginx', new, old, old))
+        self.assertFalse(u.package_version_allowed('nginx', other, old, old))
+        base = MagicMock()
+        base.sack.query.return_value.installed.return_value = [old]
+        base.sack.query.return_value.available.return_value = [new, other]
+        base.transaction.install_set = [new]
+        base.transaction.remove_set = [old]
+        with patch.object(u, 'compare', return_value=1):
+            plan, _ = u.resolve(base, 'nginx', False)
+        self.assertEqual(plan['install'][0]['epoch'], '2')
+        self.assertEqual(base.sack.add_excludes.call_args.args[0], [other])
+        base.transaction.install_set = []
+        base.transaction.remove_set = []
+        with patch.object(u, 'allowed', return_value=False), patch.object(u, 'compare', return_value=1), contextlib.redirect_stdout(io.StringIO()) as output:
+            u.resolve(base, 'nginx', False)
+        self.assertIn('1.31.8 is blocked by config/upgrade-policy.conf', output.getvalue())
+
+    def test_mainline_policy_migration_repeats_and_retains_custom_rules(self):
+        text = (ROOT / 'shieldpress/modules/patches/patches-menu.sh').read_text()
+        function = text.split('patch_nginx_mainline_policy(){', 1)[1].split('\n}\n', 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'config').mkdir()
+            policy = root / 'config/upgrade-policy.conf'
+            script = 'BASE_DIR="$1"\npatch_applied(){ return 1; }\npatch_mark_done(){ :; }\nok(){ :; }\nfail(){ return 1; }\n'
+            script += 'patch_nginx_mainline_policy(){' + function + '\n}\npatch_nginx_mainline_policy\npatch_nginx_mainline_policy\n'
+            for original, expected in [('NGINX_ALLOWED="1.26.* 1.28.*"', 'NGINX_ALLOWED="1.26.* 1.28.* 1.31.*"'),
+                                       ('NGINX_ALLOWED="1.28.*"', 'NGINX_ALLOWED="1.28.*"')]:
+                policy.write_text(original + '\nNGINX_BLOCKED="1.31.7"\n')
+                subprocess.run(['bash', '-ec', script, '_', directory], check=True)
+                self.assertEqual(policy.read_text(), expected + '\nNGINX_BLOCKED="1.31.7"\n')
+
+    def test_os_audit_preserves_repository_errors(self):
+        source = (ROOT / 'shieldpress/modules/security/os-security-patch.sh').read_text()
+        source = '\n'.join(line for line in source.splitlines() if not line.startswith('source '))
+        source = source.split('if [[ "${BASH_SOURCE[0]}"', 1)[0]
+        for status, output, expected in [(1, '', 'security status is unknown'),
+                                         (0, '', 'does not prove'),
+                                         (0, 'ALSA-test security postfix', 'advisories pending')]:
+            script = 'LOG_DIR=/tmp\nDATA_DIR=/tmp\n' + source + '\nvalkey_version(){ return 1; }\ndnf(){ echo "$AUDIT_OUTPUT"; return "$AUDIT_STATUS"; }\nos_security_main --audit\n'
+            import os
+            env = dict(os.environ, AUDIT_OUTPUT=output, AUDIT_STATUS=str(status))
+            result = subprocess.run(['bash', '-c', script], env=env, text=True, capture_output=True)
+            self.assertIn(expected, result.stdout)
+            self.assertEqual(result.returncode, 0 if status == 0 and not output else 1)
+
     def test_branches_and_policy(self):
         self.assertEqual(u.branch('nginx', '1.26.2'), '1.26')
         self.assertEqual(u.branch('mariadb', '10.11.9'), '10.11')

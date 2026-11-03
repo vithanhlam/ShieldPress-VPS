@@ -887,6 +887,28 @@ PYTHON
     ok "Service RPM version, PHP extension and Nginx module checks repaired"
 }
 
+patch_nginx_mainline_policy(){
+    local ID="SP_20261103_NGINX_MAINLINE_POLICY"
+    patch_applied "$ID" && return 0
+    # Repair the stock policy on existing installations, retaining custom rules.
+    if ! python3 - "$BASE_DIR/config/upgrade-policy.conf" <<'PYTHON'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+text = path.read_text()
+old = 'NGINX_ALLOWED="1.26.* 1.28.*"'
+new = 'NGINX_ALLOWED="1.26.* 1.28.* 1.31.*"'
+if old in text:
+    path.write_text(text.replace(old, new))
+PYTHON
+    then
+        fail "Nginx policy repair remains pending"
+        return 1
+    fi
+    patch_mark_done "$ID"
+    ok "Nginx mainline patch policy repaired; custom policy rules retained"
+}
+
 patch_shared_runtime_budget(){
     local ID="SP_20261026_CACHE_ACCESS_LOG_REPAIR"
     patch_applied "$ID" && return 0
@@ -974,6 +996,7 @@ apply_all_patches(){
     patch_service_security_updates || ssl_status=$?
     patch_service_versionlock_repair || ssl_status=$?
     patch_service_rpm_versions || ssl_status=$?
+    patch_nginx_mainline_policy || ssl_status=$?
     patch_nginx_worker_limits || ssl_status=$?
     local policy_timing="${DATA_DIR:-/var/shieldpress/data}/runtime-policy-timing"
     if install -d -m 700 "$policy_timing"; then
@@ -1032,6 +1055,7 @@ show_patch_status(){
 
     _status "SP_20261025_DOMAIN_PRIVILEGE_BOUNDARY" "Protect root control paths and rebuild domain jobs"
     _status "SP_20261026_NODEJS_SAME_BRANCH_UPDATES" "Enable same-branch Node.js updates"
+    _status "SP_20261103_NGINX_MAINLINE_POLICY" "Repair Nginx mainline patch update policy"
     _status "SP_20261026_SERVICE_SECURITY_UPDATES" "Enable service version and security updates"
     _status "SP_20261026_SERVICE_VERSIONLOCK_REPAIR" "Repair service update package protection"
     _status "SP_20261026_NGINX_WORKER_LIMITS" "Bound Nginx worker memory allocation"

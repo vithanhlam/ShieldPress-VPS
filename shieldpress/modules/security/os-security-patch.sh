@@ -42,17 +42,21 @@ valkey_version(){
 }
 
 os_security_main(){
-    local mode="${1:---audit}" status=0 before after candidate valkey_active=0 services
+    local mode="${1:---audit}" status=0 before after candidate valkey_active=0 services advisories
     case "$mode" in --audit|--apply) ;; *) echo 'Usage: os-security-patch.sh --audit|--apply'; return 2 ;; esac
     command -v dnf >/dev/null || { echo '[WARN] DNF unavailable; OS security step skipped'; return 1; }
 
     if [ "$mode" = --audit ]; then
         before=$(valkey_version) && echo "[INFO] Valkey package: $before"
-        if dnf -q updateinfo list --security "${MANAGED_EXCLUDES[@]}" 2>/dev/null | grep -q .; then
+        if ! advisories=$(dnf -q --refresh updateinfo list --available --security "${MANAGED_EXCLUDES[@]}"); then
+            echo '[FAIL] OS advisory query failed; security status is unknown'
+            return 1
+        fi
+        if [ -n "$advisories" ]; then
             echo '[WARN] OS security advisories pending; they are applied on the next ShieldPress update'
             return 1
         fi
-        echo '[OK] No pending OS security advisories'
+        echo '[INFO] No pending security advisories reported by enabled repositories; this does not prove the OS or email stack has no vulnerabilities'
         return 0
     fi
 
