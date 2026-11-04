@@ -1,3 +1,9 @@
+## v1.3.141 — 2026-11-04 — Handle a leftover Node.js build unit
+
+- Before starting a build, check the fixed-name `shieldpress-node-build` systemd unit. If a previous build is still running (for example after a closed menu or lost SSH session), refuse to start a second one and print when it started and the command to stop it. If only a finished or failed unit remains, clear it and continue. Previously the build failed with "Unit shieldpress-node-build.service was already loaded" and an unhelpful message.
+- No migration is needed: the change is code-only and applies on the next build after the update.
+- Add regression tests for a running build, a leftover failed unit and a missing unit. Run the build-limit tests, repository smoke test, shell syntax checks and `git diff --check`.
+
 ## v1.3.140 — 2026-11-04 — Node.js build stall diagnosis and failure explanations
 
 - Watch every Node.js production build. If it produces no output and no disk activity for 5 minutes, print a diagnosis of the cause; if a hard stall persists for 15 minutes, stop the build automatically and explain why. Thresholds: `SHIELDPRESS_BUILD_STALL_WARN_MINUTES` and `SHIELDPRESS_BUILD_STALL_STOP_MINUTES` (`0` disables auto-stop). The existing hard timeout remains.

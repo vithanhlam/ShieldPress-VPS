@@ -113,6 +113,42 @@ class BuildDiagnosticsTests(unittest.TestCase):
                 sleeper.kill(); sleeper.wait()
 
 
+class BuildUnitTests(unittest.TestCase):
+    def run_prepare(self, active, loaded=True):
+        script = DIAG + f'''
+systemctl(){{
+    case "$1" in
+        cat) return {0 if loaded else 1} ;;
+        is-failed) return 1 ;;
+        is-active) [ "$2" = "--quiet" ] && {{ [ "{active}" = active ]; return; }}; echo {active} ;;
+        show) echo "Wed 2026-11-04 10:00:00 UTC" ;;
+        reset-failed) echo reset "$2" > "$RESET_MARK" ;;
+    esac
+}}
+node_build_unit_prepare shieldpress-node-build'''
+        with tempfile.TemporaryDirectory() as directory:
+            mark = Path(directory) / 'mark'
+            result = subprocess.run(['bash', '-c', script], text=True, capture_output=True, env={'PATH': '/usr/bin:/bin', 'RESET_MARK': str(mark)})
+            result.reset = mark.read_text() if mark.exists() else ''
+        return result
+
+    def test_running_build_blocks_a_second_one(self):
+        result = self.run_prepare('active')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('still running', result.stdout)
+        self.assertIn('systemctl stop shieldpress-node-build', result.stdout)
+
+    def test_leftover_unit_is_cleared(self):
+        result = self.run_prepare('failed')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('reset shieldpress-node-build.service', result.reset)
+
+    def test_no_unit_is_a_noop(self):
+        result = self.run_prepare('inactive', loaded=False)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, '')
+
+
 class BuildLimitsTests(unittest.TestCase):
     def test_service_bounds_children_and_propagates_failure(self):
         function = SOURCE.split('run_node_build(){', 1)[1].split('\ncleanup_stale_next_lock(){', 1)[0]
@@ -120,6 +156,7 @@ class BuildLimitsTests(unittest.TestCase):
             root = Path(directory)
             (root / 'package.json').write_text('{"scripts":{"build":"next build"},"dependencies":{"next":"16.3.5"}}')
             script = PROFILE + '\n'
+            script += 'node_build_unit_prepare(){ return 0; }\n'
             script += 'fail(){ echo "$*"; }; warn(){ echo "$*"; }; touch(){ :; }; chown(){ :; }; systemd-run(){ printf "%s\\n" "$@"; return 42; };\n'
             script += 'awk(){ case "$1" in *MemTotal*) echo 4096;; *SwapFree*) echo 2048;; esac; }; nproc(){ echo 4; };\n'
             script += 'run_node_build(){' + function
@@ -182,7 +219,7 @@ class BuildLimitsTests(unittest.TestCase):
                 (4096, 4096, '120m', 0),
             ]:
                 with self.subTest(total=total, duration=duration):
-                    script = PROFILE + '\nfail(){ echo "$*"; }; warn(){ :; }; touch(){ :; }; chown(){ :; }; nproc(){ echo 4; };\n'
+                    script = PROFILE + '\nnode_build_unit_prepare(){ return 0; }; fail(){ echo "$*"; }; warn(){ :; }; touch(){ :; }; chown(){ :; }; nproc(){ echo 4; };\n'
                     script += f'awk(){{ case "$1" in *MemTotal*) echo {total};; *SwapFree*) echo {swap};; esac; }};\n'
                     script += 'systemd-run(){ echo STARTED; printf "%s\\n" "$@"; };\nrun_node_build(){' + function
                     script += f'\nSHIELDPRESS_BUILD_TIMEOUT={duration} run_node_build example "$1"\n'

@@ -546,6 +546,25 @@ node_build_postmortem(){
     fi
 }
 
+# A previous build may leave its fixed-name unit behind (closed menu, crash).
+# Refuse to overlap a live build; clear a finished or failed leftover.
+# Exit: 0 = unit name is free, 1 = a build is still running.
+node_build_unit_prepare(){
+    local unit="$1" active started
+    systemctl cat "$unit.service" >/dev/null 2>&1 || return 0
+    active=$(systemctl is-active "$unit.service" 2>/dev/null)
+    case "$active" in
+        active|activating|deactivating)
+            started=$(systemctl show "$unit.service" -p ActiveEnterTimestamp --value 2>/dev/null)
+            echo "A previous Node.js build is still running (started: ${started:-unknown})."
+            echo "Wait for it to finish, or stop it with: systemctl stop $unit"
+            return 1 ;;
+    esac
+    systemctl reset-failed "$unit.service" >/dev/null 2>&1 || true
+    echo "Cleared a finished build unit left over from an earlier run."
+    return 0
+}
+
 run_node_build(){
     local user="$1"
     local app_root="$2"
@@ -638,6 +657,10 @@ run_node_build(){
     # Pipe output through cat: passing a regular log file directly to systemd
     # via --pipe can fail under SELinux. Preserve systemd-run's exit status.
     local -a build_status
+    if ! node_build_unit_prepare shieldpress-node-build; then
+        fail "Another build is already running; not starting a second one."
+        return 1
+    fi
     local build_log watchdog=""
     build_log=$(mktemp "${TMPDIR:-/tmp}/shieldpress-build.XXXXXX") || return 1
     node_build_watchdog shieldpress-node-build "$heap_mb" "$build_log" "$stall_warn" "$stall_stop" &
