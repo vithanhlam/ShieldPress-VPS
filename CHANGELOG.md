@@ -1,3 +1,12 @@
+## v1.3.142 — 2026-11-04 — Bundler choice, silent-build stop and tsconfig restore
+
+- Choose the Next.js bundler automatically: Turbopack on hosts with 8 GB RAM or more, webpack on smaller hosts. Override with `SHIELDPRESS_NEXT_BUNDLER=webpack|turbopack`; a flag already in the `build` script is always respected. A real deployment hung for over 30 minutes in webpack on a 192-core host while Turbopack built the same application in about 80 seconds.
+- Stop a build that stays busy but produces no output or disk activity for 20 minutes (`SHIELDPRESS_BUILD_SILENT_STOP_MINUTES`, `0` disables), and explain that it is likely stuck in the bundler with a suggestion to switch bundler. Previously such a build was reported as "slow, not hung" and never stopped.
+- Restore `tsconfig.json` after each build when Next.js only added the temporary build directory (`.next.candidate.*`) to `include`, so the file no longer accumulates entries. Other changes Next.js makes to the file are kept.
+- Report CPU use in diagnostics as a percentage of one core instead of "of quota".
+- No migration is needed: the changes are code-only and apply on the next build after the update. Existing polluted `tsconfig.json` files are not rewritten; remove stale `.next.candidate.*` lines manually or with `git checkout tsconfig.json`.
+- Add regression tests for bundler selection, tsconfig restoration (reverted and preserved cases) and the silent-build stop. Run the build-limit tests, repository smoke test, shell syntax checks and `git diff --check`.
+
 ## v1.3.141 — 2026-11-04 — Handle a leftover Node.js build unit
 
 - Before starting a build, check the fixed-name `shieldpress-node-build` systemd unit. If a previous build is still running (for example after a closed menu or lost SSH session), refuse to start a second one and print when it started and the command to stop it. If only a finished or failed unit remains, clear it and continue. Previously the build failed with "Unit shieldpress-node-build.service was already loaded" and an unhelpful message.

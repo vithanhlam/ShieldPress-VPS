@@ -10,6 +10,8 @@ SOURCE = MENU.read_text()
 PROFILE = 'node_build_profile(){' + SOURCE.split('node_build_profile(){', 1)[1].split('\n# Next 16', 1)[0]
 DIAG = '# ---- Build diagnostics' + SOURCE.split('# ---- Build diagnostics', 1)[1].split('\nrun_node_build(){', 1)[0]
 
+HELPERS = '# Choose the Next.js bundler' + SOURCE.split('# Choose the Next.js bundler', 1)[1].split('\nrun_node_build(){', 1)[0]
+
 
 class BuildDiagnosticsTests(unittest.TestCase):
     def fake_cgroup(self, root, pids, oom=0, swap=0):
@@ -149,6 +151,72 @@ node_build_unit_prepare shieldpress-node-build'''
         self.assertEqual(result.stdout, '')
 
 
+class BundlerAndTsconfigTests(unittest.TestCase):
+    def bundler(self, build_script, total, choice=None):
+        with tempfile.TemporaryDirectory() as d:
+            pkg = Path(d) / 'package.json'
+            pkg.write_text('{"scripts":{"build":"%s"},"dependencies":{"next":"16.4.2"}}' % build_script)
+            env = {'PATH': '/usr/bin:/bin'}
+            if choice:
+                env['SHIELDPRESS_NEXT_BUNDLER'] = choice
+            return subprocess.run(['bash', '-c', HELPERS + f'\nnode_next_bundler "{pkg}" {total}'], text=True, capture_output=True, env=env).stdout.strip()
+
+    def test_bundler_selection(self):
+        self.assertEqual(self.bundler('next build', 4096), '--webpack')
+        self.assertEqual(self.bundler('next build', 122880), '--turbopack')
+        self.assertEqual(self.bundler('next build', 122880, 'webpack'), '--webpack')
+        self.assertEqual(self.bundler('next build', 4096, 'turbopack'), '--turbopack')
+        self.assertEqual(self.bundler('next build --turbopack', 4096), '')
+        self.assertEqual(self.bundler('next build --webpack', 122880), '')
+        self.assertEqual(self.bundler('vite build', 122880), '')
+
+    def restore(self, original, modified, dist='.next.candidate.123'):
+        with tempfile.TemporaryDirectory() as d:
+            ts, backup = Path(d) / 'tsconfig.json', Path(d) / 'backup'
+            backup.write_text(original)
+            ts.write_text(modified)
+            subprocess.run(['bash', '-c', HELPERS + f'\nnode_restore_tsconfig "{ts}" "{backup}" "{dist}"'], check=True)
+            return ts.read_text()
+
+    def test_tsconfig_pollution_is_reverted(self):
+        original = '{\n  "include": [\n    "next-env.d.ts",\n    "**/*.ts"\n  ]\n}\n'
+        polluted = '{\n  "include": [\n    "next-env.d.ts",\n    "**/*.ts",\n    ".next.candidate.123/types/**/*.ts",\n    ".next.candidate.123/dev/types/**/*.ts"\n  ]\n}\n'
+        self.assertEqual(self.restore(original, polluted), original)
+
+    def test_other_tsconfig_changes_are_kept(self):
+        original = '{\n  "compilerOptions": {"strict": false},\n  "include": ["a"]\n}\n'
+        changed = '{\n  "compilerOptions": {"strict": true},\n  "include": ["a",\n    ".next.candidate.123/types/**/*.ts"]\n}\n'
+        self.assertEqual(self.restore(original, changed), changed)
+
+    def test_silent_busy_build_is_stopped_with_bundler_advice(self):
+        with tempfile.TemporaryDirectory() as d:
+            sleeper = subprocess.Popen(['sleep', '30'])
+            try:
+                cg = Path(d) / 'cg'
+                cg.mkdir()
+                (cg / 'io.stat').write_text('8:0 rbytes=0 wbytes=0\n')
+                (cg / 'memory.events').write_text('oom_kill 0\n')
+                (cg / 'memory.swap.current').write_text('0\n')
+                (cg / 'cgroup.procs').write_text(f'{sleeper.pid}\n')
+                log = Path(d) / 'build.log'
+                log.write_text('Creating an optimized production build ...\n')
+                stop = Path(d) / 'stopped'
+                # cpu.stat grows each second to simulate one busy core.
+                feeder = (f'(n=0; while sleep 0.2; do n=$((n+200000)); '
+                          f'printf "usage_usec %s\\nnr_throttled 0\\n" $n > "{cg}/cpu.stat"; done) &')
+                script = (DIAG + f'\nsystemctl(){{ echo "$*" > "{stop}"; }}\n' + feeder +
+                          f'\nf=$!; node_build_watchdog unit 4096 "{log}" 1 100 2; kill $f')
+                env = {'PATH': '/usr/bin:/bin', 'SHIELDPRESS_BUILD_CGROUP': str(cg),
+                       'SHIELDPRESS_BUILD_WATCH_INTERVAL': '1', 'SHIELDPRESS_BUILD_WATCH_MINUTE_SECONDS': '1'}
+                result = subprocess.run(['bash', '-c', script], text=True, capture_output=True, env=env, timeout=30)
+                self.assertEqual(stop.read_text().strip(), 'stop unit', result.stdout + result.stderr)
+                diag = Path(str(log) + '.diag').read_text()
+                self.assertIn('stuck in the bundler', diag)
+                self.assertIn('SHIELDPRESS_NEXT_BUNDLER', diag)
+            finally:
+                sleeper.kill(); sleeper.wait()
+
+
 class BuildLimitsTests(unittest.TestCase):
     def test_service_bounds_children_and_propagates_failure(self):
         function = SOURCE.split('run_node_build(){', 1)[1].split('\ncleanup_stale_next_lock(){', 1)[0]
@@ -156,7 +224,7 @@ class BuildLimitsTests(unittest.TestCase):
             root = Path(directory)
             (root / 'package.json').write_text('{"scripts":{"build":"next build"},"dependencies":{"next":"16.3.5"}}')
             script = PROFILE + '\n'
-            script += 'node_build_unit_prepare(){ return 0; }\n'
+            script += HELPERS + '\nnode_build_unit_prepare(){ return 0; }\n'
             script += 'fail(){ echo "$*"; }; warn(){ echo "$*"; }; touch(){ :; }; chown(){ :; }; systemd-run(){ printf "%s\\n" "$@"; return 42; };\n'
             script += 'awk(){ case "$1" in *MemTotal*) echo 4096;; *SwapFree*) echo 2048;; esac; }; nproc(){ echo 4; };\n'
             script += 'run_node_build(){' + function
@@ -219,7 +287,7 @@ class BuildLimitsTests(unittest.TestCase):
                 (4096, 4096, '120m', 0),
             ]:
                 with self.subTest(total=total, duration=duration):
-                    script = PROFILE + '\nnode_build_unit_prepare(){ return 0; }; fail(){ echo "$*"; }; warn(){ :; }; touch(){ :; }; chown(){ :; }; nproc(){ echo 4; };\n'
+                    script = PROFILE + HELPERS + '\nnode_build_unit_prepare(){ return 0; }; fail(){ echo "$*"; }; warn(){ :; }; touch(){ :; }; chown(){ :; }; nproc(){ echo 4; };\n'
                     script += f'awk(){{ case "$1" in *MemTotal*) echo {total};; *SwapFree*) echo {swap};; esac; }};\n'
                     script += 'systemd-run(){ echo STARTED; printf "%s\\n" "$@"; };\nrun_node_build(){' + function
                     script += f'\nSHIELDPRESS_BUILD_TIMEOUT={duration} run_node_build example "$1"\n'

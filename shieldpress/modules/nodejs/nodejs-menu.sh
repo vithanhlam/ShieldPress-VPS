@@ -434,7 +434,7 @@ node_build_diagnose(){
             {for (k in want) if (index($0, k)) {print $1, $5; break}}' | sort -u | head -5 | tr '\n' ';')
     fi
     last=$(tail -n 1 "$log" 2>/dev/null | cut -c1-160)
-    echo "Evidence: CPU ${cpu_pct}% of quota, disk I/O ${io_kb} KB, throttled periods +${thr}, swap ${swap_mb} MB, node RSS ${max_rss} MB (heap limit ${heap_mb} MB), processes in disk wait: ${dstate}."
+    echo "Evidence: CPU ${cpu_pct}% of one core, disk I/O ${io_kb} KB, throttled periods +${thr}, swap ${swap_mb} MB, node RSS ${max_rss} MB (heap limit ${heap_mb} MB), processes in disk wait: ${dstate}."
     [ -z "$last" ] || echo "Last build output: $last"
     if [ "$oom" -gt 0 ]; then
         echo "Cause: the build exceeded its memory cap and the kernel killed a process (OOM)."
@@ -475,9 +475,9 @@ node_build_diagnose(){
 }
 
 # Watch a build's cgroup; warn on stalls and stop hard stalls.
-# Args: unit heap_mb log warn_minutes stop_minutes
+# Args: unit heap_mb log warn_minutes stop_minutes [silent_stop_minutes]
 node_build_watchdog(){
-    local unit="$1" heap_mb="$2" log="$3" warn_min="$4" stop_min="$5"
+    local unit="$1" heap_mb="$2" log="$3" warn_min="$4" stop_min="$5" silent_min="${6:-20}"
     local interval="${SHIELDPRESS_BUILD_WATCH_INTERVAL:-30}" minute="${SHIELDPRESS_BUILD_WATCH_MINUTE_SECONDS:-60}"
     local cg="/sys/fs/cgroup/system.slice/$unit.service"
     [ -n "${SHIELDPRESS_BUILD_CGROUP:-}" ] && cg="$SHIELDPRESS_BUILD_CGROUP"
@@ -514,6 +514,20 @@ node_build_watchdog(){
                 systemctl stop "$unit" >/dev/null 2>&1
                 return 0
             fi
+        fi
+        # A build that stays busy but silent for a very long time is almost
+        # certainly stuck (for example a bundler loop), not merely slow.
+        if [ "$stop_min" -gt 0 ] && [ "$silent_min" -gt 0 ] && [ "$quiet" -ge $((silent_min * minute)) ]; then
+            diag=$(node_build_diagnose "$cg" "$heap_mb" "$log" "$cpu_pct" "$io_kb" "$thr")
+            {
+                echo "Build stopped automatically: no output or disk activity for $((quiet / minute)) min while the CPU stayed busy."
+                echo "$diag"
+                echo "Cause: the build is most likely stuck in the bundler (a normal build prints progress or writes files within minutes)."
+                echo "Fix: retry with the other bundler, for example SHIELDPRESS_NEXT_BUNDLER=turbopack (or webpack), and check that the Next.js version and Node.js version match your development machine."
+            } > "$log.diag"
+            echo; echo "[BUILD] Stopping the stuck build."
+            systemctl stop "$unit" >/dev/null 2>&1
+            return 0
         fi
     done
 }
@@ -565,19 +579,40 @@ node_build_unit_prepare(){
     return 0
 }
 
+# Choose the Next.js bundler. Turbopack is the Next 16 default and is far
+# lighter on large hosts; webpack stays the default on small hosts, where
+# Turbopack can stall. SHIELDPRESS_NEXT_BUNDLER=webpack|turbopack|auto overrides.
+# Prints the flag to append, or nothing when the build script already names one.
+node_next_bundler(){
+    local package_json="$1" total_mb="$2" choice="${SHIELDPRESS_NEXT_BUNDLER:-auto}"
+    grep -Eq '"next"[[:space:]]*:' "$package_json" || return 0
+    grep -Eq '"build"[[:space:]]*:[^,}]*next[[:space:]]+build' "$package_json" || return 0
+    grep -Eq '"build"[[:space:]]*:[^,}]*--(webpack|turbopack)' "$package_json" && return 0
+    case "$choice" in
+        webpack|turbopack) echo "--$choice" ;;
+        *) if [ "$total_mb" -ge 8192 ]; then echo "--turbopack"; else echo "--webpack"; fi ;;
+    esac
+}
+
+# Next rewrites tsconfig.json to list its dist directory. Because every build
+# uses a temporary dist directory, that would accumulate entries. Restore the
+# original file when the only change is lines naming this build's dist dir.
+node_restore_tsconfig(){
+    local tsconfig="$1" backup="$2" dist_dir="$3"
+    [ -f "$backup" ] && [ -f "$tsconfig" ] && [ -n "$dist_dir" ] || return 0
+    cmp -s "$backup" "$tsconfig" && return 0
+    local norm='s/[[:space:]]*,[[:space:]]*$//; s/[[:space:]]*$//'
+    if diff <(sed "$norm" "$backup") <(grep -vF -- "$dist_dir/" "$tsconfig" | sed "$norm") >/dev/null 2>&1; then
+        cat "$backup" > "$tsconfig"
+    fi
+}
+
 run_node_build(){
     local user="$1"
     local app_root="$2"
     local timeout_value
     local -a build_cmd=(npm run build)
     local dist_dir="${3:-}"
-
-    if grep -Eq '"next"[[:space:]]*:' "$app_root/package.json" && \
-       grep -Eq '"build"[[:space:]]*:[^,}]*next[[:space:]]+build' "$app_root/package.json"; then
-        if ! grep -Eq '"build"[[:space:]]*:[^,}]*--(webpack|turbopack)' "$app_root/package.json"; then
-            build_cmd+=(-- --webpack)
-        fi
-    fi
 
     local home="/home/domains/$user"
     local npm_cache="$home/.npm"
@@ -609,6 +644,17 @@ run_node_build(){
     }
     read -r memory_mb swap_mb heap_mb build_cpus profile_timeout <<< "$profile"
     timeout_value="${SHIELDPRESS_BUILD_TIMEOUT:-$profile_timeout}"
+    local bundler_flag
+    bundler_flag=$(node_next_bundler "$app_root/package.json" "$total_mb")
+    if [ -n "$bundler_flag" ]; then
+        build_cmd+=(-- "$bundler_flag")
+        echo "Next.js bundler: ${bundler_flag#--} (set SHIELDPRESS_NEXT_BUNDLER=webpack|turbopack to override)."
+    fi
+    local stall_silent="${SHIELDPRESS_BUILD_SILENT_STOP_MINUTES:-20}"
+    if ! [[ "$stall_silent" =~ ^[0-9]+$ ]]; then
+        fail "SHIELDPRESS_BUILD_SILENT_STOP_MINUTES must be a number of minutes (0 disables)."
+        return 1
+    fi
     if [ -n "${SHIELDPRESS_BUILD_HEAP_MB:-}" ]; then
         if ! [[ "$SHIELDPRESS_BUILD_HEAP_MB" =~ ^[1-9][0-9]*$ ]] || [ "$SHIELDPRESS_BUILD_HEAP_MB" -gt $((memory_mb * 80 / 100)) ]; then
             fail "SHIELDPRESS_BUILD_HEAP_MB must be a positive number of MB no larger than 80% of the build memory cap (${memory_mb}M)."
@@ -663,7 +709,11 @@ run_node_build(){
     fi
     local build_log watchdog=""
     build_log=$(mktemp "${TMPDIR:-/tmp}/shieldpress-build.XXXXXX") || return 1
-    node_build_watchdog shieldpress-node-build "$heap_mb" "$build_log" "$stall_warn" "$stall_stop" &
+    local ts_backup=""
+    if [ -f "$app_root/tsconfig.json" ]; then
+        ts_backup=$(mktemp "${TMPDIR:-/tmp}/shieldpress-tsconfig.XXXXXX") && cat "$app_root/tsconfig.json" > "$ts_backup" || ts_backup=""
+    fi
+    node_build_watchdog shieldpress-node-build "$heap_mb" "$build_log" "$stall_warn" "$stall_stop" "$stall_silent" &
     watchdog=$!
     systemd-run --unit=shieldpress-node-build --collect --wait --pipe \
         --property="User=$user" --property="WorkingDirectory=$app_root" \
@@ -674,6 +724,10 @@ run_node_build(){
         "${service_env[@]}" /usr/bin/flock -n "$build_lock" "${build_cmd[@]}" </dev/null 2>&1 | tee -a "$build_log"
     build_status=("${PIPESTATUS[@]}")
     kill "$watchdog" 2>/dev/null; wait "$watchdog" 2>/dev/null
+    if [ -n "$ts_backup" ]; then
+        node_restore_tsconfig "$app_root/tsconfig.json" "$ts_backup" "$dist_dir"
+        rm -f -- "$ts_backup"
+    fi
     if [ "${build_status[0]}" -ne 0 ]; then
         warn "Build failed (exit ${build_status[0]})."
         node_build_postmortem "$build_log" "$heap_mb"

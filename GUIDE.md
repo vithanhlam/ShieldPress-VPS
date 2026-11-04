@@ -176,6 +176,18 @@ project on a 1–2 GB VPS, build on another machine and deploy its artifact.
 Set `SHIELDPRESS_BUILD_TIMEOUT=120m` in the environment launching ShieldPress
 to allow more time (positive integer with `s`, `m` or `h` suffix).
 
+Bundler and stalled builds: for a Next.js `build` script without an explicit
+`--webpack` or `--turbopack` flag, ShieldPress chooses Turbopack on hosts with
+8 GB RAM or more and webpack on smaller hosts. Override with
+`SHIELDPRESS_NEXT_BUNDLER=webpack` or `turbopack`; a flag already present in
+`package.json` always wins. A watchdog prints a diagnosis after 5 minutes
+without output or disk activity (`SHIELDPRESS_BUILD_STALL_WARN_MINUTES`) and
+stops a hard stall after 15 minutes (`SHIELDPRESS_BUILD_STALL_STOP_MINUTES`,
+`0` disables stopping). A build that stays busy but silent for 20 minutes is
+also stopped (`SHIELDPRESS_BUILD_SILENT_STOP_MINUTES`, `0` disables). Raise the
+V8 heap with `SHIELDPRESS_BUILD_HEAP_MB`. ShieldPress restores `tsconfig.json`
+after a build when Next.js only added the temporary build directory to it.
+
 For Next.js 15+ using webpack, merge these settings into the application's
 existing `next.config.*` (keep its other options):
 
