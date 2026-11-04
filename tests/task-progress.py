@@ -31,8 +31,23 @@ class ProgressTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run(['bash', '-c', script, '_', str(HELPER), directory + '/timing'], text=True, capture_output=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('running, elapsed', result.stdout)
+        self.assertIn('running, 10s elapsed', result.stdout)
         self.assertIn('ETA not available yet', result.stdout)
+
+    def test_interactive_uses_single_updating_line(self):
+        import os, pty
+        master, slave = pty.openpty()
+        script = 'source "$1"; run_with_progress Build "$2" sleep 3'
+        with tempfile.TemporaryDirectory() as directory:
+            proc = subprocess.Popen(['bash', '-c', script, '_', str(HELPER), directory + '/timing'], stdout=slave, stderr=slave)
+            proc.wait(timeout=10)
+            os.close(slave)
+            data = os.read(master, 65536).decode()
+        self.assertEqual(proc.returncode, 0)
+        self.assertIn('\r\x1b[K', data)
+        self.assertNotIn('running, ', data)
+        self.assertNotIn('estimating on first run', data)
+        self.assertEqual(data.count('finished in'), 1)
 
 
 if __name__ == '__main__':

@@ -1,3 +1,10 @@
+## v1.3.139 — 2026-11-04 — Compact task progress line
+
+- On interactive terminals, long-running stages (install, build, migration) now show a single in-place status line with a spinner, elapsed time and estimated time remaining, instead of a new `[PROGRESS]` line every 10 seconds. The line is replaced by one completion message when the stage ends.
+- Non-interactive output (logs, pipes, CI) keeps periodic `[PROGRESS]` heartbeat lines so recorded logs retain progress information. Command output, errors and exit status are preserved.
+- No migration is needed: the change is code-only and applies on the next run after the update.
+- Add a pseudo-terminal regression test for the single updating line. Run the progress tests, repository smoke test, shell syntax checks and `git diff --check`.
+
 ## v1.3.138 — 2026-11-04 — Node.js build memory scaling and dependency audit
 
 - Scale the Node.js production build V8 heap cap with host RAM (4 GB below 32 GB, 8 GB from 32 GB, 16 GB from 64 GB) so large Next.js builds no longer fail with "heap out of memory" on big servers. Profiles for hosts up to 16 GB are unchanged.

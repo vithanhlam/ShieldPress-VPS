@@ -9,7 +9,11 @@ run_with_progress() (
         read -r estimate < "$history"
         [[ "$estimate" =~ ^[1-9][0-9]*$ ]] || estimate=""
     fi
-    if [ -n "$estimate" ]; then
+    local interactive=0
+    [ -t 1 ] && interactive=1
+    if [ "$interactive" -eq 1 ]; then
+        :  # One in-place status line below; no header lines.
+    elif [ -n "$estimate" ]; then
         echo "[PROGRESS] $label: estimated duration ${estimate}s (previous successful run)."
     else
         echo "[PROGRESS] $label: estimating on first run; elapsed time updates every 10s."
@@ -17,18 +21,25 @@ run_with_progress() (
     trap '[ -z "$monitor" ] || { kill "$monitor" 2>/dev/null || true; wait "$monitor" 2>/dev/null || true; }' EXIT
     (
         trap 'exit 0' TERM INT HUP
+        local frames='|/-\' index=0 tick=0 text
         while true; do
-            sleep 10 &
+            sleep 1 &
             local sleeper=$!
             trap 'kill "$sleeper" 2>/dev/null; wait "$sleeper" 2>/dev/null; exit 0' TERM INT HUP
             wait "$sleeper" || exit
+            tick=$((tick + 1))
             elapsed=$((SECONDS - started))
             if [ -n "$estimate" ] && [ "$elapsed" -lt "$estimate" ]; then
-                echo "[PROGRESS] $label: running, elapsed ${elapsed}s; estimated remaining $((estimate - elapsed))s."
+                text="${elapsed}s elapsed, ~$((estimate - elapsed))s left"
             elif [ -n "$estimate" ]; then
-                echo "[PROGRESS] $label: running, elapsed ${elapsed}s; taking longer than the previous run."
+                text="${elapsed}s elapsed, taking longer than the previous run"
             else
-                echo "[PROGRESS] $label: running, elapsed ${elapsed}s; ETA not available yet."
+                text="${elapsed}s elapsed, ETA not available yet"
+            fi
+            if [ "$interactive" -eq 1 ]; then
+                printf '\r\033[K[%s] %s: %s' "${frames:index++%4:1}" "$label" "$text"
+            elif [ $((tick % 10)) -eq 0 ]; then
+                echo "[PROGRESS] $label: running, $text."
             fi
         done
     ) &
@@ -38,6 +49,7 @@ run_with_progress() (
     wait "$monitor" 2>/dev/null || true
     monitor=""
     elapsed=$((SECONDS - started))
+    [ "$interactive" -eq 0 ] || printf '\r\033[K'
     echo "[PROGRESS] $label: finished in ${elapsed}s (exit $status)."
     # Timing is advisory. Failure to save must never fail a deployment.
     if [ "$status" -eq 0 ] && [ -d "$(dirname "$history")" ]; then
