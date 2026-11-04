@@ -46,6 +46,18 @@ class BuildLimitsTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.strip(), f'{ram} {swap} {heap} {cpus} {timeout}')
 
+    def test_large_hosts_scale_heap_and_cpus(self):
+        for total, heap, cpus in [(32768, 8192, 8), (65536, 16384, 16), (122880, 16384, 16)]:
+            with self.subTest(total=total):
+                result = subprocess.run(['bash', '-c', PROFILE + f'\nnode_build_profile {total} 4096 32'], text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                fields = result.stdout.split()
+                self.assertEqual((int(fields[2]), int(fields[3])), (heap, cpus))
+
+    def test_dependency_audit_is_advisory(self):
+        self.assertIn('npm audit --omit=dev --audit-level=high', SOURCE)
+        self.assertIn('audit_node_dependencies "$sysuser"', SOURCE)
+
     def test_swap_reserve_and_cpu_availability(self):
         for swap_free in (0, 128, 512):
             result = subprocess.run(['bash', '-c', PROFILE + f'\nnode_build_profile 16384 {swap_free} 1'], text=True, capture_output=True)

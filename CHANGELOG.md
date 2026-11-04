@@ -1,3 +1,11 @@
+## v1.3.138 — 2026-11-04 — Node.js build memory scaling and dependency audit
+
+- Scale the Node.js production build V8 heap cap with host RAM (4 GB below 32 GB, 8 GB from 32 GB, 16 GB from 64 GB) so large Next.js builds no longer fail with "heap out of memory" on big servers. Profiles for hosts up to 16 GB are unchanged.
+- Allow more build CPUs on large hosts (8 from 32 GB, 16 from 64 GB RAM), always limited to the available cores.
+- Run an advisory `npm audit --omit=dev --audit-level=high` after Node.js dependency installation and warn about high or critical vulnerabilities (CVE). The scan never blocks a deploy and is skipped when the registry is unreachable.
+- No migration is needed: the change is code-only and takes effect on the next build after the update.
+- Add regression checks for large-host heap/CPU tiers and the advisory audit step. Run the Node.js build-limit tests, repository smoke test and shell syntax checks.
+
 ## v1.3.137 — 2026-11-03 — Kernel updates without security advisory metadata
 
 - During each enabled OS security update, also refresh and upgrade installed `kernel*` packages on hosts with kernel-core RPMs. Kernel fixes can be available before repository advisory metadata; an empty CVE query no longer prevents kernel updates.

@@ -331,10 +331,16 @@ node_build_profile(){
     local heap_swap_mb="$swap_mb"
     [ "$heap_swap_mb" -le 768 ] || heap_swap_mb=768
     heap_mb=$(((ram_mb * 2 / 3 + heap_swap_mb / 2) / 64 * 64))
-    [ "$heap_mb" -le 4096 ] || heap_mb=4096
+    # Large hosts need a larger V8 heap; a fixed 4G cap OOMs big Next.js builds.
+    local heap_cap=4096
+    if [ "$total_mb" -ge 65536 ]; then heap_cap=16384
+    elif [ "$total_mb" -ge 32768 ]; then heap_cap=8192; fi
+    [ "$heap_mb" -le "$heap_cap" ] || heap_mb=$heap_cap
     if [ "$total_mb" -lt 3072 ]; then timeout=90m; fi
     if [ "$total_mb" -ge 8192 ]; then cpus=2; fi
     if [ "$total_mb" -ge 16384 ]; then cpus=4; fi
+    if [ "$total_mb" -ge 32768 ]; then cpus=8; fi
+    if [ "$total_mb" -ge 65536 ]; then cpus=16; fi
     [ "$cpus" -le "$cores" ] || cpus="$cores"
     [ "$cpus" -ge 1 ] || cpus=1
     printf '%s %s %s %s %s\n' "$ram_mb" "$swap_mb" "$heap_mb" "$cpus" "$timeout"
@@ -372,6 +378,22 @@ next_deploy_http_ready(){
         [ "$attempt" -eq 5 ] || sleep 2
     done
     return 1
+}
+
+# Advisory CVE scan of production dependencies. Never blocks a deploy.
+audit_node_dependencies(){
+    local sysuser="$1" out rc
+    out=$(run_pm2 "$sysuser" npm audit --omit=dev --audit-level=high 2>&1); rc=$?
+    if [ "$rc" -eq 0 ]; then
+        ok "npm audit: no high/critical vulnerabilities in production dependencies"
+    elif echo "$out" | grep -qiE "vulnerabilit"; then
+        warn "npm audit found high/critical vulnerabilities (CVE) in production dependencies:"
+        echo "$out" | tail -n 25
+        warn "Review with 'npm audit' and update packages (e.g. 'npm audit fix'). Deploy continues."
+    else
+        warn "npm audit could not complete (offline or registry unavailable); skipped."
+    fi
+    return 0
 }
 
 run_node_build(){
@@ -1020,6 +1042,7 @@ deploy_node_app_locked(){
             run_with_progress "Install dependencies (npm install)" "$DOMAIN_PATH/tmp/.node-install-time" run_pm2 "$sysuser" npm install --include=dev || { fail "npm install failed"; return 1; }
         fi
         ok "Dependencies installed"
+        audit_node_dependencies "$sysuser"
         ((step++))
 
         run_prisma_migrations "$sysuser" || return 1
