@@ -8,6 +8,109 @@ import unittest
 MENU = Path(__file__).resolve().parents[1] / 'shieldpress/modules/nodejs/nodejs-menu.sh'
 SOURCE = MENU.read_text()
 PROFILE = 'node_build_profile(){' + SOURCE.split('node_build_profile(){', 1)[1].split('\n# Next 16', 1)[0]
+DIAG = '# ---- Build diagnostics' + SOURCE.split('# ---- Build diagnostics', 1)[1].split('\nrun_node_build(){', 1)[0]
+
+
+class BuildDiagnosticsTests(unittest.TestCase):
+    def fake_cgroup(self, root, pids, oom=0, swap=0):
+        cg = Path(root) / 'cg'
+        cg.mkdir()
+        (cg / 'cpu.stat').write_text('usage_usec 0\nnr_throttled 0\n')
+        (cg / 'io.stat').write_text('8:0 rbytes=0 wbytes=0\n')
+        (cg / 'memory.events').write_text(f'oom_kill {oom}\n')
+        (cg / 'memory.swap.current').write_text(f'{swap}\n')
+        (cg / 'cgroup.procs').write_text(''.join(f'{pid}\n' for pid in pids))
+        return cg
+
+    def diagnose(self, cg, heap, cpu, io, thr, log='/nonexistent'):
+        script = DIAG + f'\nnode_build_diagnose "{cg}" {heap} "{log}" {cpu} {io} {thr}'
+        return subprocess.run(['bash', '-c', script], text=True, capture_output=True)
+
+    def test_causes(self):
+        with tempfile.TemporaryDirectory() as d:
+            sleeper = subprocess.Popen(['sleep', '30'])
+            try:
+                cg = self.fake_cgroup(d, [sleeper.pid])
+                idle = self.diagnose(cg, 4096, 0, 0, 0)
+                self.assertEqual(idle.returncode, 0)
+                self.assertIn('idle', idle.stdout)
+                slow = self.diagnose(cg, 4096, 80, 0, 3)
+                self.assertEqual(slow.returncode, 1)
+                self.assertIn('slow, not hung', slow.stdout)
+                busy = self.diagnose(cg, 4096, 80, 0, 0)
+                self.assertEqual(busy.returncode, 1)
+                (cg / 'memory.events').write_text('oom_kill 2\n')
+                oom = self.diagnose(cg, 4096, 0, 0, 0)
+                self.assertEqual(oom.returncode, 0)
+                self.assertIn('OOM', oom.stdout)
+                (cg / 'memory.events').write_text('oom_kill 0\n')
+                (cg / 'memory.swap.current').write_text(str(512 * 1048576))
+                swap = self.diagnose(cg, 4096, 10, 5000, 0)
+                self.assertIn('swapping', swap.stdout)
+            finally:
+                sleeper.kill(); sleeper.wait()
+
+    def test_heap_exhaustion_is_identified(self):
+        with tempfile.TemporaryDirectory() as d:
+            node = Path(d) / 'node'
+            node.symlink_to('/usr/bin/python3')
+            proc = subprocess.Popen([str(node), '-I', '-c', 'import time; b = bytearray(80_000_000); b[::4096] = b"x" * len(b[::4096]); time.sleep(30)'])
+            try:
+                import time
+                time.sleep(1.5)
+                cg = self.fake_cgroup(d, [proc.pid])
+                result = self.diagnose(cg, 64, 90, 0, 0)
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertIn('heap is nearly full', result.stdout)
+                self.assertIn('SHIELDPRESS_BUILD_HEAP_MB', result.stdout)
+            finally:
+                proc.kill(); proc.wait()
+
+    def test_postmortem(self):
+        cases = [('FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory', 'heap limit'),
+                 ('Finished with result: oom-kill', 'memory cap'),
+                 ('Finished with result: timeout', 'time limit'),
+                 ("Module not found: Can't resolve './missing'", 'application code'),
+                 ('something odd', 'not recognised')]
+        for text, expected in cases:
+            with self.subTest(expected=expected), tempfile.TemporaryDirectory() as d:
+                log = Path(d) / 'log'
+                log.write_text(text + '\n')
+                result = subprocess.run(['bash', '-c', DIAG + f'\nnode_build_postmortem "{log}" 4096'], text=True, capture_output=True)
+                self.assertIn(expected, result.stdout)
+
+    def test_watchdog_stops_idle_build(self):
+        with tempfile.TemporaryDirectory() as d:
+            sleeper = subprocess.Popen(['sleep', '30'])
+            try:
+                cg = self.fake_cgroup(d, [sleeper.pid])
+                log = Path(d) / 'build.log'
+                log.write_text('compiling\n')
+                stop = Path(d) / 'stopped'
+                script = DIAG + f'\nsystemctl(){{ echo "$*" > "{stop}"; }}\nnode_build_watchdog unit 4096 "{log}" 1 2'
+                env = {'PATH': '/usr/bin:/bin', 'SHIELDPRESS_BUILD_CGROUP': str(cg), 'SHIELDPRESS_BUILD_WATCH_INTERVAL': '1', 'SHIELDPRESS_BUILD_WATCH_MINUTE_SECONDS': '1'}
+                result = subprocess.run(['bash', '-c', script], text=True, capture_output=True, env=env, timeout=20)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('Diagnosing', result.stdout)
+                self.assertEqual(stop.read_text().strip(), 'stop unit')
+                self.assertIn('stopped automatically', Path(str(log) + '.diag').read_text())
+            finally:
+                sleeper.kill(); sleeper.wait()
+
+    def test_watchdog_does_not_stop_progressing_build(self):
+        with tempfile.TemporaryDirectory() as d:
+            sleeper = subprocess.Popen(['sleep', '30'])
+            try:
+                cg = self.fake_cgroup(d, [sleeper.pid])
+                log = Path(d) / 'build.log'
+                log.write_text('')
+                stop = Path(d) / 'stopped'
+                script = DIAG + f'\nsystemctl(){{ echo "$*" > "{stop}"; }}\n(for i in 1 2 3 4 5 6; do echo line >> "{log}"; sleep 1; done) &\nnode_build_watchdog unit 4096 "{log}" 2 3 & w=$!; sleep 5; kill $w'
+                env = {'PATH': '/usr/bin:/bin', 'SHIELDPRESS_BUILD_CGROUP': str(cg), 'SHIELDPRESS_BUILD_WATCH_INTERVAL': '1', 'SHIELDPRESS_BUILD_WATCH_MINUTE_SECONDS': '1'}
+                subprocess.run(['bash', '-c', script], text=True, capture_output=True, env=env, timeout=20)
+                self.assertFalse(stop.exists())
+            finally:
+                sleeper.kill(); sleeper.wait()
 
 
 class BuildLimitsTests(unittest.TestCase):

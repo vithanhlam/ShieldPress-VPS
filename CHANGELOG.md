@@ -1,3 +1,12 @@
+## v1.3.140 — 2026-11-04 — Node.js build stall diagnosis and failure explanations
+
+- Watch every Node.js production build. If it produces no output and no disk activity for 5 minutes, print a diagnosis of the cause; if a hard stall persists for 15 minutes, stop the build automatically and explain why. Thresholds: `SHIELDPRESS_BUILD_STALL_WARN_MINUTES` and `SHIELDPRESS_BUILD_STALL_STOP_MINUTES` (`0` disables auto-stop). The existing hard timeout remains.
+- Diagnose from cgroup evidence: kernel OOM kills, a nearly full V8 heap with busy CPU (garbage-collection thrash), heavy swapping, processes blocked on disk I/O, idle builds waiting on network connections (with the remote hosts), and slow-but-working builds. Slow builds that are still computing are reported but never stopped.
+- After any failed build, explain the cause and fix from the build output: heap limit reached, memory cap, timeout, or the first application errors (missing module, compile or type errors).
+- Add `SHIELDPRESS_BUILD_HEAP_MB` to raise the build heap, validated to at most 80% of the build memory cap.
+- No migration is needed: the change is code-only and applies on the next build after the update.
+- Add regression tests for each diagnosis, post-mortem messages, automatic stop of an idle build and no stop for a progressing build. Run the build-limit tests, repository smoke test, shell syntax checks and `git diff --check`.
+
 ## v1.3.139 — 2026-11-04 — Compact task progress line
 
 - On interactive terminals, long-running stages (install, build, migration) now show a single in-place status line with a spinner, elapsed time and estimated time remaining, instead of a new `[PROGRESS]` line every 10 seconds. The line is replaced by one completion message when the stage ends.

@@ -396,6 +396,156 @@ audit_node_dependencies(){
     return 0
 }
 
+# ---- Build diagnostics -------------------------------------------------
+# Read one "key value" counter from a cgroup v2 stat file.
+node_cg_stat(){
+    awk -v k="$2" '$1 == k {print $2; found=1} END {if (!found) print 0}' "$1" 2>/dev/null || echo 0
+}
+
+# Print: cpu_usec io_bytes throttled oom_kill swap_bytes
+node_build_snapshot(){
+    local cg="$1" io
+    io=$(awk '{for (i = 2; i <= NF; i++) if ($i ~ /^(rbytes|wbytes)=/) {split($i, a, "="); s += a[2]}} END {print s + 0}' "$cg/io.stat" 2>/dev/null)
+    printf '%s %s %s %s %s\n' \
+        "$(node_cg_stat "$cg/cpu.stat" usage_usec)" "${io:-0}" \
+        "$(node_cg_stat "$cg/cpu.stat" nr_throttled)" \
+        "$(node_cg_stat "$cg/memory.events" oom_kill)" \
+        "$(cat "$cg/memory.swap.current" 2>/dev/null || echo 0)"
+}
+
+# Explain why a build stopped making progress. Evidence goes to stdout.
+# Args: cgroup heap_mb log cpu_pct io_kb throttled_delta
+# Exit: 0 = hard stall (safe to stop), 1 = slow but still working.
+node_build_diagnose(){
+    local cg="$1" heap_mb="$2" log="$3" cpu_pct="$4" io_kb="$5" thr="$6"
+    local oom swap_mb pid state comm rss_mb max_rss=0 dstate=0 peers="" last
+    oom=$(node_cg_stat "$cg/memory.events" oom_kill)
+    swap_mb=$(( $(cat "$cg/memory.swap.current" 2>/dev/null || echo 0) / 1048576 ))
+    for pid in $(cat "$cg/cgroup.procs" 2>/dev/null); do
+        state=$(awk '{print $3}' "/proc/$pid/stat" 2>/dev/null)
+        [ "$state" = "D" ] && dstate=$((dstate + 1))
+        comm=$(cat "/proc/$pid/comm" 2>/dev/null)
+        rss_mb=$(( $(awk '/^VmRSS:/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo 0) / 1024 ))
+        case "$comm" in node*|next*) [ "$rss_mb" -le "$max_rss" ] || max_rss=$rss_mb ;; esac
+    done
+    if command -v ss >/dev/null 2>&1; then
+        peers=$(ss -tnpH 2>/dev/null | awk -v pids="$(tr '\n' ' ' < "$cg/cgroup.procs" 2>/dev/null)" '
+            BEGIN {n = split(pids, p, " "); for (i = 1; i <= n; i++) want["pid=" p[i] ","] = 1}
+            {for (k in want) if (index($0, k)) {print $1, $5; break}}' | sort -u | head -5 | tr '\n' ';')
+    fi
+    last=$(tail -n 1 "$log" 2>/dev/null | cut -c1-160)
+    echo "Evidence: CPU ${cpu_pct}% of quota, disk I/O ${io_kb} KB, throttled periods +${thr}, swap ${swap_mb} MB, node RSS ${max_rss} MB (heap limit ${heap_mb} MB), processes in disk wait: ${dstate}."
+    [ -z "$last" ] || echo "Last build output: $last"
+    if [ "$oom" -gt 0 ]; then
+        echo "Cause: the build exceeded its memory cap and the kernel killed a process (OOM)."
+        echo "Fix: raise the cap by freeing RAM, or enable experimental.webpackMemoryOptimizations in next.config, or build externally."
+        return 0
+    fi
+    if [ "$heap_mb" -gt 0 ] && [ "$max_rss" -ge $((heap_mb * 90 / 100)) ] && [ "$cpu_pct" -ge 50 ]; then
+        echo "Cause: the Node.js heap is nearly full (${max_rss} of ${heap_mb} MB) and the CPU is busy; V8 is spending its time in garbage collection and making no progress."
+        echo "Fix: set SHIELDPRESS_BUILD_HEAP_MB higher (for example $((heap_mb * 2))) and retry, enable experimental.webpackMemoryOptimizations in next.config, or reduce the pages/dependencies compiled at once."
+        return 0
+    fi
+    if [ "$swap_mb" -ge 256 ] && [ "$io_kb" -ge 1024 ]; then
+        echo "Cause: memory pressure; the build is swapping heavily."
+        echo "Fix: free RAM, lower the heap, or build on another machine."
+        return 0
+    fi
+    if [ "$dstate" -gt 0 ]; then
+        echo "Cause: processes are blocked waiting for the disk (uninterruptible I/O); the disk or filesystem may be failing or saturated."
+        echo "Fix: check 'dmesg | tail', disk space ('df -h', 'df -i') and I/O load ('iostat -x 1')."
+        return 0
+    fi
+    if [ "$cpu_pct" -lt 5 ]; then
+        if [ -n "$peers" ]; then
+            echo "Cause: the build is idle, waiting on network connections: ${peers}"
+            echo "Fix: the app fetches data or fonts at build time (for example page generation calling an API). Check that those hosts are reachable from this server, or make the pages not depend on them during build."
+        else
+            echo "Cause: the build is idle with no CPU, disk or network activity; a child process is waiting or deadlocked."
+            echo "Fix: retry the build; if it repeats, inspect the app's build script and the last output above."
+        fi
+        return 0
+    fi
+    if [ "$thr" -gt 0 ]; then
+        echo "Cause: the build is CPU-bound and throttled by its CPU quota. It is slow, not hung."
+        return 1
+    fi
+    echo "Cause: the build is computing (CPU ${cpu_pct}%) without output. It is slow, not hung."
+    return 1
+}
+
+# Watch a build's cgroup; warn on stalls and stop hard stalls.
+# Args: unit heap_mb log warn_minutes stop_minutes
+node_build_watchdog(){
+    local unit="$1" heap_mb="$2" log="$3" warn_min="$4" stop_min="$5"
+    local interval="${SHIELDPRESS_BUILD_WATCH_INTERVAL:-30}" minute="${SHIELDPRESS_BUILD_WATCH_MINUTE_SECONDS:-60}"
+    local cg="/sys/fs/cgroup/system.slice/$unit.service"
+    [ -n "${SHIELDPRESS_BUILD_CGROUP:-}" ] && cg="$SHIELDPRESS_BUILD_CGROUP"
+    local quiet=0 warned=0 prev cur size prev_size=0
+    local cpu0 io0 thr0 cpu1 io1 thr1 cpu_pct io_kb thr diag
+    until [ -d "$cg" ]; do sleep 1; done
+    prev=$(node_build_snapshot "$cg")
+    while sleep "$interval"; do
+        [ -d "$cg" ] || return 0
+        cur=$(node_build_snapshot "$cg")
+        read -r cpu0 io0 thr0 _ _ <<< "$prev"
+        read -r cpu1 io1 thr1 _ _ <<< "$cur"
+        size=$(stat -c %s "$log" 2>/dev/null || echo 0)
+        cpu_pct=$(( (cpu1 - cpu0) / (interval * 10000) ))
+        io_kb=$(( (io1 - io0) / 1024 ))
+        thr=$((thr1 - thr0))
+        if [ "$size" -gt "$prev_size" ] || [ "$io_kb" -ge 256 ]; then
+            [ "$warned" -eq 0 ] || echo "[BUILD] Build is making progress again."
+            quiet=0; warned=0
+        else
+            quiet=$((quiet + interval))
+        fi
+        prev="$cur"; prev_size="$size"
+        if [ "$quiet" -ge $((warn_min * minute)) ] && [ "$warned" -eq 0 ]; then
+            warned=1
+            echo; echo "[BUILD] No output or disk activity for $((quiet / minute)) min. Diagnosing:"
+            node_build_diagnose "$cg" "$heap_mb" "$log" "$cpu_pct" "$io_kb" "$thr" | sed 's/^/[BUILD] /'
+        fi
+        if [ "$stop_min" -gt 0 ] && [ "$quiet" -ge $((stop_min * minute)) ]; then
+            diag=$(node_build_diagnose "$cg" "$heap_mb" "$log" "$cpu_pct" "$io_kb" "$thr")
+            if [ $? -eq 0 ]; then
+                { echo "Build stopped automatically after $((quiet / minute)) min without progress."; echo "$diag"; } > "$log.diag"
+                echo; echo "[BUILD] Stopping the stalled build."
+                systemctl stop "$unit" >/dev/null 2>&1
+                return 0
+            fi
+        fi
+    done
+}
+
+# Explain a finished, failed build from its output.
+node_build_postmortem(){
+    local log="$1" heap_mb="$2" errors
+    echo
+    if [ -s "$log.diag" ]; then
+        sed 's/^/[BUILD] /' "$log.diag"
+        return 0
+    fi
+    if grep -qiE 'heap out of memory|Reached heap limit' "$log" 2>/dev/null; then
+        echo "[BUILD] Cause: the Node.js heap limit (${heap_mb} MB) was reached."
+        echo "[BUILD] Fix: set SHIELDPRESS_BUILD_HEAP_MB higher (for example $((heap_mb * 2))) and retry, or enable experimental.webpackMemoryOptimizations in next.config."
+    elif grep -qiE 'result: oom-kill|oom-kill' "$log" 2>/dev/null; then
+        echo "[BUILD] Cause: the build exceeded its memory cap and was killed by the kernel."
+        echo "[BUILD] Fix: free RAM, enable experimental.webpackMemoryOptimizations, or build externally."
+    elif grep -qiE 'result: timeout' "$log" 2>/dev/null; then
+        echo "[BUILD] Cause: the build exceeded its time limit. Set SHIELDPRESS_BUILD_TIMEOUT (for example 90m) if the build is legitimately slow."
+    else
+        errors=$(grep -iE "Module not found|Failed to compile|Type error|SyntaxError|Cannot find module|ERR!|error TS|Error:" "$log" 2>/dev/null | head -n 5 | cut -c1-200)
+        if [ -n "$errors" ]; then
+            echo "[BUILD] Cause: the application code or dependencies failed to build:"
+            echo "$errors" | sed 's/^/[BUILD]   /'
+            echo "[BUILD] Fix: correct the error above in the app, then deploy again."
+        else
+            echo "[BUILD] The build failed; the cause is not recognised. Review the full output above."
+        fi
+    fi
+}
+
 run_node_build(){
     local user="$1"
     local app_root="$2"
@@ -440,6 +590,18 @@ run_node_build(){
     }
     read -r memory_mb swap_mb heap_mb build_cpus profile_timeout <<< "$profile"
     timeout_value="${SHIELDPRESS_BUILD_TIMEOUT:-$profile_timeout}"
+    if [ -n "${SHIELDPRESS_BUILD_HEAP_MB:-}" ]; then
+        if ! [[ "$SHIELDPRESS_BUILD_HEAP_MB" =~ ^[1-9][0-9]*$ ]] || [ "$SHIELDPRESS_BUILD_HEAP_MB" -gt $((memory_mb * 80 / 100)) ]; then
+            fail "SHIELDPRESS_BUILD_HEAP_MB must be a positive number of MB no larger than 80% of the build memory cap (${memory_mb}M)."
+            return 1
+        fi
+        heap_mb="$SHIELDPRESS_BUILD_HEAP_MB"
+    fi
+    local stall_warn="${SHIELDPRESS_BUILD_STALL_WARN_MINUTES:-5}" stall_stop="${SHIELDPRESS_BUILD_STALL_STOP_MINUTES:-15}"
+    if ! [[ "$stall_warn" =~ ^[1-9][0-9]*$ && "$stall_stop" =~ ^[0-9]+$ ]]; then
+        fail "SHIELDPRESS_BUILD_STALL_WARN_MINUTES must be positive and SHIELDPRESS_BUILD_STALL_STOP_MINUTES a number (0 disables auto-stop)."
+        return 1
+    fi
     if ! [[ "$timeout_value" =~ ^[1-9][0-9]*[smh]$ ]]; then
         fail "SHIELDPRESS_BUILD_TIMEOUT must be a positive duration such as 60m."
         return 1
@@ -476,19 +638,27 @@ run_node_build(){
     # Pipe output through cat: passing a regular log file directly to systemd
     # via --pipe can fail under SELinux. Preserve systemd-run's exit status.
     local -a build_status
+    local build_log watchdog=""
+    build_log=$(mktemp "${TMPDIR:-/tmp}/shieldpress-build.XXXXXX") || return 1
+    node_build_watchdog shieldpress-node-build "$heap_mb" "$build_log" "$stall_warn" "$stall_stop" &
+    watchdog=$!
     systemd-run --unit=shieldpress-node-build --collect --wait --pipe \
         --property="User=$user" --property="WorkingDirectory=$app_root" \
         --property=MemoryHigh=infinity \
         --property="MemoryMax=${memory_mb}M" --property="MemorySwapMax=${swap_mb}M" \
         --property="CPUQuota=$((build_cpus * 100))%" --property="RuntimeMaxSec=$timeout_value" \
         --property=TimeoutStopSec=30s --property=KillMode=control-group \
-        "${service_env[@]}" /usr/bin/flock -n "$build_lock" "${build_cmd[@]}" </dev/null 2>&1 | cat
+        "${service_env[@]}" /usr/bin/flock -n "$build_lock" "${build_cmd[@]}" </dev/null 2>&1 | tee -a "$build_log"
     build_status=("${PIPESTATUS[@]}")
+    kill "$watchdog" 2>/dev/null; wait "$watchdog" 2>/dev/null
     if [ "${build_status[0]}" -ne 0 ]; then
-        warn "Build failed (exit ${build_status[0]}). Check the result above for oom-kill or timeout."
-        warn "For OOM, enable Next.js webpack memory optimizations or build externally; do not stop the database to free RAM."
+        warn "Build failed (exit ${build_status[0]})."
+        node_build_postmortem "$build_log" "$heap_mb"
+        warn "Do not stop the database to free RAM; build externally if the server cannot hold the build."
+        rm -f -- "$build_log" "$build_log.diag"
         return "${build_status[0]}"
     fi
+    rm -f -- "$build_log" "$build_log.diag"
     return "${build_status[1]}"
 }
 
