@@ -1,3 +1,12 @@
+## v1.3.144 — 2026-11-10 — Explicit Node.js LTS major upgrades
+
+- Add Node.js Manager > Check / Update Runtime > 4) Upgrade Node.js major version, with Node.js 24 and 26 LTS targets. Query the latest package in the selected NodeSource branch and require explicit confirmation of the installed and target versions before changing the shared runtime.
+- Keep the new action accessible when the configured repository check fails. Preserve the default Node.js 22 installer and the separate same-branch updater; block downgrades, repeated cross-major upgrades and active executables that do not match the RPM-managed runtime.
+- Query through a temporary NodeSource repository and leave persistent configuration unchanged on cancellation or query/transaction failure. Require package signatures and TLS validation, disallow package erasure, verify Node.js/npm after installation, refresh runtime package locks and back up the old NodeSource configuration before saving the selected branch.
+- Report partial failures without automatically downgrading or restarting PM2, applications, PHP, Nginx or databases. Administrators can then review app engine requirements, reinstall native dependencies, build and restart each Node.js application separately.
+- No automatic runtime migration is required: existing installations receive the explicit menu action through the normal source update. A major-version change only runs after administrator selection and confirmation.
+- Add mocked transaction/failure/menu tests and a real DNF integration test using isolated RPM fixtures in a disposable AlmaLinux 9 container. Verify 22 -> 24 -> 26, matching runtime dependencies, repository backup, preserved signature policy, refreshed version locks and blocked subsequent/downgrade transactions. Run existing runtime and same-branch regressions, repository smoke/syntax checks and `git diff --check`.
+
 ## v1.3.143 — 2026-11-10 — GitHub deployment and pnpm workspace builds
 
 - Add Admin Menu > 28 GitHub and the `shieldpress github` shortcut, with domain selection, connection setup, public-key instructions and subsequent source updates.

@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.143`
+**Current version:** `1.3.144`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -25,6 +25,22 @@ for updates such as 26.5.0 to a newer 26.x release from the configured repositor
 It confirms the target, refreshes package locks, and verifies the installed version.
 Restart affected applications individually afterward to load the new runtime.
 Option 2 remains the Node.js 22 LTS installer and blocks automatic downgrades.
+Use **4) Upgrade Node.js major version (24 / 26 LTS)** to move from 22 to 24/26,
+or from 24 to 26. Choose the target LTS branch, review the latest available
+NodeSource package and type `YES` to proceed. This action currently supports
+DNF/RPM servers with a matching RPM-managed Node.js executable. Cancellation or
+query failure leaves runtime and repository settings unchanged. Package
+signatures remain required; the upgrade does not allow package erasure. After
+successful verification, ShieldPress backs up the previous NodeSource repository,
+saves the selected branch for future updates and restores package locks. It
+reports partial failures without attempting an automatic downgrade.
+
+The runtime is shared by all Node.js applications. Review each app's engine
+requirements, reinstall native dependencies if needed, then build and restart
+that app through its deployment menu. This action does not restart PM2, Node.js
+applications, PHP, Nginx or database services. Existing installations receive the
+new explicit menu action through the normal source update; it does not switch
+runtime branches automatically.
 
 Nginx installation and optimization cap worker allocation at 16 workers and
 16,384 connections per worker. Upgrades automatically reduce excessive limits
