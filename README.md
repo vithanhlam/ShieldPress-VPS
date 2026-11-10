@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.142`
+**Current version:** `1.3.143`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -984,3 +984,55 @@ Containers without kernel-core skip it. No automatic reboot is performed:
 verify the default boot kernel, schedule a reboot, and check `uname -r` against
 the vendor's fixed kernel version. Transaction success alone is not proof that
 a specific CVE has been fixed in the running kernel.
+# GitHub deployment
+
+Open **Admin Menu > 28 GitHub**, or run `shieldpress github` as root.
+
+1. Choose **Configure SSH key / Connect**, then select an existing domain.
+   Deployment targets the domain's `public_html` application directory (including
+   Laravel projects whose HTTP document root is `public_html/public`). The domain
+   user must own this directory. Install `git`, OpenSSH client tools, and
+   `util-linux` if the dependency check reports missing tools.
+2. Enter `https://github.com/OWNER/REPO` or `git@github.com:OWNER/REPO.git`.
+   ShieldPress creates a separate Ed25519 key for this domain outside the web
+   directory, under `/var/lib/shieldpress-github/<path-hash>/key`.
+3. Open the repository settings link printed by the command. Under **Settings >
+   Deploy keys > Add deploy key**, paste the displayed public key and leave
+   **Allow write access** unchecked. Never upload the private key. See
+   [GitHub's deploy key guide](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys).
+4. Confirm the key was added. Compare the SSH host fingerprint with the official
+   GitHub fingerprint page linked by the prompt before accepting the host.
+   ShieldPress then verifies repository read access and clones or updates it.
+5. For later updates, choose **Pull domain updates** and select the domain.
+   **Show public key / Guide** displays the same key again if setup was interrupted.
+
+A new clone requires an empty `public_html`. Existing placeholder/application
+files are never removed automatically. Back up and prepare the directory
+manually, or use an existing clean repository with the same GitHub origin and an
+upstream branch on `origin`. Linked worktrees, submodules as deployment roots,
+SSH aliases, detached HEAD, local changes, and untracked files are refused.
+Updates require fast-forward history and stop on file deletion/rename, file type
+changes, or incoming files colliding with ignored local data. There is no
+automatic stash, reset, clean, build, migration, or service restart. This source
+update workflow applies to WordPress, Laravel, Node.js, and PHP projects; use
+their application manager for subsequent build/runtime operations.
+
+Per-repository configuration saves SSH transport, disables hooks and automatic
+submodule recursion, requires fast-forward pull, and disables ordinary push via
+`push.default=nothing` and an unusable origin push URL. The read-only GitHub deploy
+key is the server-side write restriction; do not enable write access on GitHub.
+These local Git settings are not a security boundary against the domain user
+changing their own repository configuration.
+
+The completion message also prints a direct command, for example:
+
+```bash
+sudo -u example_com git -C /home/domains/example_com/public_html pull --ff-only
+```
+
+When already logged in as the domain user, `cd` to that directory and run
+`git pull --ff-only`. Direct pull only enforces fast-forward behavior; the menu
+provides the additional deletion and collision checks. Repository metadata stays
+in `.git`; keep the existing Nginx hidden-file restrictions enabled. Keys have no
+passphrase, use domain ownership and mode 600, and are isolated per domain. When
+retiring a domain, revoke its deploy key in GitHub repository settings as well.

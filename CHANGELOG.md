@@ -1,3 +1,13 @@
+## v1.3.143 — 2026-11-10 — Read-only GitHub deployment by domain
+
+- Add Admin Menu > 28 GitHub and the `shieldpress github` shortcut, with domain selection, connection setup, public-key instructions and subsequent source updates.
+- Generate one Ed25519 deploy key per application directory outside the web root, owned by the non-root domain account with private-key mode 600. Guide administrators to add a repository-scoped GitHub deploy key without write access and verify the SSH host fingerprint before connecting.
+- Verify repository read access before cloning or updating. Persist per-repository SSH transport, fast-forward-only pull, disabled hooks/submodule recursion and disabled ordinary push. GitHub read-only deploy-key permissions remain the server-side write restriction.
+- Refuse nonempty directories without a repository, mismatched origins, local/untracked changes, unfinished operations, detached HEAD, diverged history, incoming deletions/file type changes and additions colliding with local data. Never automatically reset, clean, build, migrate or restart applications.
+- Exit the GitHub menu cleanly when terminal input closes. No migration is required: the new menu is delivered with the source update and connections are configured explicitly per domain.
+- Add real-Git regression tests. Verify menu rendering, SSH key creation/permissions, repeated key display, preservation of existing data and deployment guards on the local AlmaLinux 9.8 test VPS. Live GitHub SSH clone/pull remains unverified until its test deploy key is registered.
+- Run the GitHub regression suite, repository smoke tests, shell syntax checks, release-signature tests and `git diff --check` before publishing.
+
 ## v1.3.142 — 2026-11-04 — Bundler choice, silent-build stop and tsconfig restore
 
 - Choose the Next.js bundler automatically: Turbopack on hosts with 8 GB RAM or more, webpack on smaller hosts. Override with `SHIELDPRESS_NEXT_BUNDLER=webpack|turbopack`; a flag already in the `build` script is always respected. A real deployment hung for over 30 minutes in webpack on a 192-core host while Turbopack built the same application in about 80 seconds.

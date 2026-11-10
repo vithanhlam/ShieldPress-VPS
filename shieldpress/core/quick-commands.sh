@@ -13,6 +13,7 @@ SP_QUICK_COMMANDS=(
     "shieldpress domain (4)|Add Domain|32"
     "shieldpress ssl (5)|Install SSL|34"
     "shieldpress backup (6)|Backup|36"
+    "shieldpress github|GitHub read-only deployment|36"
     "shieldpress autoupdate|Auto-Update (on/off, schedule)|33"
 )
 

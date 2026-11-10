@@ -30,6 +30,7 @@ case "$1" in
     domain|--domain)   SHIELDPRESS_ACTION="domain" ;;
     ssl|--ssl)         SHIELDPRESS_ACTION="ssl" ;;
     backup|--backup)   SHIELDPRESS_ACTION="backup" ;;
+    github|--github)   SHIELDPRESS_ACTION="github" ;;
     help|--help|-h)    SHIELDPRESS_ACTION="help" ;;
     version|--version|-v) SHIELDPRESS_ACTION="version" ;;
     "") ;; # no args - open dashboard
@@ -527,6 +528,7 @@ if [ -n "$SHIELDPRESS_ACTION" ]; then
         domain) bash "$MODULE_DIR/domain/add-domain.sh"; exit 0 ;;
         ssl)    bash "$MODULE_DIR/ssl/install-ssl.sh"; exit 0 ;;
         backup) bash "$MODULE_DIR/backup/backup-menu.sh"; exit 0 ;;
+        github) bash "$MODULE_DIR/github/github-menu.sh"; exit $? ;;
     esac
 fi
 
@@ -590,6 +592,7 @@ printf "  "; menu_button 1 "$STACK_LABEL" "$STACK_COLOR"; menu_button 2 "Core Se
 printf "  "; menu_button 3 "Nginx Manager" "$GREEN"; menu_button 4 "PHP Manager" "$GREEN"; echo ""
 hr
 section_title "Applications"
+printf "  "; menu_button 28 "GitHub" "$CYAN"; echo ""
 printf "  "; menu_button 5 "Domain Manager" "$GREEN"; menu_button 6 "SSL Manager" "$BLUE"; echo ""
 printf "  "; menu_button 7 "WordPress Manager" "$MAGENTA"; menu_button 8 "Laravel Manager" "$MAGENTA"; echo ""
 printf "  "; menu_button 9 "Node.js Manager" "$MAGENTA"; menu_button 10 "Database Manager" "$BLUE"; echo ""
@@ -647,6 +650,7 @@ fi
 25) bash "$MODULE_DIR/shieldpress/about.sh" ;;
 26) bash "$MODULE_DIR/patches/patches-menu.sh" ;;
 27) check_shieldpress_update force; run_shieldpress_update ;;
+28) bash "$MODULE_DIR/github/github-menu.sh" ;;
 0) exit 0 ;;
 esac
 
