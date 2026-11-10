@@ -19,7 +19,7 @@ CACHE="/var/cache/nginx/$DIR"
 BASE=/opt/shieldpress
 SVC="php${PHP}-php-fpm"
 cleanup(){
-    rm -f "$DOCROOT/index.php" "$DOCROOT/.fail" "$BASE/bin/php-auto-reload"
+    rm -f "$DOCROOT/index.php" "$DOCROOT/.fail" "$DOCROOT/wp-content/cache/sp-recovery-test.json" "$BASE/bin/php-auto-reload"
     sed -i '/#sp-test/d' /etc/hosts
     crontab -l 2>/dev/null | grep -v SHIELDPRESS_PHP_AUTO_RELOAD | crontab - 2>/dev/null
     systemctl start "$SVC" shieldpress-wp-recovery 2>/dev/null
@@ -33,6 +33,7 @@ echo "127.0.0.1 $DOM #sp-test" >> /etc/hosts
 systemctl stop shieldpress-wp-recovery 2>/dev/null
 cat > "$DOCROOT/index.php" <<'PHP'
 <?php
+if (file_exists(__DIR__.'/wp-content/cache/sp-recovery-test.json')) { http_response_code(500); echo 'Temporary cache failure'; exit; }
 if (file_exists(__DIR__.'/.fail')) { echo '<html><body><p>There has been a critical error on this website.</p></body></html>'; }
 else { echo '<html><body><h1>Site OK</h1></body></html>'; }
 PHP
@@ -46,6 +47,13 @@ fetch | grep -q 'critical error' && pass "stale error persists without the fix" 
 bash "$BASE/modules/wordpress/wp-auto-recovery.sh" --scan | grep -q "stale error in cache" && pass "scan detects stale error cache" || bad "scan missed stale cache"
 out=$(fetch); echo "$out" | grep -q 'Site OK' && echo "$out" | grep -qi 'X-Cache: MISS' && pass "visitor gets a fresh page after purge" || bad "page still stale"
 bash "$BASE/modules/wordpress/wp-auto-recovery.sh" --scan | grep -q "stale error in cache" && bad "healthy cached page flagged" || pass "healthy cached page left alone"
+
+# A real HTTP 500 caused by a stale application cache is cleared by recovery.
+mkdir -p "$DOCROOT/wp-content/cache"
+echo stale > "$DOCROOT/wp-content/cache/sp-recovery-test.json"
+[ "$(curl -s -o /dev/null -w '%{http_code}' "http://$DOM/?test500=1")" = 500 ] && pass "500 reproduced" || bad "500 not reproduced"
+bash "$BASE/modules/wordpress/wp-auto-recovery.sh" --scan > /tmp/sp-500-recovery.log
+[ ! -e "$DOCROOT/wp-content/cache/sp-recovery-test.json" ] && [ "$(curl -s -o /dev/null -w '%{http_code}' "http://$DOM/?test500=2")" = 200 ] && pass "500 application cache failure recovered" || bad "500 not recovered (check cooldown and recovery log)"
 
 # 2. PHP-FPM down (502), auto-reload restarts it and purges cache
 BIN=$BASE/bin; SCRIPT_FILE=$BIN/php-auto-reload

@@ -19,9 +19,9 @@ def consume(domains, helper):
             if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > 128:
                 continue
             content = os.read(signal, 129).decode('ascii').strip()
-            os.unlink('.purge-cache', dir_fd=fd)
             if content == home.name:
                 subprocess.run([str(helper), home.name], check=True)
+                os.unlink('.purge-cache', dir_fd=fd)
         except (OSError, ValueError, subprocess.CalledProcessError):
             continue
         finally:

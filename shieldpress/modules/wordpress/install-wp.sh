@@ -364,7 +364,6 @@ MU_TEMPLATE="/opt/shieldpress/templates/wp-mu-plugins/shieldpress-cache-purge.ph
 MU_DIR="$ROOT/wp-content/mu-plugins"
 PURGE_SCRIPT="/opt/shieldpress/bin/purge-fastcgi-cache"
 SIGNAL_SCRIPT="/opt/shieldpress/bin/process-purge-signals"
-SUDOERS_FILE="/etc/sudoers.d/shieldpress-cache-purge"
 CRON_FILE="/etc/cron.d/shieldpress-cache-purge"
 
 if [ -f "$MU_TEMPLATE" ]; then
@@ -378,12 +377,6 @@ if [ -f "$MU_TEMPLATE" ]; then
         [ -f "$_s" ] && chmod 755 "$_s" && chown root:root "$_s"
     done
 
-    # Sudoers (for exec method)
-    if [ ! -f "$SUDOERS_FILE" ]; then
-        echo "ALL ALL=(root) NOPASSWD: $PURGE_SCRIPT" > "$SUDOERS_FILE"
-        chmod 440 "$SUDOERS_FILE"
-    fi
-
     # Cron to process purge signals (PHP writes to domain tmp dir)
     if [ ! -f "$CRON_FILE" ]; then
         cat > "$CRON_FILE" <<CRONEOF
@@ -393,6 +386,7 @@ CRONEOF
         chmod 644 "$CRON_FILE"
     fi
 
+    bash /opt/shieldpress/modules/cache/auto-purge.sh --repair || log "WARNING: Cache purge worker repair remains pending."
     log "Auto Purge Cache mu-plugin deployed."
 else
     log "WARNING: Auto Purge template not found, skipping."

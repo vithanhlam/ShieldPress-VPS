@@ -10,18 +10,22 @@ SUDOERS_FILE="/etc/sudoers.d/shieldpress-cache-purge"
 CRON_FILE="/etc/cron.d/shieldpress-cache-purge"
 
 setup_purge_system() {
-    # 1. Sudoers (for exec method, if exec is enabled)
-    if [ ! -f "$SUDOERS_FILE" ]; then
-        echo "ALL ALL=(root) NOPASSWD: $PURGE_SCRIPT" > "$SUDOERS_FILE"
-        chmod 440 "$SUDOERS_FILE"
-        echo "[OK] Sudoers rule created"
+    [ -f "$PURGE_SCRIPT" ] && [ -f "$SIGNAL_SCRIPT" ] &&
+        [ -f /opt/shieldpress/core/purge-signals.py ] && [ -x /usr/bin/python3 ] || {
+        echo "[FAIL] Cache purge worker files are missing"
+        return 1
+    }
+    # Retire the legacy broad web-to-root rule. PHP now only writes signals.
+    if [ -f "$SUDOERS_FILE" ] && grep -qxF "ALL ALL=(root) NOPASSWD: $PURGE_SCRIPT" "$SUDOERS_FILE"; then
+        rm -f "$SUDOERS_FILE" || return 1
+        echo "[OK] Legacy cache purge sudo access removed"
     fi
 
     # 2. Purge scripts permissions
     for script in "$PURGE_SCRIPT" "$SIGNAL_SCRIPT"; do
         if [ -f "$script" ]; then
-            chmod 755 "$script"
-            chown root:root "$script"
+            chmod 755 "$script" || return 1
+            chown root:root "$script" || return 1
         fi
     done
 
@@ -31,7 +35,9 @@ setup_purge_system() {
 # ShieldPress: process cache purge signals from PHP
 * * * * * root $SIGNAL_SCRIPT >/dev/null 2>&1
 EOF
-    chmod 644 "$CRON_FILE"
+    [ -s "$CRON_FILE" ] || return 1
+    chmod 644 "$CRON_FILE" || return 1
+    systemctl enable --now crond || return 1
     echo "[OK] Purge signal cron installed"
 }
 
@@ -51,12 +57,12 @@ deploy_mu_plugin() {
         return 1
     fi
 
-    setup_purge_system
+    setup_purge_system || return 1
 
-    mkdir -p "$mu_dir"
-    cp "$TEMPLATE" "$mu_dir/$PLUGIN_NAME"
-    chown "$system_user:$system_user" "$mu_dir/$PLUGIN_NAME"
-    chmod 644 "$mu_dir/$PLUGIN_NAME"
+    mkdir -p "$mu_dir" &&
+        cp "$TEMPLATE" "$mu_dir/$PLUGIN_NAME" &&
+        chown "$system_user:$system_user" "$mu_dir/$PLUGIN_NAME" &&
+        chmod 644 "$mu_dir/$PLUGIN_NAME" || return 1
 
     echo "[OK] Auto Purge deployed: $mu_dir/$PLUGIN_NAME"
     return 0
@@ -90,7 +96,7 @@ check_status() {
 deploy_all() {
     local env domain domain_path system_user count=0
 
-    setup_purge_system
+    setup_purge_system || return 1
 
     for env in /home/domains/*/config/domain.env; do
         [ -f "$env" ] || continue
@@ -108,6 +114,21 @@ deploy_all() {
     echo ""
     echo "[OK] Deployed to $count domain(s)"
 }
+
+# Non-interactive repair for updates and fresh installs.
+if [ "${1:-}" = "--repair" ]; then
+    setup_purge_system || exit 1
+    failed=0
+    for env in /home/domains/*/config/domain.env; do
+        [ -f "$env" ] || continue
+        domain_path=$(dirname "$(dirname "$env")")
+        mu_file="$domain_path/public_html/wp-content/mu-plugins/$PLUGIN_NAME"
+        [ -f "$mu_file" ] || continue
+        system_user=$(sed -n 's/^SYSTEM_USER=//p' "$env")
+        deploy_mu_plugin "$domain_path" "$system_user" || failed=1
+    done
+    exit "$failed"
+fi
 
 # ============================================================
 # MAIN MENU

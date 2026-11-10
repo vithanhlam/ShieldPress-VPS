@@ -1,3 +1,13 @@
+## v1.3.146 — 2026-11-10 — Reliable WordPress cache purge without PHP sudo access
+
+- Report `queued` after WordPress writes a purge request instead of claiming the cache has already been cleared. Process requests through the root-owned cron worker, normally within one minute, while keeping PHP exec disabled and open_basedir restrictions intact.
+- Route post updates, unpublishing and trash actions through the same domain-scoped worker instead of attempting to unlink Nginx cache directly from PHP. Derive the cache identity from the managed site directory so URL aliases do not target a different cache directory.
+- Remove the PHP exec/sudo purge path and retire ShieldPress's legacy broad cache-purge sudoers rule. Keep bounded, non-symlink signal validation and reject requests targeting another domain. WordPress users cannot modify the root worker or invoke the purge helper through sudo.
+- Preserve failed purge signals for retry and propagate cache deletion failures instead of returning success. Validate worker prerequisites and report installation failures.
+- Add automatic migration `SP_20261110_WP_PURGE_WORKER` to refresh installed MU plugins, restore the purge cron and enable crond. Apply the same repair to fresh WordPress installations; repeated migrations do not duplicate patch registry entries.
+- Verify real Nginx HIT-to-MISS invalidation through PHP-FPM and cron on the local AlmaLinux test VPS with SELinux Enforcing. Reproduce and recover HTTP 500 caused by stale application cache, HTTP 502 caused by stopped PHP-FPM, and stale cached WordPress error pages. Verify legacy migrations twice and preserve disabled PHP auto-reload settings.
+- Add purge fallback, retry, migration and VPS regression tests. Run the 26 security-boundary tests, repository smoke and shell syntax checks, PHP lint, release-signature tests and `git diff --check`. Arbitrary application/plugin failures still require diagnosis; these checks are not a complete server malware audit.
+
 ## v1.3.145 — 2026-11-10 — Keep GitHub in main menu number order
 
 - Move 28) GitHub to the Settings row beside 27) Update ShieldPress VPS. The Applications section now retains its existing 5–10 order.

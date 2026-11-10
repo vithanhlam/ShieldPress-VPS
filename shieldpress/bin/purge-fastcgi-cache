@@ -1,6 +1,6 @@
 #!/bin/bash
 # ShieldPress FastCGI Cache Purge Helper
-# Called via sudo from PHP mu-plugin.
+# Called by the root-owned signal consumer; never evaluates PHP input.
 # Only accepts a sanitized domain directory name.
 
 CACHE_BASE="/var/cache/nginx"
@@ -31,5 +31,4 @@ if [ ! -d "$CACHE_DIR" ]; then
     exit 0
 fi
 
-find "$CACHE_DIR" -type f -delete 2>/dev/null
-exit 0
+find "$CACHE_DIR" -type f -delete

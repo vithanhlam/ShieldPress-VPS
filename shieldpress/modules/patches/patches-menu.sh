@@ -752,6 +752,17 @@ EOF
     ok "WordPress recovery service output repaired"
 }
 
+patch_wp_purge_worker(){
+    local ID="SP_20261110_WP_PURGE_WORKER"
+    patch_applied "$ID" && return 0
+    if ! bash "$BASE_DIR/modules/cache/auto-purge.sh" --repair; then
+        fail "WordPress purge worker repair remains pending; retry the update"
+        return 1
+    fi
+    patch_mark_done "$ID"
+    ok "WordPress purge worker and installed plugins repaired"
+}
+
 patch_wp_cache_recovery(){
     local ID="SP_20261030_WP_CACHE_RECOVERY"
     local unit="shieldpress-wp-recovery.service"
@@ -1038,6 +1049,7 @@ apply_all_patches(){
     patch_ssl_auto_renew || ssl_status=$?
     patch_wp_recovery_output || ssl_status=$?
     patch_wp_cache_recovery || ssl_status=$?
+    patch_wp_purge_worker || ssl_status=$?
 
     # Add new patch calls here ↑
 
