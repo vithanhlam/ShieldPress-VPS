@@ -1,12 +1,15 @@
-## v1.3.143 — 2026-11-10 — Read-only GitHub deployment by domain
+## v1.3.143 — 2026-11-10 — GitHub deployment and pnpm workspace builds
 
 - Add Admin Menu > 28 GitHub and the `shieldpress github` shortcut, with domain selection, connection setup, public-key instructions and subsequent source updates.
 - Generate one Ed25519 deploy key per application directory outside the web root, owned by the non-root domain account with private-key mode 600. Guide administrators to add a repository-scoped GitHub deploy key without write access and verify the SSH host fingerprint before connecting.
 - Verify repository read access before cloning or updating. Persist per-repository SSH transport, fast-forward-only pull, disabled hooks/submodule recursion and disabled ordinary push. GitHub read-only deploy-key permissions remain the server-side write restriction.
 - Refuse nonempty directories without a repository, mismatched origins, local/untracked changes, unfinished operations, detached HEAD, diverged history, incoming deletions/file type changes and additions colliding with local data. Never automatically reset, clean, build, migrate or restart applications.
 - Exit the GitHub menu cleanly when terminal input closes. No migration is required: the new menu is delivered with the source update and connections are configured explicitly per domain.
+- Detect npm/pnpm from project metadata, lockfiles, workspace files and scripts before deploying. Refuse incompatible `engines.node` ranges before changing dependencies or the running app; never automatically switch the shared Node.js major version.
+- Prepare an exact pinned pnpm CLI under the domain user's home and include it in dependency/build/runtime paths. Install all workspace development dependencies with pnpm, preserve existing lockfiles with frozen installs and use pnpm for builds and advisory audits. Repeated deploys reuse the matching CLI; existing installations receive this repair automatically on their next deployment. Projects without a pnpm pin must provide an exact `packageManager` version if pnpm is not already available.
+- Explain missing pnpm and Google Fonts build errors, deduplicate application error messages and retain the last failed build log outside the web directory.
 - Add real-Git regression tests. Verify menu rendering, SSH key creation/permissions, repeated key display, preservation of existing data and deployment guards on the local AlmaLinux 9.8 test VPS. Live GitHub SSH clone/pull remains unverified until its test deploy key is registered.
-- Run the GitHub regression suite, repository smoke tests, shell syntax checks, release-signature tests and `git diff --check` before publishing.
+- Run the GitHub regression suite, Node package-manager/build-limit tests, repository smoke tests, shell syntax checks, release-signature tests and `git diff --check` before publishing. Verify a real bounded pnpm workspace build as the non-root domain account on the local test VPS.
 
 ## v1.3.142 — 2026-11-04 — Bundler choice, silent-build stop and tsconfig restore
 

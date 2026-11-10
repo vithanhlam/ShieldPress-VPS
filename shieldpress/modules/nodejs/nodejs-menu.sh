@@ -7,6 +7,7 @@ DOMAINS_ROOT="/home/domains"
 source "$DOMAIN_MODULE/helpers.sh"
 source "$BASE_DIR/core/ui.sh"
 source "$BASE_DIR/modules/helpers/task-progress.sh"
+source "$BASE_DIR/modules/helpers/node-packages.sh"
 
 GREEN="\e[32m"
 RED="\e[31m"
@@ -161,7 +162,7 @@ run_pm2(){
     # root-owned cache left by an older root PM2/npm deployment and fail with
     # EACCES before it can even write its log.
     runuser -u "$user" -- env HOME="$home" USER="$user" LOGNAME="$user" PM2_HOME="$pm2_home" \
-        NPM_CONFIG_CACHE="$npm_cache" "$@"
+        NPM_CONFIG_CACHE="$npm_cache" PATH="$home/.shieldpress-tools/bin:$PATH" "$@"
 }
 
 # Print one PM2 process as fields suitable for the domain overview:
@@ -383,6 +384,16 @@ next_deploy_http_ready(){
 # Advisory CVE scan of production dependencies. Never blocks a deploy.
 audit_node_dependencies(){
     local sysuser="$1" out rc
+    if [ "${NODE_PACKAGE_MANAGER:-npm}" = pnpm ]; then
+        out=$(run_pm2 "$sysuser" pnpm audit --prod --audit-level=high 2>&1); rc=$?
+        if [ "$rc" -eq 0 ]; then
+            ok "pnpm audit: no high/critical vulnerabilities in production dependencies"
+        else
+            warn "pnpm audit reported vulnerabilities or could not complete; review its output. Deploy continues."
+            echo "$out" | tail -n 25
+        fi
+        return 0
+    fi
     out=$(run_pm2 "$sysuser" npm audit --omit=dev --audit-level=high 2>&1); rc=$?
     if [ "$rc" -eq 0 ]; then
         ok "npm audit: no high/critical vulnerabilities in production dependencies"
@@ -548,8 +559,14 @@ node_build_postmortem(){
         echo "[BUILD] Fix: free RAM, enable experimental.webpackMemoryOptimizations, or build externally."
     elif grep -qiE 'result: timeout' "$log" 2>/dev/null; then
         echo "[BUILD] Cause: the build exceeded its time limit. Set SHIELDPRESS_BUILD_TIMEOUT (for example 90m) if the build is legitimately slow."
+    elif grep -qiE 'pnpm: (command not found|not found)|pnpm: No such file' "$log" 2>/dev/null; then
+        echo "[BUILD] Cause: pnpm is missing from the build environment."
+        echo "[BUILD] Fix: pin packageManager to pnpm@x.y.z and retry deployment so ShieldPress prepares that version."
+    elif grep -qiE "font/google|fonts\.googleapis|fonts\.gstatic|Failed to fetch .*font" "$log" 2>/dev/null; then
+        echo "[BUILD] Cause: next/font/google could not load Google Fonts during the build."
+        echo "[BUILD] Fix: check the server can reach fonts.googleapis.com and fonts.gstatic.com (for example: curl -sI https://fonts.googleapis.com), then retry; or switch the app to next/font/local so builds do not need the network."
     else
-        errors=$(grep -iE "Module not found|Failed to compile|Type error|SyntaxError|Cannot find module|ERR!|error TS|Error:" "$log" 2>/dev/null | head -n 5 | cut -c1-200)
+        errors=$(grep -iE "Module not found|Failed to compile|Type error|SyntaxError|Cannot find module|ERR!|error TS|Error:" "$log" 2>/dev/null | awk '!seen[$0]++' | head -n 5 | cut -c1-200)
         if [ -n "$errors" ]; then
             echo "[BUILD] Cause: the application code or dependencies failed to build:"
             echo "$errors" | sed 's/^/[BUILD]   /'
@@ -617,6 +634,7 @@ run_node_build(){
     local home="/home/domains/$user"
     local npm_cache="$home/.npm"
     local -a build_env=(
+        "PATH=$home/.shieldpress-tools/bin:$PATH"
         "HOME=$home"
         "USER=$user"
         "LOGNAME=$user"
@@ -625,6 +643,15 @@ run_node_build(){
         "UV_THREADPOOL_SIZE=1"
         "MALLOC_ARENA_MAX=2"
     )
+    if [ "${NODE_PACKAGE_MANAGER:-npm}" = pnpm ]; then
+        if [ -x "$home/.shieldpress-tools/bin/pnpm" ]; then
+            build_cmd=("$home/.shieldpress-tools/bin/pnpm" run build)
+        else
+            local pnpm_bin
+            pnpm_bin=$(command -v pnpm) || { fail 'pnpm is missing from the build environment.'; return 1; }
+            build_cmd=("$pnpm_bin" run build)
+        fi
+    fi
     [ -n "$dist_dir" ] && build_env+=("NEXT_DIST_DIR=$dist_dir")
 
     # A V8 heap limit alone does not bound native allocations or child workers.
@@ -647,7 +674,11 @@ run_node_build(){
     local bundler_flag
     bundler_flag=$(node_next_bundler "$app_root/package.json" "$total_mb")
     if [ -n "$bundler_flag" ]; then
-        build_cmd+=(-- "$bundler_flag")
+        if [ "${NODE_PACKAGE_MANAGER:-npm}" = pnpm ]; then
+            build_cmd+=("$bundler_flag")
+        else
+            build_cmd+=(-- "$bundler_flag")
+        fi
         echo "Next.js bundler: ${bundler_flag#--} (set SHIELDPRESS_NEXT_BUNDLER=webpack|turbopack to override)."
     fi
     local stall_silent="${SHIELDPRESS_BUILD_SILENT_STOP_MINUTES:-20}"
@@ -732,6 +763,11 @@ run_node_build(){
         warn "Build failed (exit ${build_status[0]})."
         node_build_postmortem "$build_log" "$heap_mb"
         warn "Do not stop the database to free RAM; build externally if the server cannot hold the build."
+        local saved_log="${LOG_DIR:-/var/shieldpress/logs}/node-build-last.log"
+        mkdir -p "$(dirname "$saved_log")" 2>/dev/null
+        if install -m 600 "$build_log" "$saved_log" 2>/dev/null; then
+            warn "Full build output saved to $saved_log"
+        fi
         rm -f -- "$build_log" "$build_log.diag"
         return "${build_status[0]}"
     fi
@@ -1239,7 +1275,6 @@ deploy_node_app(){
 
 deploy_node_app_locked(){
     select_node_domain || return
-    ensure_pm2 || return
     cd "$DOMAIN_PATH/public_html" || return
 
     if [ ! -f package.json ]; then
@@ -1247,8 +1282,16 @@ deploy_node_app_locked(){
         return
     fi
 
+    node_project_preflight "$DOMAIN_PATH/public_html" || return 1
+    ensure_pm2 || return
+
     select_node_deploy_mode || return
     confirm_action "This will deploy $DOMAIN." || return
+
+    local sysuser
+    sysuser=$(grep "^SYSTEM_USER=" "$ENV_FILE" | cut -d= -f2)
+    sysuser="${sysuser:-$CLEAN_DOMAIN}"
+    ensure_node_package_manager "$sysuser" || return 1
 
     # A root-owned legacy PM2 app is invisible to run_pm2 and keeps the
     # configured port occupied. Migrate it before touching build artifacts so
@@ -1265,9 +1308,6 @@ deploy_node_app_locked(){
 
     # Repair ownership before npm can create node_modules or build output.
     # PM2 is started only after the final ownership pass below.
-    local sysuser
-    sysuser=$(grep "^SYSTEM_USER=" "$ENV_FILE" | cut -d= -f2)
-    sysuser="${sysuser:-$CLEAN_DOMAIN}"
     local pm2_name="$CLEAN_DOMAIN"
     chown root:root "$DOMAIN_PATH"
     chmod 755 "$DOMAIN_PATH"
@@ -1282,12 +1322,8 @@ deploy_node_app_locked(){
 
     if [ "$NODE_DEPLOY_MODE" = "2" ] || [ "$NODE_DEPLOY_MODE" = "3" ]; then
         echo "Step $step: Installing dependencies..."
-        run_with_progress "Prepare dependencies" "$DOMAIN_PATH/tmp/.node-prepare-time" prepare_node_dependency_install "$sysuser" "$DOMAIN_PATH"
-        if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
-            run_with_progress "Install dependencies (npm ci)" "$DOMAIN_PATH/tmp/.node-ci-time" run_pm2 "$sysuser" npm ci --include=dev || { fail "npm ci failed"; return 1; }
-        else
-            run_with_progress "Install dependencies (npm install)" "$DOMAIN_PATH/tmp/.node-install-time" run_pm2 "$sysuser" npm install --include=dev || { fail "npm install failed"; return 1; }
-        fi
+        run_with_progress "Prepare dependencies" "$DOMAIN_PATH/tmp/.node-prepare-time" prepare_node_dependency_install "$sysuser" "$DOMAIN_PATH" || return 1
+        install_node_project_dependencies "$sysuser" || { fail "$NODE_PACKAGE_MANAGER dependency installation failed"; return 1; }
         ok "Dependencies installed"
         audit_node_dependencies "$sysuser"
         ((step++))

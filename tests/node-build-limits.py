@@ -72,7 +72,9 @@ class BuildDiagnosticsTests(unittest.TestCase):
         cases = [('FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory', 'heap limit'),
                  ('Finished with result: oom-kill', 'memory cap'),
                  ('Finished with result: timeout', 'time limit'),
+                 ('sh: line 1: pnpm: command not found', 'pnpm is missing'),
                  ("Module not found: Can't resolve './missing'", 'application code'),
+                 ('Error: Module not found: Can\'t resolve \'@vercel/turbopack-next/internal/font/google/font\'', 'Google Fonts'),
                  ('something odd', 'not recognised')]
         for text, expected in cases:
             with self.subTest(expected=expected), tempfile.TemporaryDirectory() as d:
@@ -218,6 +220,27 @@ class BundlerAndTsconfigTests(unittest.TestCase):
 
 
 class BuildLimitsTests(unittest.TestCase):
+    def test_pnpm_build_transport_and_flag_passing(self):
+        function = SOURCE.split('run_node_build(){', 1)[1].split('\ncleanup_stale_next_lock(){', 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'package.json').write_text('{"scripts":{"build":"next build"},"dependencies":{"next":"16.3.5"}}')
+            script = PROFILE + '\n' + HELPERS + '''
+NODE_PACKAGE_MANAGER=pnpm
+pnpm(){ :; }
+node_build_unit_prepare(){ return 0; }
+fail(){ echo "$*"; }; warn(){ echo "$*"; }; touch(){ :; }; chown(){ :; }
+systemd-run(){ printf '%s\\n' "$@"; return 42; }
+awk(){ case "$1" in *MemTotal*) echo 4096;; *SwapFree*) echo 2048;; esac; }
+nproc(){ echo 4; }
+'''
+            script += 'run_node_build(){' + function
+            script += '\nrun_node_build example "$1"\n'
+            result = subprocess.run(['bash', '-c', script, '_', directory], text=True, capture_output=True)
+            self.assertEqual(result.returncode, 42, result.stderr)
+            self.assertIn('pnpm\nrun\nbuild\n--webpack', result.stdout)
+            self.assertIn('--setenv=PATH=/home/domains/example/.shieldpress-tools/bin:', result.stdout)
+
     def test_service_bounds_children_and_propagates_failure(self):
         function = SOURCE.split('run_node_build(){', 1)[1].split('\ncleanup_stale_next_lock(){', 1)[0]
         with tempfile.TemporaryDirectory() as directory:

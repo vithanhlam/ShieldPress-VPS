@@ -984,6 +984,19 @@ Containers without kernel-core skip it. No automatic reboot is performed:
 verify the default boot kernel, schedule a reboot, and check `uname -r` against
 the vendor's fixed kernel version. Transaction success alone is not proof that
 a specific CVE has been fixed in the running kernel.
+# Node.js package managers
+
+Node.js deployment detects npm and pnpm projects before installing dependencies.
+For pnpm workspaces, commit an exact `packageManager` value such as
+`"pnpm@10.11.0"` in `package.json`. ShieldPress prepares that CLI per domain under
+`/home/domains/<user>/.shieldpress-tools`, installs workspace dependencies with
+pnpm (using a frozen lockfile when present), and builds with the same manager.
+The CLI and its PATH are available to the domain user and bounded build service.
+An incompatible `engines.node` requirement stops deployment before dependency or
+running-app changes. For example, a project requiring Node.js `>=24` cannot be
+deployed with Node.js 22; select a compatible runtime first. ShieldPress does not
+automatically switch the shared Node.js major version.
+
 # GitHub deployment
 
 Open **Admin Menu > 28 GitHub**, or run `shieldpress github` as root.
