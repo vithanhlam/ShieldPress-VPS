@@ -592,7 +592,6 @@ printf "  "; menu_button 1 "$STACK_LABEL" "$STACK_COLOR"; menu_button 2 "Core Se
 printf "  "; menu_button 3 "Nginx Manager" "$GREEN"; menu_button 4 "PHP Manager" "$GREEN"; echo ""
 hr
 section_title "Applications"
-printf "  "; menu_button 28 "GitHub" "$CYAN"; echo ""
 printf "  "; menu_button 5 "Domain Manager" "$GREEN"; menu_button 6 "SSL Manager" "$BLUE"; echo ""
 printf "  "; menu_button 7 "WordPress Manager" "$MAGENTA"; menu_button 8 "Laravel Manager" "$MAGENTA"; echo ""
 printf "  "; menu_button 9 "Node.js Manager" "$MAGENTA"; menu_button 10 "Database Manager" "$BLUE"; echo ""
@@ -608,7 +607,7 @@ section_title "Settings"
 printf "  "; menu_button 21 "Tools & Utilities" "$BLUE"; menu_button 22 "Telegram Notifications" "$GREEN"; echo ""
 printf "  "; menu_button 23 "ShieldPress Monitor" "$GREEN"; menu_button 24 "Email Server" "$MAGENTA"; echo ""
 printf "  "; menu_button 25 "About Us" "$CYAN"; menu_button 26 "Migration Patches" "$YELLOW"; echo ""
-printf "  "; menu_button 27 "Update ShieldPress VPS" "$YELLOW"; echo ""
+printf "  "; menu_button 27 "Update ShieldPress VPS" "$YELLOW"; menu_button 28 "GitHub" "$CYAN"; echo ""
 printf "  "; menu_button 0 "Exit" "$RED"; echo ""
 hr
 

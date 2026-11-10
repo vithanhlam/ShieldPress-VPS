@@ -1,3 +1,8 @@
+## v1.3.145 — 2026-11-10 — Keep GitHub in main menu number order
+
+- Move 28) GitHub to the Settings row beside 27) Update ShieldPress VPS. The Applications section now retains its existing 5–10 order.
+- Existing installations receive the corrected layout through the source update; no runtime migration is needed. Verify shell syntax, repository smoke checks and `git diff --check`.
+
 ## v1.3.144 — 2026-11-10 — Explicit Node.js LTS major upgrades
 
 - Add Node.js Manager > Check / Update Runtime > 4) Upgrade Node.js major version, with Node.js 24 and 26 LTS targets. Query the latest package in the selected NodeSource branch and require explicit confirmation of the installed and target versions before changing the shared runtime.
