@@ -100,6 +100,6 @@ unset RESULT
 # Menu stays accessible even when the old repository check fails.
 check_shieldpress_nodejs(){ return 1; }
 reset_case
-nodejs_runtime_manager <<< $'4\n2\nYES'
+nodejs_runtime_manager <<< $'2\n2\nYES'
 [[ $(cat "$STATE") == 26.13.0 ]]
 echo '[PASS] Major upgrade menu, branch selection, cancellation, failures, locks and downgrade guards'

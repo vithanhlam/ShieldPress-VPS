@@ -28,6 +28,8 @@ PostgreSQL or pgBackRest unless selected or needed by a feature.
 
 ## 2. Dashboard and menu map
 
+For option-by-option help with every menu, see the [Menu Guide](MENU-GUIDE.md).
+
 Run `shieldpress` for the dashboard or `shieldpress menu` for the full menu.
 The dashboard shows CPU, RAM, disk, domains, services, alerts and cache state.
 The main areas are Server/Core, Nginx, PHP, Domains, SSL, WordPress, Laravel,

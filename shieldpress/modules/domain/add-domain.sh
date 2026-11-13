@@ -325,7 +325,7 @@ echo "DB     : $DB_NAME"
 echo "PHP    : $PHP_VERSION"
 if [ "$APP_TYPE" = "nodejs" ]; then
     echo "Node Port: $NODE_APP_PORT"
-    echo "Service  : ${CLEAN_DOMAIN}-node.service"
+    echo "Process  : PM2 ($CLEAN_DOMAIN), started by Deploy / Build"
 fi
 echo "================================"
 

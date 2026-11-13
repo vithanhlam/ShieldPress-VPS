@@ -35,7 +35,7 @@ check_shieldpress_nodejs(){
     SHIELDPRESS_NODE_CURRENT=$(node -p 'process.versions.node' 2>/dev/null || true)
     SHIELDPRESS_NODE_AVAILABLE=""
     echo "Current Node.js: ${SHIELDPRESS_NODE_CURRENT:-Not installed}"
-    echo "Default installer: Node.js 22 LTS. Explicit major upgrades: Node.js 24 / 26 LTS."
+    echo "Default installer: Node.js 26 LTS (latest). Supported branches: 24 / 26 LTS."
     local available
     if ! available=$(dnf -q --refresh --disableplugin=versionlock --disableexcludes=all repoquery \
         --available --latest-limit 1 --qf '%{version}' nodejs 2>/dev/null); then
@@ -56,12 +56,6 @@ check_shieldpress_nodejs(){
         else
             echo "A newer repository version is available."
         fi
-        if [[ "$SHIELDPRESS_NODE_CURRENT" != 22.* ]]; then
-            echo "Use the same-branch update option to retain the installed major version."
-        fi
-    fi
-    if [[ "$SHIELDPRESS_NODE_AVAILABLE" != 22.* ]]; then
-        echo "This candidate is outside the default 22 LTS installer. Use option 3 for same-branch updates or option 4 for an explicit major upgrade."
     fi
 }
 
@@ -69,22 +63,22 @@ nodejs_runtime_manager(){
     # A broken/old repository must not hide the explicit major-upgrade action.
     check_shieldpress_nodejs || true
     echo ""
-    echo "  1) Check for updates again"
-    echo "  2) Install / update Node.js 22 LTS"
-    echo "  3) Update installed Node.js (keep current major version)"
-    echo "  4) Upgrade Node.js major version (24 / 26 LTS)"
+    echo "  1) Update Node.js (stays on the installed major, e.g. 24.x; installs Node.js 26 if missing)"
+    echo "  2) Upgrade major version (24 / 26 LTS)"
+    echo "  3) Check for updates again"
     echo "  0) Back"
-    local choice confirmation
+    local choice
     read -r -p "Select [0]: " choice
     case "$choice" in
-        1) check_shieldpress_nodejs ;;
-        2)
-            read -r -p "Install / update the supported runtime? [y/N]: " confirmation
-            [[ "$confirmation" =~ ^[Yy]$ ]] || return 0
-            install_shieldpress_nodejs
+        1)
+            if command -v node >/dev/null 2>&1; then
+                update_shieldpress_nodejs_current_branch
+            else
+                install_shieldpress_nodejs
+            fi
             ;;
-        3) update_shieldpress_nodejs_current_branch ;;
-        4) shieldpress_nodejs_major_menu ;;
+        2) shieldpress_nodejs_major_menu ;;
+        3) check_shieldpress_nodejs ;;
         *) return 0 ;;
     esac
 }
@@ -164,7 +158,7 @@ upgrade_shieldpress_nodejs_major() (
     current=$(node -p 'process.versions.node' 2>/dev/null || true)
     [[ $current =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { shieldpress_fail 'Install Node.js first; its current version could not be verified.'; return 1; }
     if (( major <= ${current%%.*} )); then
-        shieldpress_fail "Select a branch newer than ${current%%.*}.x. Use option 3 for updates within the current branch. Downgrades are blocked."
+        shieldpress_fail "Select a branch newer than ${current%%.*}.x. Use option 1 for updates within the current branch. Downgrades are blocked."
         return 1
     fi
     [[ $(rpm -q --qf '%{VERSION}' nodejs 2>/dev/null) == "$current" ]] || {
@@ -311,13 +305,14 @@ install_shieldpress_nodejs(){
         shieldpress_fail "Cannot determine the installed Node.js version safely"
         return 1
     fi
-    if [[ "$installed_major" =~ ^[0-9]+$ ]] && [ "$installed_major" -gt 22 ]; then
-        shieldpress_warn "Node.js $installed_version is newer than the recommended 22 LTS branch."
-        shieldpress_warn "Automatic downgrade blocked; review app compatibility before a separate migration."
-        return 1
+    if [ -n "$installed_version" ]; then
+        # Never change the major branch implicitly on an existing server.
+        shieldpress_warn "Node.js $installed_version is already installed; updating within the ${installed_major}.x branch only."
+        update_shieldpress_nodejs_current_branch
+        return $?
     fi
-    local setup_url="${SHIELDPRESS_NODEJS_SETUP_URL:-https://rpm.nodesource.com/setup_22.x}"
-    echo "Installing / updating Node.js 22 LTS from NodeSource..."
+    local setup_url="${SHIELDPRESS_NODEJS_SETUP_URL:-https://rpm.nodesource.com/setup_26.x}"
+    echo "Installing Node.js 26 LTS from NodeSource..."
 
     dnf install -y curl dnf-plugins-core >/dev/null 2>&1 || true
 
@@ -357,13 +352,13 @@ install_shieldpress_nodejs(){
     if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
         local installed_version
         installed_version=$(node -p 'process.versions.node' 2>/dev/null || true)
-        if [[ "$installed_version" != 22.* ]]; then
+        if [[ "$installed_version" != 26.* ]]; then
             [ -f "$package_lock" ] && bash "$package_lock" lock nodejs >/dev/null 2>&1 || true
-            shieldpress_fail "Unsupported Node.js version after update: ${installed_version:-unknown}; expected 22.x"
+            shieldpress_fail "Unsupported Node.js version after update: ${installed_version:-unknown}; expected 26.x"
             return 1
         fi
         if [ -f "$package_lock" ] && ! bash "$package_lock" lock nodejs >/dev/null 2>&1; then
-            shieldpress_warn "Node.js 22 installed, but the package lock could not be restored"
+            shieldpress_warn "Node.js 26 installed, but the package lock could not be restored"
         fi
         shieldpress_ok "Node.js $(node -v) / npm $(npm -v) installed"
         return 0

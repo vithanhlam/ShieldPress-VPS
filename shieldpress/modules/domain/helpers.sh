@@ -923,18 +923,9 @@ create_nodejs_service(){
 
     mkdir -p "$DOMAIN_PATH/public_html"
 
-    if [ ! -f "$DOMAIN_PATH/public_html/$NODE_ENTRY" ]; then
-        cat > "$DOMAIN_PATH/public_html/$NODE_ENTRY" <<EOF
-const http = require('http');
-
-const port = Number(process.env.PORT || ${NODE_APP_PORT});
-
-http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-  res.end('Node.js app is ready for ${DOMAIN}\\n');
-}).listen(port, '127.0.0.1');
-EOF
-    fi
+    # No placeholder entry file is created: a temporary app.js would be started
+    # by PM2 and later Deploy/Build restarts would keep running it instead of
+    # the uploaded application's own start command.
 
     chown -R "$CLEAN_DOMAIN:$CLEAN_DOMAIN" "$DOMAIN_PATH/public_html"
 
@@ -994,8 +985,12 @@ start_nodejs_service(){
     runuser -u "$CLEAN_DOMAIN" -- env HOME="$DOMAIN_PATH" PM2_HOME="$pm2_home" pm2 delete "$pm2_name" 2>/dev/null || true
     if [ -f "$app_root/package.json" ] && grep -q '"start"' "$app_root/package.json" 2>/dev/null; then
         runuser -u "$CLEAN_DOMAIN" -- env HOME="$DOMAIN_PATH" PM2_HOME="$pm2_home" SHIELDPRESS_START_MODE=npm PORT="$NODE_APP_PORT" pm2 start npm --name "$pm2_name" -- start || return 1
-    else
+    elif [ -f "$app_root/$NODE_ENTRY" ]; then
         runuser -u "$CLEAN_DOMAIN" -- env HOME="$DOMAIN_PATH" PM2_HOME="$pm2_home" SHIELDPRESS_START_MODE=node PORT="$NODE_APP_PORT" pm2 start "$NODE_ENTRY" --name "$pm2_name" || return 1
+    else
+        warn "No application files found yet; PM2 was not started."
+        echo "Upload the application, then use Node.js Manager > Deploy / Build."
+        return 0
     fi
 
     # Best-effort: tự khởi động lại app sau khi reboot server, dưới đúng user.

@@ -12,7 +12,7 @@
   <a href="https://github.com/vithanhlam/ShieldPress-VPS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-source--available-orange?style=flat-square" alt="Source-available license"></a>
 </p>
 
-**Current version:** `1.3.146`
+**Current version:** `1.3.147`
 
 **License:** [Source-Available Software License](LICENSE) · **Author:** [vithanhlam](https://github.com/vithanhlam) · [Trademark](TRADEMARK.md)
 
@@ -20,12 +20,13 @@ ShieldPress VPS is a terminal-based server management toolkit for Linux VPS, foc
 
 Source code is in the `shieldpress/` directory. On the server it installs to `/opt/shieldpress`, domain data is stored at `/home/domains`.
 
-The Node.js runtime menu offers **3) Update installed Node.js (keep current major version)**
-for updates such as 26.5.0 to a newer 26.x release from the configured repositories.
+The Node.js runtime menu offers **1) Update Node.js** for updates such as 26.5.0 to a newer
+26.x release from the configured repositories. On a server without Node.js it installs the
+latest Node.js 26 LTS.
 It confirms the target, refreshes package locks, and verifies the installed version.
 Restart affected applications individually afterward to load the new runtime.
-Option 2 remains the Node.js 22 LTS installer and blocks automatic downgrades.
-Use **4) Upgrade Node.js major version (24 / 26 LTS)** to move from 22 to 24/26,
+Automatic downgrades are blocked, and option 1 never changes the installed major version.
+Use **2) Upgrade major version (24 / 26 LTS)** to move from 22 to 24/26,
 or from 24 to 26. Choose the target LTS branch, review the latest available
 NodeSource package and type `YES` to proceed. This action currently supports
 DNF/RPM servers with a matching RPM-managed Node.js executable. Cancellation or
@@ -146,6 +147,7 @@ long headers place the subtitle on a separate line.
 - [First steps after installation](#first-steps-after-installation)
 - [Update source](#update-source)
 - [Full user guide](GUIDE.md)
+- [Menu guide](MENU-GUIDE.md)
 - [Quick commands](#quick-commands)
 - [What is included](#what-is-included)
 - [Issues and support](#issues-and-support)

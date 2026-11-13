@@ -1,3 +1,13 @@
+## v1.3.147 — 2026-11-13 — Simpler Node.js runtime menu, Node.js 26 default and no placeholder app
+
+- Simplify Node.js Manager > Check / Update Runtime to: 1) Update Node.js, 2) Upgrade major version (24 / 26 LTS), 3) Check for updates again. Option 1 updates only within the installed major branch (for example 24.x stays on 24.x); a major change requires option 2 and typing `YES`. Downgrades remain blocked.
+- Make Node.js 26 LTS the default for new installations. A server without Node.js receives the latest NodeSource 26.x. A server that already has Node.js is never moved to another major by the installer; it only receives same-branch updates.
+- Stop creating a placeholder `app.js` and stop starting PM2 for new Node.js domains. The placeholder process kept running after Deploy / Build because `pm2 restart` retains the original launcher, so the uploaded application's `npm start` never ran. PM2 is now started only when the domain has a `package.json` start script or an existing entry file; otherwise ShieldPress explains that Deploy / Build starts the app.
+- Add an automatic, idempotent repair for domains created by earlier versions. When a restart, start or deploy finds a PM2 process created by the old placeholder launcher and the application now has a `start` script, ShieldPress replaces that process with `npm start`. Existing processes started by other means, Next.js apps and running websites are left untouched, and repeat runs perform a normal restart.
+- Replace the stale `Service: <domain>-node.service` line in the Add Domain summary with the PM2 process name. Legacy systemd cleanup code is unchanged.
+- Add MENU-GUIDE.md, an English guide to every menu, and link it from README.md and GUIDE.md.
+- Verify on a local AlmaLinux 9.8 VPS: no placeholder or PM2 process for a new Node.js domain, placeholder-to-`npm start` repair and repeat restart, a real Node.js 26.8.1 to 26.13.1 same-branch update with package locks restored, and unchanged existing Node.js and Next.js domains. Run the Node.js runtime, same-branch and major-upgrade tests, repository smoke and syntax checks and `git diff --check`. The DNF fixture tests need Docker and were updated for the new menu numbers.
+
 ## v1.3.146 — 2026-11-10 — Reliable WordPress cache purge without PHP sudo access
 
 - Report `queued` after WordPress writes a purge request instead of claiming the cache has already been cleared. Process requests through the root-owned cron worker, normally within one minute, while keeping PHP exec disabled and open_basedir restrictions intact.

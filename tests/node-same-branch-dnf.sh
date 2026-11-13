@@ -52,7 +52,7 @@ for repo in /etc/yum.repos.d/almalinux*.repo; do sed -i 's/^enabled=1/enabled=0/
 dnf install -y nodejs-26.5.0-1.fixture >/tmp/install.log 2>&1
 bash /opt/shieldpress/modules/upgrade/package-lock.sh lock nodejs
 source /opt/shieldpress/modules/helpers/nodejs-runtime.sh
-nodejs_runtime_manager <<< $'3\ny'
+nodejs_runtime_manager <<< $'1\ny'
 [[ "$(node -p process.versions.node)" == 26.12.1 ]]
 rpm -q nodejs-libs | grep -q 26.12.1
 dnf versionlock list | tee /tmp/locks
@@ -63,5 +63,7 @@ dnf upgrade -y nodejs >/tmp/locked-update.log 2>&1
 [[ "$(node -p process.versions.node)" == 26.12.1 ]]
 update_shieldpress_nodejs_current_branch <<< y
 [[ "$(node -p process.versions.node)" == 26.12.1 ]]
-if install_shieldpress_nodejs; then exit 1; fi
+# The installer must stay inside the installed major and never switch branches.
+install_shieldpress_nodejs
+[[ "$(node -p process.versions.node)" == 26.12.1 ]]
 echo '[PASS] Real AlmaLinux DNF: pinned same-major transaction, matching dependency, locks, repeat and downgrade guard'

@@ -96,6 +96,18 @@ restart_pm2_app_with_config(){
         start_pm2_next_app "$pm2_name" || return 1
         return 0
     fi
+    # Repair domains created by older versions: they started a placeholder
+    # `node app.js` process, and `pm2 restart` would keep that launcher forever
+    # even after the real application (with a start script) was uploaded.
+    if ! is_nextjs_app && [ "$(pm2_app_start_mode "$pm2_name" "$pm2_name")" = "node" ] \
+        && grep -q '"start"' "$DOMAIN_PATH/public_html/package.json" 2>/dev/null; then
+        warn "Replacing placeholder app.js launcher with npm start for $pm2_name"
+        run_pm2 "$pm2_name" pm2 delete "$pm2_name" || return 1
+        run_pm2 "$pm2_name" SHIELDPRESS_START_MODE=npm PORT="$NODE_APP_PORT" NODE_ENV=production \
+            pm2 start npm --name "$pm2_name" --update-env -- start || return 1
+        pm2_persist_startup "$pm2_name"
+        return 0
+    fi
     # Keep the existing PM2 process and its id. The application receives the
     # new environment on restart; a fresh start is only needed when the
     # process does not exist yet.

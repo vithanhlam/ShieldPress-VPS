@@ -66,7 +66,7 @@ upgrade_shieldpress_nodejs_major 24 <<< YES
 rpm -q nodejs-libs | grep -q 24.22.2
 grep -q 'pub_24.x' /fixtures/saved-nodesource.repo
 grep -q 'original config' /fixtures/saved-nodesource.repo.shieldpress-backup.*
-nodejs_runtime_manager <<< $'4\n2\nYES'
+nodejs_runtime_manager <<< $'2\n2\nYES'
 [[ "$(node -p process.versions.node)" == 26.13.0 ]]
 rpm -q nodejs-libs | grep -q 26.13.0
 grep -q 'pub_26.x' /fixtures/saved-nodesource.repo
@@ -79,5 +79,6 @@ dnf upgrade -y nodejs >/tmp/locked-update.log 2>&1
 [[ "$(node -p process.versions.node)" == 26.13.0 ]]
 if upgrade_shieldpress_nodejs_major 24 <<< YES; then exit 1; fi
 if upgrade_shieldpress_nodejs_major 26 <<< YES; then exit 1; fi
-if install_shieldpress_nodejs; then exit 1; fi
+install_shieldpress_nodejs
+[[ "$(node -p process.versions.node)" == 26.13.0 ]]
 echo '[PASS] Real AlmaLinux DNF: 22 -> 24 -> 26, matching dependencies, repository backup, locks and downgrade guards'
