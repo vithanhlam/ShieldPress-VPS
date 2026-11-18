@@ -776,8 +776,10 @@ patch_php_jit_off_fpm_crash_recovery(){
     # configuration (the source build copies the distribution file on re-patch).
     for ini in /etc/opt/remi/php*/php.d/10-opcache.ini /opt/shieldpress-php/*/etc/php.d/10-opcache.ini; do
         [ -f "$ini" ] || continue
-        if ! grep -qE '^opcache\.jit=0[[:space:]]*$' "$ini" \
-           || ! grep -qE '^opcache\.jit_buffer_size=0[[:space:]]*$' "$ini"; then
+        # PHP uses the LAST occurrence of a directive, so judge the effective
+        # value: an earlier "=0" line followed by a later "=1255" line is still on.
+        if [ "$(grep -E '^opcache\.jit=' "$ini" | tail -n 1 | tr -d '[:space:]')" != "opcache.jit=0" ] \
+           || [ "$(grep -E '^opcache\.jit_buffer_size=' "$ini" | tail -n 1 | tr -d '[:space:]')" != "opcache.jit_buffer_size=0" ]; then
             sed -i '/^opcache\.jit=/d;/^opcache\.jit_buffer_size=/d' "$ini" || { failed=1; continue; }
             printf 'opcache.jit_buffer_size=0\nopcache.jit=0\n' >> "$ini" || { failed=1; continue; }
             changed=1

@@ -103,12 +103,19 @@ for i in 1 2 3; do echo "[$old] WARNING: [pool $DIR] child $i exited with code 1
 pool_workers_crashing "$DOM" "$T" && bad "old crashes flagged" || pass "crashes older than the window ignored"
 rm -f "$T"
 
-# 4. Migration from an old install: JIT on -> off, idempotent, registry once.
+# 4a. Duplicate directives: an earlier "=0" followed by a later enabled value
+# is still JIT-on (PHP uses the last occurrence) and must be repaired.
 for f in "$REMI_INI" "$SRC_INI"; do
     [ -n "$f" ] && [ -f "$f" ] || continue
     sed -i '/^opcache\.jit=/d;/^opcache\.jit_buffer_size=/d' "$f"
-    printf 'opcache.jit_buffer_size=128M\nopcache.jit=1255\n' >> "$f"
+    printf 'opcache.jit_buffer_size=0\nopcache.jit=0\nopcache.jit_buffer_size=128M\nopcache.jit=1255\n' >> "$f"
 done
+PFX0=$(dirname "$(dirname "$(dirname "$SRC_INI")")")
+[ "$(PHP_INI_SCAN_DIR="$PFX0/etc/php.d" "$PFX0/bin/php" -c "$PFX0/etc/php.ini" -r 'echo ini_get("opcache.jit");' 2>/dev/null)" = 1255 ] \
+    && pass "duplicate-directive state is effectively JIT-on" || bad "duplicate state not reproduced"
+
+# 4. Migration from an old install (the duplicate-directive state above): JIT
+# on -> off, idempotent, registry entry once.
 cp "$REPO/shieldpress/modules/wordpress/wp-auto-recovery.sh" "$BASE/modules/wordpress/"
 eval "$(sed -n '/^patch_applied(){/,/^}/p;/^patch_mark_done(){/,/^}/p;/^patch_php_jit_off_fpm_crash_recovery(){/,/^}/p' "$REPO/shieldpress/modules/patches/patches-menu.sh")"
 ok(){ echo "[OK] $*"; }

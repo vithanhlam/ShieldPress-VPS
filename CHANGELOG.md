@@ -1,3 +1,9 @@
+## v1.3.149 — 2026-11-18 — Make the PHP JIT migration check the effective value
+
+- Fix migration `SP_20261118_PHP_JIT_OFF_FPM_CRASH_RECOVERY` (v1.3.148). It treated a PHP configuration file as repaired when it contained any `opcache.jit=0` line, but PHP uses the last occurrence of a directive: a later `opcache.jit=1255` line left JIT enabled while the migration reported success. The migration now checks the last value of `opcache.jit` and `opcache.jit_buffer_size`, rewrites the file when either is not 0, and restarts running PHP-FPM services only after a change. Repeat runs remain a no-op.
+- Extend `tests/wp-fpm-crash-recovery.sh` with a duplicate-directive state (`=0` followed by `=1255`) and verify the effective PHP value is 1255 before the migration and 0 after it, twice.
+- Verify the old-version-to-new-version update from 1.3.148 on the TEST.MD AlmaLinux 9.8 VPS.
+
 ## v1.3.148 — 2026-11-18 — Recover PHP-FPM worker crash loops (HTTP 502) automatically
 
 - Fix a WordPress site returning HTTP 502 until the cache was cleared by hand. PHP-FPM workers were SIGKILLed (exit code 137) right after start while the service and socket stayed healthy, so recovery logged "PHP-FPM and domain socket are healthy; shared service restart skipped" and cleared caches that could not help. The CLI `opcache_reset()` cannot reach the PHP-FPM OPcache segment; only a PHP-FPM restart rebuilds it.
