@@ -820,6 +820,65 @@ patch_php_jit_off_fpm_crash_recovery(){
     ok "PHP JIT disabled and WordPress recovery handles PHP-FPM worker crash loops"
 }
 
+patch_ssh_login_history(){
+    local ID="SP_20261118_SSH_LOGIN_HISTORY"
+    local script="$BASE_DIR/modules/security/ssh-access.sh"
+    patch_applied "$ID" && return 0
+    # Persistent SSH login history (user, source IP, method and key fingerprint)
+    # for existing servers. Command recording stays opt-in from the SSH menu.
+    if [ ! -f "$script" ] || ! bash -n "$script"; then
+        fail "SSH access module is missing or invalid; migration remains pending"
+        return 1
+    fi
+    if ! bash "$script" --enable-history; then
+        fail "SSH login history could not be enabled; migration remains pending"
+        return 1
+    fi
+    patch_mark_done "$ID"
+    ok "SSH login history recording enabled"
+}
+
+patch_syslog_rotation(){
+    local ID="SP_20261118_SYSLOG_ROTATION"
+    local conf="${SP_LOGROTATE_RSYSLOG:-/etc/logrotate.d/rsyslog}"
+    local -a state_args=()
+    local backup
+    [ -n "${SP_LOGROTATE_STATE:-}" ] && state_args=(-s "$SP_LOGROTATE_STATE")
+    patch_applied "$ID" && return 0
+
+    # On some servers logrotate keeps no state for the rsyslog group, so the
+    # weekly rule never fires and /var/log/secure and /var/log/messages grow
+    # without limit. A size rule does not depend on that state.
+    if [ ! -f "$conf" ] || ! command -v logrotate >/dev/null 2>&1; then
+        patch_mark_done "$ID"
+        skip "System log rotation (no rsyslog logrotate configuration)"
+        return 0
+    fi
+    if grep -qE '^[[:space:]]*(size|maxsize|minsize)[[:space:]]' "$conf"; then
+        patch_mark_done "$ID"
+        skip "System log rotation (a size rule already exists)"
+        return 0
+    fi
+    backup="$conf.bak_sp_$(date +%s)"
+    cp -a "$conf" "$backup" || { fail "Cannot back up $conf; migration remains pending"; return 1; }
+    if ! sed -i '0,/{[[:space:]]*$/s//&\n    # ShieldPress: also rotate by size (time-based rotation may never run)\n    maxsize 100M/' "$conf" \
+       || ! grep -qE '^[[:space:]]*maxsize[[:space:]]+100M' "$conf" \
+       || ! logrotate -d "${state_args[@]}" "$conf" >/dev/null 2>&1; then
+        cp -a "$backup" "$conf"
+        fail "System log rotation rule was rejected by logrotate; restored $conf. Migration remains pending"
+        return 1
+    fi
+    # Rotate oversized logs now instead of waiting for the next timer run
+    local timing_dir="${DATA_DIR:-/var/shieldpress/data}/syslog-rotation-timing"
+    install -d -m 700 "$timing_dir" 2>/dev/null
+    if ! run_with_loading "Rotating oversized system logs" "$timing_dir/rotate" 30 logrotate "${state_args[@]}" "$conf"; then
+        fail "logrotate failed; migration remains pending (backup: $backup)"
+        return 1
+    fi
+    patch_mark_done "$ID"
+    ok "System logs rotate when they exceed 100M"
+}
+
 patch_wp_cache_recovery(){
     local ID="SP_20261030_WP_CACHE_RECOVERY"
     local unit="shieldpress-wp-recovery.service"
@@ -1108,6 +1167,8 @@ apply_all_patches(){
     patch_wp_cache_recovery || ssl_status=$?
     patch_wp_purge_worker || ssl_status=$?
     patch_php_jit_off_fpm_crash_recovery || ssl_status=$?
+    patch_ssh_login_history || ssl_status=$?
+    patch_syslog_rotation || ssl_status=$?
 
     # Add new patch calls here ↑
 
@@ -1167,6 +1228,8 @@ show_patch_status(){
     _status "SP_20261102_AUTHOR_RULE_ANCHOR"      "Allow WordPress bulk edit (post_author) through nginx"
     _status "SP_20261030_WP_CACHE_RECOVERY"       "Purge stale error cache after PHP 502 recovery"
     _status "SP_20261118_PHP_JIT_OFF_FPM_CRASH_RECOVERY" "Disable PHP JIT and recover PHP-FPM crash loops"
+    _status "SP_20261118_SSH_LOGIN_HISTORY" "Record SSH login history (user, IP, key)"
+    _status "SP_20261118_SYSLOG_ROTATION" "Rotate oversized system logs (secure, messages)"
 
     echo ""
     echo "  Registry: $PATCH_REGISTRY"

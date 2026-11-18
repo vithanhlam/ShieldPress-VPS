@@ -2,7 +2,7 @@
 
 This guide explains how to use every menu in ShieldPress VPS. It complements the
 [full user guide](GUIDE.md), which covers concepts, procedures and troubleshooting.
-Menu numbers below match version 1.3.147; the menu on your server is always the
+Menu numbers below match version 1.3.150; the menu on your server is always the
 authoritative list.
 
 ## Contents
@@ -278,10 +278,10 @@ after changing a site; *Clear All Cache* affects every site.
 | # | Options | Use them to |
 |---|---------|-------------|
 | 1-8 | Firewall Status, Open/Close Port, Block IP, Whitelist IP, Remove IP Rule, List Blocked IPs, IP Block History | Manage firewall rules |
-| 9-12 | Enable Fail2ban SSH, SSH Manager, Nginx Protection, Nginx Manager | Ban abusive clients |
+| 9-12 | Enable Fail2ban SSH, SSH Manager, Nginx Protection, Nginx Manager | Ban abusive clients. Enable Fail2ban SSH bans an address after 5 failed logins within an hour for 1 hour, doubling for repeat offenders (up to 1 week), and never bans your current SSH address |
 | 13 | WP Bruteforce Protection | Protect WordPress login |
 | 14 / 15 | Block / Unblock Bot Countries | Country-level blocking |
-| 16 | SSH Hardening | Apply SSH security settings (keep a second session open when changing SSH) |
+| 16 | SSH Hardening | Apply SSH security settings (keep a second session open when changing SSH). Option 4, **SSH Access**, lists every SSH key on the server (all users) with its last use, creates keys (the private key is shown once and is not kept), adds, revokes, restores and deletes keys, and shows the login history and recorded command activity |
 | 17 / 18 | Auto-block Attackers, Auto-Guard (Scheduled) | Automatic protection |
 | 19 | Security Audit | Run an audit |
 | 20 | CVE / Dependency Audit | Check dependencies for known vulnerabilities |
@@ -378,3 +378,16 @@ migrates or restarts applications for you; run Deploy / Build afterwards.
 - `shieldpress help` lists CLI shortcuts.
 - See [GUIDE.md](GUIDE.md) for procedures and the troubleshooting checklist.
 - See [SECURITY.md](SECURITY.md) to report a vulnerability.
+
+## SSH Access (Security & Firewall > 16 > 4)
+
+| # | Option | What it does |
+|---|--------|--------------|
+| 1 / 2 | List SSH keys, Key details | Shows every public key in every user's `authorized_keys`: ID, user, type, state, last login, and flags (`ROOT-UNRESTRICTED` has no `from=` limit, `WEAK` is RSA below 3072 bits or DSA, `NOT-IN-BASELINE` is unknown to Intrusion Guard) |
+| 3 / 4 | Create a new key pair, Add an existing public key | Creates an ed25519 key (you choose the passphrase and an optional source IP limit); the private key is displayed once and never stored on the server. If you do not confirm that you saved it, the new public key is removed again |
+| 5 / 6 / 7 | Revoke, Restore, Delete | Revoke comments the key out (reversible); delete removes it. Every change backs the file up first. A change that would remove the last key while password login is off is refused |
+| 8 | Login history | Persistent record of SSH logins: time, user, source IP, method and the key fingerprint used. The existing `wtmp` history is imported on first use. Kept 90 days |
+| 9 | Command activity | Commands typed in interactive SSH shells (time, user, source IP, directory). Off by default; turn it on in Recording settings. It does not record output, `scp`/`sftp` or `ssh host command`, masks common password forms, and cannot stop a user with root from bypassing it |
+| 10 | Recording settings | Enable or disable login history and command recording |
+
+Revoking a key stops new logins immediately; sessions that are already open stay open until they end.

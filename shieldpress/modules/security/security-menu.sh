@@ -664,18 +664,29 @@ fail2ban_ssh(){
         info "Your SSH IP ($MY_SSH_IP) will be whitelisted in fail2ban"
     fi
 
-    cat > /etc/fail2ban/jail.d/sshd.conf <<EOF
+    local JAIL=/etc/fail2ban/jail.d/sshd.conf JAIL_BAK=""
+    if [ -f "$JAIL" ]; then
+        JAIL_BAK="$JAIL.bak_sp_$(date +%s)"
+        cp -a "$JAIL" "$JAIL_BAK"
+    fi
+    cat > "$JAIL" <<EOF
 [sshd]
 enabled  = true
 port     = ssh
 filter   = sshd
+mode     = aggressive
 logpath  = $LOGPATH
 backend  = auto
 
 # ===== PROTECTION =====
+# 5 failures within 1 hour -> ban 1 hour; repeat offenders are banned for
+# twice as long each time (up to 1 week). Slow password guessing is caught too.
 maxretry = 5
-findtime = 60
-bantime  = 3600
+findtime = 1h
+bantime  = 1h
+bantime.increment = true
+bantime.factor    = 2
+bantime.maxtime   = 1w
 
 # ===== WHITELIST (prevent self-lockout) =====
 ignoreip = $IGNORE_IP
@@ -685,12 +696,11 @@ banaction = firewallcmd-ipset
 EOF
 
     # =========================
-    # TEST CONFIG TRƯỚC KHI START
+    # TEST CONFIG BEFORE STARTING
     # =========================
-    fail2ban-client -t
-
-    if [ $? -ne 0 ]; then
-        fail "Fail2ban config error"
+    if ! fail2ban-client -t; then
+        fail "Fail2ban config error; restoring the previous SSH jail"
+        if [ -n "$JAIL_BAK" ]; then cp -a "$JAIL_BAK" "$JAIL"; else rm -f "$JAIL"; fi
         return
     fi
 
@@ -1331,7 +1341,7 @@ ssh_hardening(){
         echo "  1) Change SSH Port"
         echo "  2) Toggle PermitRootLogin        (yes <-> prohibit-password)"
         echo "  3) Toggle PasswordAuthentication (yes <-> no)"
-        echo "  4) Create / Add SSH Key (root)"
+        echo "  4) SSH Access: keys, login history, command activity"
         echo "  0) Back"
         echo ""
         read -p "Select: " sub
@@ -1340,7 +1350,7 @@ ssh_hardening(){
             1) ssh_change_port "$CURRENT_PORT" ;;
             2) ssh_toggle_root_login ;;
             3) ssh_toggle_password_auth ;;
-            4) ssh_ensure_key ;;
+            4) bash "${BASE_DIR:-/opt/shieldpress}/modules/security/ssh-access.sh" ;;
             0) break ;;
             *) echo "Invalid" ;;
         esac
