@@ -763,6 +763,61 @@ patch_wp_purge_worker(){
     ok "WordPress purge worker and installed plugins repaired"
 }
 
+patch_php_jit_off_fpm_crash_recovery(){
+    local ID="SP_20261118_PHP_JIT_OFF_FPM_CRASH_RECOVERY"
+    local unit="shieldpress-wp-recovery.service"
+    local ini svc changed=0 failed=0
+    local -a services=()
+    patch_applied "$ID" && return 0
+
+    # PHP JIT with a shared OPcache segment can leave PHP-FPM workers killed
+    # (exit 137) right after start, so every request returns HTTP 502 until
+    # PHP-FPM restarts. Disable JIT in the distribution and source-built PHP
+    # configuration (the source build copies the distribution file on re-patch).
+    for ini in /etc/opt/remi/php*/php.d/10-opcache.ini /opt/shieldpress-php/*/etc/php.d/10-opcache.ini; do
+        [ -f "$ini" ] || continue
+        if ! grep -qE '^opcache\.jit=0[[:space:]]*$' "$ini" \
+           || ! grep -qE '^opcache\.jit_buffer_size=0[[:space:]]*$' "$ini"; then
+            sed -i '/^opcache\.jit=/d;/^opcache\.jit_buffer_size=/d' "$ini" || { failed=1; continue; }
+            printf 'opcache.jit_buffer_size=0\nopcache.jit=0\n' >> "$ini" || { failed=1; continue; }
+            changed=1
+        fi
+    done
+    if [ "$failed" -ne 0 ]; then
+        fail "PHP JIT configuration could not be updated; migration remains pending"
+        return 1
+    fi
+
+    # Reload only the PHP-FPM services that are running, and only after a change.
+    if [ "$changed" -eq 1 ]; then
+        while IFS= read -r svc; do
+            [ -n "$svc" ] && services+=("$svc")
+        done < <(systemctl list-units --type=service --state=active --no-legend 'php*-php-fpm.service' 2>/dev/null | awk '{print $1}')
+        for svc in "${services[@]}"; do
+            if ! systemctl restart "$svc"; then
+                fail "Cannot restart $svc; migration remains pending"
+                failed=1
+            fi
+        done
+        [ "$failed" -eq 0 ] || return 1
+    fi
+
+    # Load the worker-crash detection into a running recovery daemon.
+    if systemctl is-active --quiet "$unit"; then
+        if ! systemctl restart "$unit"; then
+            fail "WordPress recovery restart failed; migration remains pending"
+            return 1
+        fi
+        sleep 2
+        if ! systemctl is-active --quiet "$unit"; then
+            fail "WordPress recovery is not running; migration remains pending"
+            return 1
+        fi
+    fi
+    patch_mark_done "$ID"
+    ok "PHP JIT disabled and WordPress recovery handles PHP-FPM worker crash loops"
+}
+
 patch_wp_cache_recovery(){
     local ID="SP_20261030_WP_CACHE_RECOVERY"
     local unit="shieldpress-wp-recovery.service"
@@ -1050,6 +1105,7 @@ apply_all_patches(){
     patch_wp_recovery_output || ssl_status=$?
     patch_wp_cache_recovery || ssl_status=$?
     patch_wp_purge_worker || ssl_status=$?
+    patch_php_jit_off_fpm_crash_recovery || ssl_status=$?
 
     # Add new patch calls here ↑
 
@@ -1108,6 +1164,7 @@ show_patch_status(){
     _status "SP_20261005_WP_RECOVERY_SCAN_LOCK"   "Restart WordPress recovery with scan-scoped locking"
     _status "SP_20261102_AUTHOR_RULE_ANCHOR"      "Allow WordPress bulk edit (post_author) through nginx"
     _status "SP_20261030_WP_CACHE_RECOVERY"       "Purge stale error cache after PHP 502 recovery"
+    _status "SP_20261118_PHP_JIT_OFF_FPM_CRASH_RECOVERY" "Disable PHP JIT and recover PHP-FPM crash loops"
 
     echo ""
     echo "  Registry: $PATCH_REGISTRY"

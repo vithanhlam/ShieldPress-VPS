@@ -1,3 +1,11 @@
+## v1.3.148 — 2026-11-18 — Recover PHP-FPM worker crash loops (HTTP 502) automatically
+
+- Fix a WordPress site returning HTTP 502 until the cache was cleared by hand. PHP-FPM workers were SIGKILLed (exit code 137) right after start while the service and socket stayed healthy, so recovery logged "PHP-FPM and domain socket are healthy; shared service restart skipped" and cleared caches that could not help. The CLI `opcache_reset()` cannot reach the PHP-FPM OPcache segment; only a PHP-FPM restart rebuilds it.
+- Disable PHP JIT (`opcache.jit=0`, `opcache.jit_buffer_size=0`) for new installations and domain setups. JIT with a shared OPcache segment matched the crash loops seen in production.
+- WordPress recovery now detects a crash loop of one domain's pool (3 or more SIGKILL/SIGSEGV exits within 3 minutes) and restarts PHP-FPM. If a site is still failing after the cache clear, it restarts PHP-FPM once to reset the FPM OPcache. PHP-FPM is shared by all sites, so automatic restarts are limited to one every 10 minutes and are logged with the reason.
+- Add automatic, idempotent migration `SP_20261118_PHP_JIT_OFF_FPM_CRASH_RECOVERY`. It disables JIT in the distribution and source-built PHP configuration (the source build copies the distribution file), restarts running PHP-FPM services only when a file changed, and reloads the recovery daemon. Servers that enabled JIT from Optimize > PHP JIT receive JIT off once; enable it again from that menu if required.
+- Add `tests/wp-fpm-crash-recovery.sh`: reproduces real worker SIGKILL crash loops and HTTP 502, verifies the restart, the rate limit, ignored crashes from other pools and old crashes, and runs the migration twice from a JIT-enabled install.
+
 ## v1.3.147 — 2026-11-13 — Simpler Node.js runtime menu, Node.js 26 default and no placeholder app
 
 - Simplify Node.js Manager > Check / Update Runtime to: 1) Update Node.js, 2) Upgrade major version (24 / 26 LTS), 3) Check for updates again. Option 1 updates only within the installed major branch (for example 24.x stays on 24.x); a major change requires option 2 and typing `YES`. Downgrades remain blocked.

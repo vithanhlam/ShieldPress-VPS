@@ -926,8 +926,8 @@ install_php() {
         else
             OPCACHE_MEMORY=256
             OPCACHE_FILES=100000
-            OPCACHE_JIT_BUFFER=128M
-            OPCACHE_JIT=1255
+            OPCACHE_JIT_BUFFER=0   # JIT off: corrupted shm + SIGKILL worker loops (502) seen in prod
+            OPCACHE_JIT=0
         fi
 
         cat >> "$OPCACHE" <<EOF

@@ -106,8 +106,8 @@ opcache.memory_consumption=256
 opcache.max_accelerated_files=100000
 opcache.validate_timestamps=1
 opcache.revalidate_freq=2
-opcache.jit_buffer_size=128M
-opcache.jit=1255
+opcache.jit_buffer_size=0
+opcache.jit=0
 EOF
     fi
 

@@ -325,6 +325,43 @@ has_recent_php_fatal(){
         'PHP Fatal error:|Allowed memory size .* exhausted|Failed opening required|Parse error:'
 }
 
+# PHP-FPM workers that are SIGKILLed (exit 137) or crash (SIGSEGV) right after
+# start leave the master and socket "healthy" while every request gets a 502.
+# This is the signature of a corrupted OPcache/JIT shared-memory segment, which
+# only a PHP-FPM restart clears (opcache_reset() from the CLI cannot reach the
+# FPM segment). Count recent crashes of THIS domain's pool in the FPM log.
+FPM_CRASH_WINDOW_MIN=3
+FPM_CRASH_THRESHOLD=3
+FPM_RESTART_MIN_INTERVAL=600   # shared service: at most one auto-restart per 10 min
+FPM_RESTART_STAMP="$COOLDOWN_DIR/.fpm_restart"
+
+pool_workers_crashing(){
+    local domain="$1" fpm_log="$2"
+    local pool="$(domain_to_clean "$domain")"
+    [ -f "$fpm_log" ] || return 1
+    local i prefixes=()
+    for ((i=0; i<FPM_CRASH_WINDOW_MIN; i++)); do
+        prefixes+=("-e" "[$(LC_ALL=C date -d "$i minutes ago" '+%d-%b-%Y %H:%M')")
+    done
+    local n
+    n=$(tail -n 2000 "$fpm_log" 2>/dev/null \
+        | grep -F "[pool ${pool}]" \
+        | grep -E 'exited with code 137|exited on signal (6|7|9|11) ' \
+        | grep -cF "${prefixes[@]}")
+    [ "${n:-0}" -ge "$FPM_CRASH_THRESHOLD" ]
+}
+
+fpm_restart_allowed(){
+    local last=0
+    [ -f "$FPM_RESTART_STAMP" ] && last=$(cat "$FPM_RESTART_STAMP" 2>/dev/null || echo 0)
+    [ $(( $(date +%s) - ${last:-0} )) -ge "$FPM_RESTART_MIN_INTERVAL" ]
+}
+
+mark_fpm_restart(){
+    install -d -m 700 "$COOLDOWN_DIR"
+    date +%s > "$FPM_RESTART_STAMP"
+}
+
 # An interrupted Wordfence update can leave wordfence.php present while its
 # WAF vendor files are missing. WordPress then fatals before WP-CLI can load
 # normally. Deactivate only this broken plugin so the site can recover; the
@@ -399,6 +436,14 @@ recover_domain(){
         elif has_recent_php_fatal "$domain"; then
             log "[$domain] Recent PHP fatal confirmed; restarting PHP-FPM to clear stuck workers/opcache"
             restart_php_fpm "$php_ver" && fpm_restarted="yes(recent-fatal)"
+        elif pool_workers_crashing "$domain" "$fpm_log"; then
+            if fpm_restart_allowed; then
+                log "[$domain] Pool workers crashing (SIGKILL/SIGSEGV loop); restarting PHP-FPM to rebuild OPcache shared memory"
+                mark_fpm_restart
+                restart_php_fpm "$php_ver" && fpm_restarted="yes(worker-crash)"
+            else
+                log "[$domain] Pool workers crashing but FPM was auto-restarted <$((FPM_RESTART_MIN_INTERVAL/60)) min ago; skipping"
+            fi
         else
             log "[$domain] PHP-FPM and domain socket are healthy; shared service restart skipped"
         fi
@@ -411,6 +456,20 @@ recover_domain(){
     # Step 3: Re-check without touching healthy shared services.
     sleep 3
     local new_code=$(check_site_http "$domain")
+
+    # Step 3b: opcache_reset() from the CLI cannot clear the FPM OPcache segment.
+    # If the site is still failing and FPM has not been restarted, escalate once
+    # (rate-limited, shared service) - the only way to reset FPM's OPcache.
+    if ! is_healthy "$new_code" && [ "$fpm_restarted" = "no" ] && [ -n "$service" ] \
+       && fpm_restart_allowed; then
+        log "[$domain] Still HTTP $new_code after cache clear; restarting PHP-FPM to reset FPM OPcache"
+        mark_fpm_restart
+        if restart_php_fpm "$php_ver"; then
+            fpm_restarted="yes(escalation)"
+            sleep 3
+            new_code=$(check_site_http "$domain")
+        fi
+    fi
 
     # Set cooldown
     set_cooldown "$domain"
