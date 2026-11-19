@@ -112,13 +112,17 @@ def cleanup(base, domains, domain=None, db='', engine='', etc=Path('/etc/shieldp
         if not drop:
             kept.append(line)
     # Install the filtered cron first; abort deletion if installation fails.
-    if ''.join(kept) != cron.stdout:
+    cron_changed = ''.join(kept) != cron.stdout
+    if cron_changed:
         subprocess.run(['crontab', '-'], input=''.join(kept), text=True, check=True)
     for script, content in updates.items():
         atomic_write(script, content)
     for script in removed:
         script.unlink()
-    print(f'[OK] Backup cleanup: {len(updates)} batch job(s) updated, {len(removed)} script(s) removed; stale domain cron entries removed.')
+    # Runs on every update; report only real changes.
+    if updates or removed or cron_changed:
+        print(f'[OK] Backup cleanup: {len(updates)} batch job(s) updated, {len(removed)} script(s) removed'
+              + ('; stale domain cron entries removed.' if cron_changed else '.'))
 
 
 if __name__ == '__main__':

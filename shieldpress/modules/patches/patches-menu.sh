@@ -83,10 +83,7 @@ patch_134_fix_bin_perms(){
     local ID="SP_134_FIX_BIN_PERMS"
     local DESC="Restore execute bits on node_modules/.bin and vendor/bin"
 
-    if patch_applied "$ID"; then
-        skip "$DESC"
-        return 0
-    fi
+    patch_applied "$ID" && return 0
 
     echo "  Applying: $DESC..."
     local COUNT=0
@@ -119,10 +116,7 @@ patch_134_secure_config_dir(){
     local ID="SP_134_SECURE_CONFIG_DIR"
     local DESC="Lock config/ to root:root 700 and domain.env to root:root 600"
 
-    if patch_applied "$ID"; then
-        skip "$DESC"
-        return 0
-    fi
+    patch_applied "$ID" && return 0
 
     echo "  Applying: $DESC..."
     local COUNT=0
@@ -158,10 +152,7 @@ patch_134_fix_open_basedir_tmp(){
     local ID="SP_134_FIX_OPEN_BASEDIR_TMP"
     local DESC="Remove shared /tmp from open_basedir in PHP-FPM pools"
 
-    if patch_applied "$ID"; then
-        skip "$DESC"
-        return 0
-    fi
+    patch_applied "$ID" && return 0
 
     echo "  Applying: $DESC..."
     local COUNT=0
@@ -205,10 +196,7 @@ patch_134_ensure_php_slow_dir(){
     local ID="SP_134_ENSURE_PHP_SLOW_DIR"
     local DESC="Ensure PHP slow log directory exists"
 
-    if patch_applied "$ID"; then
-        skip "$DESC"
-        return 0
-    fi
+    patch_applied "$ID" && return 0
 
     echo "  Applying: $DESC..."
 
@@ -243,10 +231,7 @@ patch_138_fix_webmail_smtp(){
     local DESC="Fix Roundcube SMTP config error (allow_self_signed + smtp_host)"
     local RC_CONFIG="/var/www/webmail/config/config.inc.php"
 
-    if patch_applied "$ID"; then
-        skip "$DESC"
-        return 0
-    fi
+    patch_applied "$ID" && return 0
 
     # Skip if webmail not installed
     if [ ! -f "$RC_CONFIG" ]; then
@@ -292,10 +277,7 @@ patch_1331_selinux_domain_context(){
     local ID="SP_1331_SELINUX_DOMAIN_CONTEXT"
     local DESC="Apply SELinux fcontext to existing domains + shared php-slow log dir"
 
-    if patch_applied "$ID"; then
-        skip "$DESC"
-        return 0
-    fi
+    patch_applied "$ID" && return 0
 
     if ! command -v semanage >/dev/null 2>&1; then
         skip "$DESC (SELinux/semanage not present)"
@@ -339,10 +321,7 @@ patch_1331_selinux_network_booleans(){
     local ID="SP_1331_SELINUX_NETWORK_BOOLEANS"
     local DESC="Enable httpd_can_network_connect(_db) SELinux booleans"
 
-    if patch_applied "$ID"; then
-        skip "$DESC"
-        return 0
-    fi
+    patch_applied "$ID" && return 0
 
     if ! command -v setsebool >/dev/null 2>&1; then
         skip "$DESC (SELinux/setsebool not present)"
@@ -372,10 +351,7 @@ patch_1331_retrofit_security_headers(){
     local DESC="Include security headers snippet in existing domain nginx configs"
     local SNIPPET="/etc/nginx/snippets/shieldpress-security-headers.conf"
 
-    if patch_applied "$ID"; then
-        skip "$DESC"
-        return 0
-    fi
+    patch_applied "$ID" && return 0
 
     if ! command -v nginx >/dev/null 2>&1; then
         skip "$DESC (nginx not present)"
@@ -435,10 +411,7 @@ patch_1331_install_logrotate(){
     local ID="SP_1331_INSTALL_LOGROTATE"
     local DESC="Install logrotate config for ShieldPress logs"
 
-    if patch_applied "$ID"; then
-        skip "$DESC"
-        return 0
-    fi
+    patch_applied "$ID" && return 0
 
     if ! command -v logrotate >/dev/null 2>&1; then
         skip "$DESC (logrotate not present)"
@@ -466,10 +439,7 @@ patch_1331_warn_node_root_pm2(){
     local ID="SP_1331_WARN_NODE_ROOT_PM2"
     local DESC="Warn about Node.js domains still running under root PM2"
 
-    if patch_applied "$ID"; then
-        skip "$DESC"
-        return 0
-    fi
+    patch_applied "$ID" && return 0
 
     if ! command -v pm2 >/dev/null 2>&1; then
         patch_mark_done "$ID"
@@ -513,10 +483,7 @@ patch_1331_service_resilience(){
     local ID="SP_1331_SERVICE_RESILIENCE"
     local DESC="Auto-restart MariaDB/PostgreSQL/PHP-FPM after crash/OOM-kill"
 
-    if patch_applied "$ID"; then
-        skip "$DESC"
-        return 0
-    fi
+    patch_applied "$ID" && return 0
 
     echo "  Applying: $DESC..."
     local COUNT=0
@@ -554,7 +521,7 @@ patch_1331_resize_php_pools(){
 # patch_XXX_short_name(){
 #     local ID="SP_XXX_SHORT_NAME"
 #     local DESC="Human readable description"
-#     patch_applied "$ID" && { skip "$DESC"; return 0; }
+#     patch_applied "$ID" && return 0
 #     echo "  Applying: $DESC..."
 #     # ... fix logic ...
 #     patch_mark_done "$ID"
@@ -566,7 +533,7 @@ patch_1331_resize_php_pools(){
 # with the source that was just installed (one-time trust of this update).
 patch_20261101_release_signing(){
     local ID="SP_20261101_RELEASE_SIGNING"
-    patch_applied "$ID" && { skip "Release signing keys already installed"; return 0; }
+    patch_applied "$ID" && return 0
     if ! ( source "$BASE_DIR/core/release-verify.sh" && sp_release_keys_sync && sp_release_keys_bootstrap ); then
         fail "Release signing key install remains pending"
         return 1
@@ -580,7 +547,7 @@ patch_20261101_release_signing(){
 # login banner and restore an enabled Auto-Update schedule from the new source.
 patch_20261101_quick_commands_autoupdate(){
     local ID="SP_20261101_QUICK_COMMANDS_AUTOUPDATE"
-    patch_applied "$ID" && { skip "Quick commands and Auto-Update already migrated"; return 0; }
+    patch_applied "$ID" && return 0
     chmod 755 "$BASE_DIR/bin/shieldpress-autoupdate" || { fail "Cannot make the Auto-Update runner executable"; return 1; }
     if ! ( source "$BASE_DIR/core/quick-commands.sh" && sp_install_login_banner ); then
         fail "Login banner update remains pending"
@@ -603,7 +570,7 @@ patch_20261101_quick_commands_autoupdate(){
 # Anchor it to the parameter name in the snippet and in every domain config.
 patch_20261102_author_rule_anchor(){
     local ID="SP_20261102_AUTHOR_RULE_ANCHOR"
-    patch_applied "$ID" && { skip "Author enumeration rule already anchored"; return 0; }
+    patch_applied "$ID" && return 0
     if ! command -v nginx >/dev/null 2>&1; then
         patch_mark_done "$ID"
         return 0
@@ -694,7 +661,7 @@ patch_backup_scheduled_jobs(){
 
 patch_ssl_auto_renew(){
     local ID="SP_20261001_SSL_AUTO_RENEW"
-    patch_applied "$ID" && { skip "SSL auto-renew migration already applied"; return 0; }
+    patch_applied "$ID" && return 0
     if ! command -v certbot >/dev/null; then
         skip "Certbot is not installed; SSL auto-renew migration remains pending"
         return 0
@@ -909,10 +876,7 @@ patch_wp_cache_recovery(){
 # Working sites and non-WordPress applications are left alone.
 patch_restored_wordpress_db(){
     local ID="SP_20261025_RESTORE_WORDPRESS_DB" d domain pending=0
-    if patch_applied "$ID"; then
-        skip "Restored WordPress database configuration"
-        return 0
-    fi
+    patch_applied "$ID" && return 0
     for d in "$DOMAINS_ROOT"/*; do
         [ -f "$d/config/domain.env" ] || continue
         domain=$(sed -n 's/^DOMAIN=//p' "$d/config/domain.env")
@@ -1151,9 +1115,8 @@ apply_all_patches(){
     fi
     # The running updater may be from the previous release. Repair the shortcut
     # from the newly installed source and retry failures on subsequent runs.
-    if source "$BASE_DIR/core/update-shortcut.sh" && sp_install_update_shortcut; then
-        ok "Numeric shortcuts installed: 2 update, 3 cache, 4 domain, 5 ssl, 6 backup"
-    else
+    # Quiet on success: this repair runs on every update.
+    if ! { source "$BASE_DIR/core/update-shortcut.sh" && sp_install_update_shortcut; }; then
         fail "Update shortcut repair remains pending"
         ssl_status=1
     fi
@@ -1172,7 +1135,10 @@ apply_all_patches(){
     patch_kernel_update_fallback || ssl_status=$?
     patch_nginx_worker_limits || ssl_status=$?
     local policy_timing="${DATA_DIR:-/var/shieldpress/data}/runtime-policy-timing"
-    if install -d -m 700 "$policy_timing"; then
+    # Show the progress line only when the migration still has work to do.
+    if patch_applied "SP_20261026_CACHE_ACCESS_LOG_REPAIR"; then
+        :
+    elif install -d -m 700 "$policy_timing"; then
         run_with_loading "Shared runtime policy migration" "$policy_timing/migration" 30 patch_shared_runtime_budget || ssl_status=$?
     else
         fail "Cannot create runtime policy timing directory; migration remains pending"
