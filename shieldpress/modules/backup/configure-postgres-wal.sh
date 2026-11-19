@@ -31,8 +31,10 @@ select_pg_database(){
         i=$((i+1))
     done < <(runuser -u postgres -- psql -Atqc "SELECT datname FROM pg_database WHERE datistemplate=false AND datallowconn=true AND datname NOT IN ('postgres') ORDER BY datname;" 2>/dev/null)
     [ "$i" -gt 1 ] || { echo "No PostgreSQL databases found."; return 1; }
+    echo "  0) Back"
     echo "--------------------------------------------------"
     read -r -p "Select PostgreSQL database number: " choice
+    case "${choice}" in 0|"") return 1 ;; esac
     DB_NAME="${PG_DATABASES[$choice]:-}"
     [ -n "$DB_NAME" ] || { echo "Invalid selection."; return 1; }
 

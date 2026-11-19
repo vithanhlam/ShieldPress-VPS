@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 source "$BASE_DIR/modules/helpers/custom.sh"
 source "$BASE_DIR/modules/backup/_backup_helper.sh"
 
@@ -44,9 +45,7 @@ format_duration(){
 }
 
 clear
-echo "===================================================="
-echo "                  EXPORT DATABASE"
-echo "===================================================="
+sp_header 'Export Database'
 
 if [ ! -s "$DATA_FILE" ]; then
     echo "No database data file found: $DATA_FILE"

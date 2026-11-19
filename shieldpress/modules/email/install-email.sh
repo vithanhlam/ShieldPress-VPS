@@ -127,7 +127,9 @@ echo -e "  ${BLUE}[2]${RESET} Amazon SES"
 echo -e "  ${YELLOW}[3]${RESET} Skip (configure later)"
 echo ""
 
+echo "  0) Back"
 read -p "  Select relay (1/2/3): " RELAY_CHOICE
+case "${RELAY_CHOICE}" in 0|"") exit 0 ;; esac
 
 RELAY_TYPE="none"
 RELAY_KEY=""

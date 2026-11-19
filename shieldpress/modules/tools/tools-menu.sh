@@ -175,9 +175,7 @@ restart_stack(){
 
 status(){
     echo ""
-    echo "===================================================="
-    echo "  SERVICE STATUS"
-    echo "===================================================="
+    sp_title 'Service Status'
     for svc in nginx mariadb postgresql valkey; do
         STATE=$(systemctl is-active "$svc" 2>/dev/null)
         if [ "$STATE" = "active" ]; then
@@ -207,9 +205,7 @@ status(){
 
 versions(){
     echo ""
-    echo "===================================================="
-    echo "  VERSION INFO"
-    echo "===================================================="
+    sp_title 'Version Info'
     echo -n "  Nginx   : "; nginx -v 2>&1 | grep -oP 'nginx/\S+'
     echo -n "  MariaDB : "; mysql -V 2>/dev/null | awk '{print $5}' | tr -d ','
     echo -n "  PostgreSQL : "; psql --version 2>/dev/null | awk '{print $3}'
@@ -262,9 +258,7 @@ repair(){
 
 reload_php_menu(){
     echo ""
-    echo "========================================="
-    echo "  RELOAD PHP / NGINX"
-    echo "========================================="
+    sp_title 'Reload PHP / Nginx'
     echo ""
 
     # Detect installed PHP versions
@@ -441,9 +435,7 @@ EOF
 
 install_ioncube(){
 
-    echo "========================================="
-    echo "       IONCUBE INSTALLER (SAFE)"
-    echo "========================================="
+    sp_title 'ionCube Installer (Safe)'
     echo ""
 
     [ "$EUID" -ne 0 ] && { fail "Run as root"; return 1; }
@@ -576,9 +568,7 @@ EOF
 
 remove_ioncube(){
 
-    echo "========================================="
-    echo "       REMOVE IONCUBE"
-    echo "========================================="
+    sp_title 'Remove ionCube'
     echo ""
 
     [ "$EUID" -ne 0 ] && { fail "Run as root"; return 1; }
@@ -625,7 +615,9 @@ view_logs(){
     echo "4) MariaDB log"
     echo "5) ShieldPress tools log"
     echo "6) Domain-specific Nginx log"
+    echo "0) Back"
     read -p "Choose: " c
+    case "${c}" in 0|"") return 0 ;; esac
 
     case $c in
         1) tail -f /var/log/nginx/access.log ;;
@@ -659,12 +651,16 @@ view_logs(){
                 DLIST[$i]=$(basename "$d")
                 ((i++))
             done
+            echo "  0) Back"
             read -p "Select: " DC
+            case "${DC}" in 0|"") return 0 ;; esac
             DF="${DLIST[$DC]}"
             [ -z "$DF" ] && { warn "Invalid"; return; }
             LOG_DIR="/var/log/nginx/domains/$DF"
             echo "1) access.log  2) error.log"
+            echo "0) Back"
             read -p "Choose: " LC
+            case "${LC}" in 0|"") return 0 ;; esac
             case $LC in
                 1) tail -f "$LOG_DIR/access.log" ;;
                 2) tail -f "$LOG_DIR/error.log" ;;
@@ -684,6 +680,7 @@ show_php_modules(){
         BIN="/opt/remi/php${php}/root/usr/bin/php"
         [ -x "$BIN" ] && echo "$((php-80))) PHP 8.${php:1}"
     done
+    echo "0) Back"
     read -p "Choose: " v
     case $v in
         1) BIN="/opt/remi/php81/root/usr/bin/php" ;;

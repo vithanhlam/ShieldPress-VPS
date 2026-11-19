@@ -126,7 +126,9 @@ select_pg_database(){
         ((i++))
     done <<< "$db_rows"
 
+    echo "  0) Back"
     read -p "Select: " choice
+    case "${choice}" in 0|"") return 1 ;; esac
     DB_NAME="${DB_CHOICES[$choice]}"
     [ -n "$DB_NAME" ] || { fail "Invalid selection"; return 1; }
     DB_META="$PG_DB_DIR/${DB_NAME}.env"
@@ -531,7 +533,9 @@ pg_auto_backup(){
     echo "  1) Daily (default)"
     echo "  2) Weekly"
     echo "  3) Monthly"
+    echo "  0) Back"
     read -p "Select [1]: " FREQ_CHOICE
+    case "${FREQ_CHOICE}" in 0) return 0 ;; esac
     FREQ_CHOICE="${FREQ_CHOICE:-1}"
 
     local CRON_SCHEDULE FREQ_LABEL

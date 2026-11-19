@@ -6,6 +6,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 source "$BASE_DIR/core/domain-security.sh"
 LOG_FILE="$LOG_DIR/integrity.log"
 DOMAINS_ROOT="/home/domains"
@@ -592,9 +593,7 @@ esac
 # Interactive
 while true; do
     clear
-    echo "===================================================="
-    echo "         SYSTEM INTEGRITY CHECK"
-    echo "===================================================="
+    sp_header 'System Integrity Check'
     echo ""
     echo "  1) Full Check (ask before fixing)"
     echo "  2) Full Check (auto-fix all)"

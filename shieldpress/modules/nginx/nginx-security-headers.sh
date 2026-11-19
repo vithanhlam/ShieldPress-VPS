@@ -1,4 +1,5 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 # NOTE: dùng /etc/nginx/snippets/ (không phải conf.d/) vì file này được
 # `include` bên trong từng server{} của domain (domain/helpers.sh), không
@@ -28,9 +29,7 @@ headers_enabled(){
 
 show_status(){
     echo ""
-    echo "===================================================="
-    echo "           SECURITY HEADERS STATUS"
-    echo "===================================================="
+    sp_title 'Security Headers Status'
     echo ""
 
     if ! headers_enabled; then
@@ -47,9 +46,7 @@ show_status(){
 
 enable_headers(){
     echo ""
-    echo "===================================================="
-    echo "        ENABLE SECURITY HEADERS"
-    echo "===================================================="
+    sp_title 'Enable Security Headers'
     echo ""
     echo "This will add the following security headers:"
     echo "  - X-Frame-Options (clickjacking protection)"
@@ -166,9 +163,7 @@ edit_headers(){
 
 while true; do
     clear
-    echo "===================================================="
-    echo "           NGINX SECURITY HEADERS"
-    echo "===================================================="
+    sp_header 'Nginx Security Headers'
     echo ""
     echo "1) Show Current Status"
     echo "2) Enable Security Headers"

@@ -49,8 +49,10 @@ if [ $i -eq 1 ]; then
     exit 0
 fi
 
+echo "  0) Back"
 echo "--------------------------------"
 read -p "Select account: " CHOICE
+case "${CHOICE}" in 0|"") exit 0 ;; esac
 
 USERNAME="${ACCOUNTS[$CHOICE]}"
 if [ -z "$USERNAME" ]; then

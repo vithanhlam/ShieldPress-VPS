@@ -1,4 +1,5 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 CONF="/etc/nginx/conf.d/shieldpress-rate-limit.conf"
 BACKUP="${CONF}.bak.$(date +%s)"
@@ -15,9 +16,7 @@ warn(){ echo -e "${YELLOW}[WARN]${RESET} $1"; }
 
 show_status(){
     echo ""
-    echo "===================================================="
-    echo "           RATE LIMITING STATUS"
-    echo "===================================================="
+    sp_title 'Rate Limiting Status'
     echo ""
 
     if [ ! -f "$CONF" ]; then
@@ -46,9 +45,7 @@ show_status(){
 
 enable_global(){
     echo ""
-    echo "===================================================="
-    echo "       ENABLE GLOBAL RATE LIMITING"
-    echo "===================================================="
+    sp_title 'Enable Global Rate Limiting'
     echo ""
     echo "Rate limiting protects against:"
     echo "  - Brute force attacks"
@@ -225,9 +222,7 @@ disable_global(){
 
 while true; do
     clear
-    echo "===================================================="
-    echo "            NGINX RATE LIMITING"
-    echo "===================================================="
+    sp_header 'Nginx Rate Limiting'
     echo ""
     echo "1) Show Status"
     echo "2) Enable Global Rate Limiting"

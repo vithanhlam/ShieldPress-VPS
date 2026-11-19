@@ -37,6 +37,7 @@ select_domain_monitor(){
         ((i++))
     done
 
+    echo "  0) Back"
     echo "------------------------------"
     read -p "Select domain number: " choice
 
@@ -155,9 +156,7 @@ detect_attack(){
 
 check_resources(){
     echo ""
-    echo "===================================================="
-    echo "  SERVER RESOURCES"
-    echo "===================================================="
+    sp_title 'Server Resources'
 
     RAM_TOTAL=$(free -m | awk '/Mem:/ {print $2}')
     RAM_USED=$(free -m  | awk '/Mem:/ {print $3}')
@@ -285,6 +284,7 @@ live_log(){
     echo ""
     echo "1) Access log"
     echo "2) Error log"
+    echo "0) Back"
     read -p "Choose: " LC
 
     case $LC in
@@ -311,9 +311,7 @@ live_log(){
 
 log_viewer(){
     echo ""
-    echo "===================================================="
-    echo "  LOG VIEWER"
-    echo "===================================================="
+    sp_title 'Log Viewer'
 
     # Step 1: Choose log type
     echo ""
@@ -360,7 +358,9 @@ log_viewer(){
             done
             [ $pi -eq 1 ] && { echo "  No PHP-FPM error logs found."; pause; return; }
             echo ""
+            echo "  0) Back"
             read -p "Select: " pchoice
+            case "${pchoice}" in 0|"") return 0 ;; esac
             TARGET_LOG="${PHP_LOGS[$pchoice]}"
             [ -z "$TARGET_LOG" ] && { echo "Invalid selection"; pause; return; }
             LOG_LABEL="PHP-FPM Error ($(basename "$(dirname "$(dirname "$TARGET_LOG")")"))"
@@ -470,9 +470,7 @@ log_viewer(){
 
 service_status(){
     echo ""
-    echo "===================================================="
-    echo "  SERVICE STATUS DASHBOARD"
-    echo "===================================================="
+    sp_title 'Service Status Dashboard'
     echo ""
 
     # Helper: check and print status
@@ -561,9 +559,7 @@ service_status(){
 
 domain_health_check(){
     echo ""
-    echo "===================================================="
-    echo "  DOMAIN HEALTH CHECK"
-    echo "===================================================="
+    sp_title 'Domain Health Check'
     echo ""
 
     local TOTAL=0
@@ -633,9 +629,7 @@ domain_health_check(){
 
 mysql_slow_log_viewer(){
     echo ""
-    echo "===================================================="
-    echo "  MYSQL / MARIADB SLOW QUERY LOG"
-    echo "===================================================="
+    sp_title 'MySQL / MariaDB Slow Query Log'
     echo ""
 
     if ! systemctl is-active --quiet mariadb 2>/dev/null && ! systemctl is-active --quiet mysql 2>/dev/null; then
@@ -778,9 +772,7 @@ EOF
 
 php_slow_log_analyzer(){
     echo ""
-    echo "===================================================="
-    echo "  PHP SLOW LOG ANALYZER"
-    echo "===================================================="
+    sp_title 'PHP Slow Log Analyzer'
 
     select_domain_monitor || return
 

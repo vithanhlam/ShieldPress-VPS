@@ -5,6 +5,7 @@
 # ============================================================
 
 BASE_DIR="/opt/shieldpress"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 MODULE_DIR="$BASE_DIR/modules/ssl"
 DOMAINS_ROOT="/home/domains"
 
@@ -33,7 +34,9 @@ echo "  Input method:"
 echo "  1) Provide file paths (cert + key files on server)"
 echo "  2) Paste certificate and key content"
 echo ""
+echo "  0) Back"
 read -p "Select [1]: " METHOD
+case "${METHOD}" in 0) exit 0 ;; esac
 METHOD="${METHOD:-1}"
 
 CERT_FILE="$SSL_DIR/fullchain.pem"
@@ -211,9 +214,7 @@ sed -i '/^SSL_TYPE=/d' "$DOMAIN_PATH/config/domain.env"
 echo "SSL_TYPE=custom" >> "$DOMAIN_PATH/config/domain.env"
 
 echo ""
-echo "======================================"
-echo " CUSTOM SSL INSTALLED SUCCESSFULLY"
-echo "======================================"
+sp_title 'Custom SSL Installed Successfully'
 echo " Domain  : https://$DOMAIN"
 echo " Cert    : $CERT_FILE"
 echo " Key     : $KEY_FILE"

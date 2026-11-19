@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 source "$BASE_DIR/modules/helpers/custom.sh"
 
 DATA_FILE="$DATA_DIR/databases.list"
@@ -14,9 +15,7 @@ fi
 
 clear
 
-echo "===================================================="
-echo "           CREATE DATABASE + USER"
-echo "===================================================="
+sp_header 'Create Database + User'
 
 read -p "Enter Database Name: " DB_NAME
 

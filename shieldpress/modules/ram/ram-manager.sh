@@ -129,7 +129,9 @@ add_swap_file(){
     echo "  4) 8 GB"
     echo "  5) Custom"
     echo ""
+    echo "  0) Back"
     read -p "Select [2]: " SWAP_OPT
+    case "${SWAP_OPT}" in 0) return 0 ;; esac
     SWAP_OPT="${SWAP_OPT:-2}"
 
     case "$SWAP_OPT" in

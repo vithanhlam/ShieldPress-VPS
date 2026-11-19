@@ -42,6 +42,7 @@ echo -e "  ${WHITE}[0]${RESET} Back"
 echo ""
 
 read -p "  Select: " TEST_CHOICE
+case "${TEST_CHOICE}" in 0|"") exit 0 ;; esac
 
 case $TEST_CHOICE in
 # ============================================================
@@ -72,7 +73,9 @@ case $TEST_CHOICE in
     fi
 
     echo ""
+    echo "    0) Back"
     read -p "  Select sender: " SENDER_CHOICE
+    case "${SENDER_CHOICE}" in 0|"") exit 0 ;; esac
     FROM="${SENDERS[$SENDER_CHOICE]}"
     [ -z "$FROM" ] && { fail "Invalid selection"; read -p "Press Enter..."; exit 1; }
 
@@ -175,7 +178,9 @@ EMAIL_EOF
     fi
 
     echo ""
+    echo "    0) Back"
     read -p "  Select recipient: " RCPT_CHOICE
+    case "${RCPT_CHOICE}" in 0|"") exit 0 ;; esac
     RCPT="${RECIPIENTS[$RCPT_CHOICE]}"
     [ -z "$RCPT" ] && { fail "Invalid selection"; read -p "Press Enter..."; exit 1; }
 
@@ -267,7 +272,9 @@ LOCAL_EOF
     done < /etc/dovecot/users
 
     echo ""
+    echo "    0) Back"
     read -p "  Select account: " ACC_CHOICE
+    case "${ACC_CHOICE}" in 0|"") exit 0 ;; esac
     TEST_EMAIL="${ACCOUNTS[$ACC_CHOICE]}"
     [ -z "$TEST_EMAIL" ] && { fail "Invalid selection"; read -p "Press Enter..."; exit 1; }
 
@@ -471,6 +478,7 @@ LOCAL_EOF
     done < /etc/dovecot/users
 
     echo ""
+    echo "    0) Back"
     read -p "  Select account: " ACC_CHOICE
     TEST_EMAIL="${ACCOUNTS[$ACC_CHOICE]}"
     [ -z "$TEST_EMAIL" ] && { fail "Invalid selection"; read -p "Press Enter..."; exit 1; }

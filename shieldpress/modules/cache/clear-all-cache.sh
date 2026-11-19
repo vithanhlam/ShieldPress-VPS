@@ -1,8 +1,7 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
-echo "===================================================="
-echo "            CLEAR ALL CACHE (GLOBAL)"
-echo "===================================================="
+sp_title 'Clear All Cache (Global)'
 echo ""
 
 # OPcache - restart tất cả PHP-FPM

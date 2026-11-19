@@ -337,9 +337,7 @@ clone_site(){
     unlock
 
     echo ""
-    echo "===================================================="
-    echo " [OK] CLONE COMPLETED SUCCESSFULLY"
-    echo "===================================================="
+    sp_title 'Clone Completed Successfully'
     echo "  Source : $SRC_DOMAIN"
     echo "  Target : $TARGET_DOMAIN"
     echo "  URL    : $NEW_URL"

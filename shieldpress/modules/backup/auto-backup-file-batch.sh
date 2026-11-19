@@ -3,14 +3,13 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 source "$BASE_DIR/core/domain-security.sh"
 pause(){ echo ""; read -rp "Press Enter..."; }
 valid_number(){ [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge "$2" ] && [ "$1" -le "$3" ]; }
 
 clear
-echo "===================================================="
-echo "              AUTO BACKUP FILE (BATCH)"
-echo "===================================================="
+sp_header 'Auto Backup File (Batch)'
 echo "  Select multiple domains; each archive runs sequentially."
 echo ""
 declare -a PATHS DOMAINS TYPES; index=1
@@ -22,7 +21,9 @@ for path in "$DOMAINS_ROOT"/*/; do
     printf '  %2d) %-35s %s\n' "$index" "$domain" "$type"; ((index++))
 done
 [ "$index" -gt 1 ] || { echo "No domains found."; pause; exit 1; }
+echo "  0) Back"
 echo "----------------------------------------------------"; read -rp "Choose numbers (e.g. 1,3-5) or 'all': " selected
+case "${selected}" in 0|"") exit 0 ;; esac
 declare -a PICKED
 if [ "$selected" = all ]; then for ((n=1;n<index;n++)); do PICKED+=("$n"); done
 else
@@ -35,6 +36,7 @@ fi
 [ "${#PICKED[@]}" -gt 0 ] || { echo "No valid domains selected."; pause; exit 1; }
 echo ""; echo "Backup method:"; echo "  1) Smart app backup (recommended: WP content; Laravel/Node source)"; echo "  2) Latest changed files (last 24 hours: uploads/source)"; echo "  3) Full source (excludes dependencies/build cache)"
 read -rp "Select (1-3): " mode
+case "${mode}" in 0|"") exit 0 ;; esac
 case "$mode" in 1) mode=smart;; 2) mode=recent;; 3) mode=full;; *) echo "Invalid method."; pause; exit 1;; esac
 while ! valid_number "$RETENTION" 1 30; do read -rp "Keep how many backups per domain (1-30): " RETENTION; done
 while ! valid_number "$HOUR" 0 23; do read -rp "Start hour (0-23): " HOUR; done

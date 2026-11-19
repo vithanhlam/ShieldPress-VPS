@@ -1,10 +1,9 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 while true; do
     clear
-    echo "===================================================="
-    echo "              VALKEY SERVER MANAGER"
-    echo "===================================================="
+    sp_header 'Valkey Server Manager'
 
     STATUS=$(systemctl is-active valkey 2>/dev/null)
     MEM=$(valkey-cli info memory 2>/dev/null | grep "used_memory_human" | cut -d: -f2 | tr -d '[:space:]')

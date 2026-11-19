@@ -9,6 +9,7 @@ set -e
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 LOG_FILE="$LOG_DIR/auto-reload-db.log"
 LOCK_FILE="/tmp/auto-reload-db.lock"
@@ -39,9 +40,7 @@ mkdir -p "$LOG_DIR"
 show_menu(){
     clear
     echo ""
-    echo "=============================================="
-    echo "     AUTO-RELOAD MariaDB Setup"
-    echo "=============================================="
+    sp_header 'MariaDB Auto-reload Setup'
     echo ""
     echo "  1) Enable Auto-Restart (Install Service)"
     echo "  2) Disable Auto-Restart (Remove Service)"

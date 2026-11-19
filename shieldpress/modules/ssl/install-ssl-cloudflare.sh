@@ -4,6 +4,7 @@
 # ============================================================
 
 BASE_DIR="/opt/shieldpress"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 MODULE_DIR="$BASE_DIR/modules/ssl"
 DOMAINS_ROOT="/home/domains"
 
@@ -97,7 +98,9 @@ echo "  Input method:"
 echo "  1) Paste directly (copy from Cloudflare and paste here)"
 echo "  2) Provide file paths (if cert/key are saved on server)"
 echo ""
+echo "  0) Back"
 read -p "  Select [1]: " INPUT_METHOD
+case "${INPUT_METHOD}" in 0) exit 0 ;; esac
 INPUT_METHOD="${INPUT_METHOD:-1}"
 
 case "$INPUT_METHOD" in
@@ -345,9 +348,7 @@ sed -i '/^SSL_TYPE=/d' "$DOMAIN_PATH/config/domain.env"
 echo "SSL_TYPE=cloudflare" >> "$DOMAIN_PATH/config/domain.env"
 
 echo ""
-echo "======================================"
-echo " CLOUDFLARE ORIGIN SSL INSTALLED"
-echo "======================================"
+sp_title 'Cloudflare Origin SSL Installed'
 echo " Domain  : https://$DOMAIN"
 echo " Cert    : $CERT_FILE"
 echo " Expires : $CERT_EXPIRY"

@@ -7,6 +7,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 BIN_DIR="$BASE_DIR/bin"
 LOG_FILE="$LOG_DIR/auto-repair.log"
 STATE_DIR="$LOG_DIR/repair-state"
@@ -527,9 +528,7 @@ clear_alerts(){
 
 while true; do
     clear
-    echo "===================================================="
-    echo "          AUTO-REPAIR DAEMON"
-    echo "===================================================="
+    sp_header 'Auto-repair Daemon'
     echo ""
     echo "  1) Show Status"
     echo "  2) Enable Auto-Repair"

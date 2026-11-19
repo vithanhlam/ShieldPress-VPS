@@ -1,4 +1,5 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 GREEN="\e[32m"
 RED="\e[31m"
@@ -11,9 +12,7 @@ ok(){ echo -e "${GREEN}[OK]${RESET} $1"; }
 warn(){ echo -e "${YELLOW}[WARN]${RESET} $1"; }
 fail(){ echo -e "${RED}[FAIL]${RESET} $1"; }
 
-echo "===================================================="
-echo "              NGINX STATUS & INFO"
-echo "===================================================="
+sp_title 'Nginx Status & Info'
 echo ""
 
 # ================================================

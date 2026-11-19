@@ -1,9 +1,8 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 clear
-echo "===================================================="
-echo "              REMOVE VALKEY"
-echo "===================================================="
+sp_header 'Remove Valkey'
 echo ""
 echo -e "\e[31mWARNING: This will remove Valkey and all cached data!\e[0m"
 echo ""

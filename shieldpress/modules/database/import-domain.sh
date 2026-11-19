@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 source "$BASE_DIR/core/domain-security.sh"
 source "$BASE_DIR/core/helpers.sh"
 
@@ -33,9 +34,7 @@ import_spinner(){
 
 clear
 
-echo "===================================================="
-echo "              IMPORT TO DOMAIN DB"
-echo "===================================================="
+sp_header 'Import To Domain DB'
 
 # ==========================
 # LIST DOMAINS
@@ -58,6 +57,7 @@ for d in "$DOMAINS_ROOT"/*; do
     fi
 done
 
+echo "  0) Back"
 echo "--------------------------------"
 read -p "Select domain number: " choice
 

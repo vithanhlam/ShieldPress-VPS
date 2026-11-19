@@ -31,9 +31,7 @@ case $CHOICE in
         bash "$MODULE_DIR/permission-fix.sh"
         log "FULL AUTO OPTIMIZE completed"
         echo ""
-        echo "============================"
-        echo "FULL OPTIMIZATION COMPLETE!"
-        echo "============================"
+        sp_title 'Full Optimization Complete!'
         read -p "Press Enter..."
         ;;
     0)  break ;;

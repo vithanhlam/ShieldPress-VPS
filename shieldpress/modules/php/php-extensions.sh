@@ -1,4 +1,5 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 GREEN="\e[32m"
 RED="\e[31m"
@@ -473,9 +474,7 @@ install_all_common(){
 
 while true; do
     clear
-    echo "===================================================="
-    echo "          PHP EXTENSION MANAGER"
-    echo "===================================================="
+    sp_header 'PHP Extension Manager'
     echo ""
     echo "  1) Manage Extensions (toggle ON/OFF)"
     echo "  2) Install All Common Extensions"

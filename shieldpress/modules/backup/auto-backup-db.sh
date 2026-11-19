@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 LOG_FILE="$LOG_DIR/auto-backup.log"
 source "$BASE_DIR/modules/backup/_backup_helper.sh"
 mkdir -p "$LOG_DIR"
@@ -43,9 +44,7 @@ database_schedule_status(){
 }
 
 clear
-echo "===================================================="
-echo "              AUTO BACKUP DATABASE"
-echo "===================================================="
+sp_header 'Auto Backup Database'
 echo ""
 if [ -n "$TARGET_DB" ]; then
     case "$TARGET_ENGINE" in
@@ -59,8 +58,10 @@ else
     echo "  1) Domain (read from domain config)"
     echo "  2) Database name (list from MariaDB)"
     echo "  3) Database name (list from PostgreSQL)"
+    echo "  0) Back"
     echo "--------------------------------------------------"
     read -p "Select mode: " SELECT_MODE
+    case "${SELECT_MODE}" in 0|"") exit 0 ;; esac
 fi
 
 # Variables to be set by selection
@@ -95,8 +96,10 @@ case "$SELECT_MODE" in
 
     [ $i -eq 1 ] && { echo "No domains with databases found."; pause; exit 1; }
 
+    echo "0) Back"
     echo "--------------------------------------------------"
     read -p "Select domain number: " choice
+    case "${choice}" in 0|"") exit 0 ;; esac
     FOLDER="${FOLDERS[$choice]}"
     [ -z "$FOLDER" ] && { echo "Invalid selection!"; pause; exit 1; }
 
@@ -141,7 +144,9 @@ case "$SELECT_MODE" in
         DB_NAME="$TARGET_DB"
         mysql -N -e "SHOW DATABASES;" 2>/dev/null | grep -Fxq "$DB_NAME" || { echo "Database not found: $DB_NAME"; pause; exit 1; }
     else
+        echo "  0) Back"
         read -p "Select database number: " choice
+        case "${choice}" in 0|"") exit 0 ;; esac
         DB_NAME="${DB_MAP[$choice]}"
     fi
     [ -z "$DB_NAME" ] && { echo "Invalid selection!"; pause; exit 1; }
@@ -206,7 +211,9 @@ case "$SELECT_MODE" in
         DB_NAME="$TARGET_DB"
         runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME';" 2>/dev/null | grep -qx 1 || { echo "Database not found: $DB_NAME"; pause; exit 1; }
     else
+        echo "  0) Back"
         read -p "Select database number: " choice
+        case "${choice}" in 0|"") exit 0 ;; esac
         DB_NAME="${PG_MAP[$choice]}"
     fi
     [ -z "$DB_NAME" ] && { echo "Invalid selection!"; pause; exit 1; }
@@ -369,9 +376,7 @@ chmod 700 "$AUTO_SCRIPT"
 (crontab -l 2>/dev/null | grep -vF "$AUTO_SCRIPT" | grep -vF "$DOMAIN_PATH/config/auto-backup-db.sh"; echo "$CRON_TIME $AUTO_SCRIPT") | crontab -
 
 echo ""
-echo "===================================================="
-echo "  AUTO DB BACKUP SCHEDULED"
-echo "===================================================="
+sp_title 'Auto DB Backup Scheduled'
 echo "  Database : $DB_NAME ($DB_CONNECTION)"
 echo "  User     : $DB_USER"
 [ -n "$DOMAIN" ] && [ "$DOMAIN" != "$DB_NAME" ] && echo "  Domain   : $DOMAIN"

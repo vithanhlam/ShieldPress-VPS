@@ -2,6 +2,7 @@
 
 source /opt/shieldpress/modules/wordpress/helpers.sh
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 # Handle --auto mode for cron execution
 AUTO_MODE=0
@@ -423,9 +424,7 @@ setup_cron(){
     CURRENT=$(crontab -l 2>/dev/null)
 
     echo ""
-    echo "======================================"
-    echo "        CACHE WARMUP CRON"
-    echo "======================================"
+    sp_title 'Cache Warmup Cron'
 
     # =========================
     # CHECK EXISTING
@@ -438,8 +437,10 @@ setup_cron(){
         echo "1) Re-create (overwrite)"
         echo "2) Remove cron"
         echo "3) Keep current"
+        echo "0) Back"
         echo "--------------------------------------"
         read -p "Select: " opt
+        case "${opt}" in 0|"") return 0 ;; esac
 
         case $opt in
 

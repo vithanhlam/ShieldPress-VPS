@@ -8,6 +8,7 @@ fi
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh" 2>/dev/null || true
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 source "$BASE_DIR/core/update-source.sh" 2>/dev/null || true
 source "$BASE_DIR/core/quick-commands.sh" 2>/dev/null || true
 MODULE_DIR="$BASE_DIR/modules"
@@ -135,9 +136,7 @@ run_shieldpress_update(){
     fi
 
     clear
-    echo "======================================"
-    echo "        ShieldPress VPS Update"
-    echo "======================================"
+    sp_header 'ShieldPress VPS Update'
     echo "Installed : $SHIELDPRESS_VERSION"
     echo "Latest    : $REMOTE_SHIELDPRESS_VERSION"
     echo ""

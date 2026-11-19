@@ -5,6 +5,7 @@ trap 'echo ""; echo "ERROR at line $LINENO (code $?)"; read -p "Press Enter to c
 
 source /opt/shieldpress/modules/wordpress/helpers.sh
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 LOG_FILE="$LOG_DIR/staging.log"
 BACKUP_DIR="$DATA_DIR_TMP_BACKUPS"
@@ -422,9 +423,7 @@ sync_menu(){
 
 while true; do
 clear
-echo "========================================"
-echo "         STAGING MANAGER"
-echo "========================================"
+sp_header 'Staging Manager'
 echo "1) Create Staging"
 echo "2) Sync Tools"
 echo "3) Delete Staging"

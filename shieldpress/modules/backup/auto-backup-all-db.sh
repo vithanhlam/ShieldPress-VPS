@@ -3,6 +3,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 pause(){ echo ""; read -rp "Press Enter..."; }
 engine_name(){
@@ -78,9 +79,7 @@ add_database(){
 }
 
 clear
-echo "============================================================"
-echo "       AUTO BACKUP ALL DATABASES (SEPARATE SCHEDULES)"
-echo "============================================================"
+sp_header 'Auto Backup All Databases (Separate Schedules)'
 echo "Each database gets its own backup script, cron schedule and retention."
 echo ""
 echo " #  ENGINE  DATABASE                         TARGET                       STATUS"

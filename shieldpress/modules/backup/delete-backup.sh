@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 LOG_FILE="$LOG_DIR/backup.log"
 mkdir -p "$LOG_DIR"
 
@@ -9,9 +10,7 @@ log(){  echo "$(date '+%F %T') | $1" >> "$LOG_FILE"; }
 pause(){ echo ""; read -p "Press Enter..."; }
 
 clear
-echo "===================================================="
-echo "               DELETE BACKUP FILES"
-echo "===================================================="
+sp_header 'Delete Backup Files'
 
 declare -a FOLDERS=()
 i=1
@@ -25,8 +24,10 @@ for d in "$DOMAINS_ROOT"/*/; do
     ((i++))
 done
 
+echo "0) Back"
 echo "--------------------------------------------------"
 read -p "Select domain number: " choice
+case "${choice}" in 0|"") exit 0 ;; esac
 FOLDER="${FOLDERS[$choice]}"
 [ -z "$FOLDER" ] && { echo "Invalid selection!"; pause; exit 1; }
 
@@ -41,6 +42,7 @@ echo "3) Full       ($DOMAIN_PATH/backup/full)"
 echo "4) Rollback   ($DOMAIN_PATH/backup/rollback*)"
 echo "--------------------------------------------------"
 read -p "Select type: " TYPE
+case "${TYPE}" in 0|"") exit 0 ;; esac
 
 case $TYPE in
     1) TARGET_DIR="$DOMAIN_PATH/backup/db" ;;
@@ -82,8 +84,10 @@ echo "Delete Mode:"
 echo "1) Delete All"
 echo "2) Delete Specific File"
 echo "3) Delete Older Than X Days"
+echo "0) Back"
 echo "--------------------------------------------------"
 read -p "Select mode: " MODE
+case "${MODE}" in 0|"") exit 0 ;; esac
 
 case $MODE in
 1)
@@ -109,6 +113,7 @@ case $MODE in
 
     echo "--------------------------------------------------"
     read -p "Select file number: " FC
+    case "${FC}" in 0|"") exit 0 ;; esac
     FNAME="${FILES[$FC]}"
     [ -z "$FNAME" ] && { echo "Invalid selection!"; pause; exit 1; }
 

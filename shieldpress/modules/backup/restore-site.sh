@@ -3,6 +3,7 @@ set -o pipefail
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 LOG_FILE="$LOG_DIR/backup.log"
 MIN_FREE_MB=300
 source "$BASE_DIR/modules/backup/_backup_helper.sh"
@@ -12,9 +13,7 @@ log(){  echo "$(date '+%F %T') | $1" >> "$LOG_FILE"; }
 pause(){ echo ""; read -p "Press Enter..."; }
 
 clear
-echo "===================================================="
-echo "                 RESTORE WEBSITE"
-echo "===================================================="
+sp_header 'Restore Website'
 
 # List domains
 declare -a FOLDERS=()
@@ -29,8 +28,10 @@ for d in "$DOMAINS_ROOT"/*/; do
     ((i++))
 done
 
+echo "0) Back"
 echo "--------------------------------------------------"
 read -p "Select domain number: " choice
+case "${choice}" in 0|"") exit 0 ;; esac
 FOLDER="${FOLDERS[$choice]}"
 [ -z "$FOLDER" ] && { echo "Invalid selection!"; pause; exit 1; }
 
@@ -78,8 +79,10 @@ for f in "$BACKUP_DIR"/*.tar.gz "$BACKUP_DIR"/*.enc; do
     ((j++))
 done
 
+echo "0) Back"
 echo "--------------------------------------------------"
 read -p "Select backup number: " file_choice
+case "${file_choice}" in 0|"") exit 0 ;; esac
 BFILE="${FILES[$file_choice]}"
 [ -z "$BFILE" ] && { echo "Invalid selection!"; pause; exit 1; }
 FULL_PATH="$BACKUP_DIR/$BFILE"
@@ -92,9 +95,7 @@ if [ "$FREE_MB" -lt "$MIN_FREE_MB" ]; then
 fi
 
 echo ""
-echo "===================================================="
-echo "  RESTORE SUMMARY"
-echo "===================================================="
+sp_title 'Restore Summary'
 echo "  Domain  : $DOMAIN"
 echo "  Backup  : $BFILE"
 echo "  DB      : ${DB_NAME:-none} ($DB_CONNECTION)"

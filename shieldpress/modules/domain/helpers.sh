@@ -176,32 +176,9 @@ clean_domain_name(){
 # ===============================
 
 select_domain(){
-    local _PATHS=()
-    local _NAMES=()
-
-    echo ""
-    echo "Available Domains:"
-    echo "--------------------------------"
-
-    local i=1
-    for d in "$DOMAINS_ROOT"/*/; do
-        [ -d "$d" ] || continue
-        [ -f "$d/config/domain.env" ] || continue
-        local DN
-        DN=$(grep "^DOMAIN=" "$d/config/domain.env" | cut -d'=' -f2 | tr -d '[:space:]')
-        [ -z "$DN" ] && continue
-        echo "$i) $DN"
-        _PATHS[$i]="$d"
-        ((i++))
-    done
-
-    [ $i -eq 1 ] && { echo "No domains found."; return 1; }
-
-    echo "--------------------------------"
-    read -p "Select domain number: " choice
-
-    DOMAIN_PATH="${_PATHS[$choice]}"
-    [ -z "$DOMAIN_PATH" ] && { echo "Invalid selection"; return 1; }
+    declare -F sp_pick_domain >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
+    sp_pick_domain || return 1
+    DOMAIN_PATH="$SP_PICK_PATH"
 
     DOMAIN_PATH="${DOMAIN_PATH%/}"
     sp_load_domain_env "$DOMAIN_PATH" || return 1
@@ -254,7 +231,9 @@ select_php_version(){
     echo "2) PHP 8.2"
     echo "3) PHP 8.3"
     echo "4) PHP 8.4"
+    echo "0) Back"
     read -p "Choose [4]: " opt
+    case "${opt}" in 0) return 1 ;; esac
     opt="${opt:-4}"
 
     case $opt in

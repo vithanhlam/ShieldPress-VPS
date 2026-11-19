@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 LOG_FILE="$LOG_DIR/backup.log"
 MIN_FREE_MB=300
 source "$BASE_DIR/modules/backup/_backup_helper.sh"
@@ -11,9 +12,7 @@ log(){  echo "$(date '+%F %T') | $1" >> "$LOG_FILE"; }
 pause(){ echo ""; read -p "Press Enter..."; }
 
 clear
-echo "===================================================="
-echo "              BACKUP SOURCE FILES"
-echo "===================================================="
+sp_header 'Backup Source Files'
 
 # List domains
 declare -a FOLDERS=()
@@ -28,8 +27,10 @@ for d in "$DOMAINS_ROOT"/*/; do
     ((i++))
 done
 
+echo "0) Back"
 echo "--------------------------------------------------"
 read -p "Select domain number: " choice
+case "${choice}" in 0|"") exit 0 ;; esac
 FOLDER="${FOLDERS[$choice]}"
 [ -z "$FOLDER" ] && { echo "Invalid selection!"; pause; exit 1; }
 
@@ -113,9 +114,7 @@ SIZE=$(du -h "$FILE" | awk '{print $1}')
 FILE=$(maybe_encrypt_backup "$FILE")
 
 echo ""
-echo "===================================================="
-echo "  FILES BACKUP COMPLETED"
-echo "===================================================="
+sp_title 'Files Backup Completed'
 echo "  Domain   : $DOMAIN"
 echo "  App Type : $APP_TYPE"
 echo "  File     : $FILE"

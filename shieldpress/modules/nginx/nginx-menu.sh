@@ -91,6 +91,7 @@ view_nginx_logs(){
     echo "3) Domain-specific log"
     echo "0) Cancel"
     read -p "Select: " opt
+    case "${opt}" in 0|"") return 0 ;; esac
 
     case $opt in
         1) tail -f /var/log/nginx/access.log ;;
@@ -110,6 +111,7 @@ view_nginx_logs(){
                 ((i++))
             done
             read -p "Select domain: " DC
+            case "${DC}" in 0|"") return 0 ;; esac
             DF="${DLIST[$DC]}"
             [ -z "$DF" ] && { warn "Invalid"; return; }
             LOG_DIR="/var/log/nginx/domains/$DF"

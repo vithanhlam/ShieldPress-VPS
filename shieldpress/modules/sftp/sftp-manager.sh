@@ -127,7 +127,9 @@ create_sftp(){
 
     list_domains_all
     echo ""
+    echo "  0) Back"
     read -p "Select domain number: " CHOICE
+    case "${CHOICE}" in 0|"") return 0 ;; esac
 
     local FOLDER="${DOMAIN_FOLDERS[$CHOICE]}"
     [ -z "$FOLDER" ] && { fail "Invalid selection"; return; }
@@ -221,7 +223,9 @@ view_account(){
 
     list_domains_sftp_enabled
     echo ""
+    echo "  0) Back"
     read -p "Select domain number: " CHOICE
+    case "${CHOICE}" in 0|"") return 0 ;; esac
 
     local FOLDER="${DOMAIN_FOLDERS[$CHOICE]}"
     [ -z "$FOLDER" ] && { fail "Invalid selection"; return; }
@@ -279,7 +283,9 @@ view_account(){
 reset_password(){
     list_domains_sftp_enabled
     echo ""
+    echo "  0) Back"
     read -p "Select domain number: " CHOICE
+    case "${CHOICE}" in 0|"") return 0 ;; esac
 
     local FOLDER="${DOMAIN_FOLDERS[$CHOICE]}"
     [ -z "$FOLDER" ] && { fail "Invalid selection"; return; }
@@ -308,7 +314,9 @@ reset_password(){
 toggle_sftp(){
     list_domains_sftp_enabled
     echo ""
+    echo "  0) Back"
     read -p "Select domain number: " CHOICE
+    case "${CHOICE}" in 0|"") return 0 ;; esac
 
     local FOLDER="${DOMAIN_FOLDERS[$CHOICE]}"
     [ -z "$FOLDER" ] && { fail "Invalid selection"; return; }
@@ -338,6 +346,7 @@ toggle_sftp(){
 delete_sftp(){
     list_domains_sftp_enabled
     echo ""
+    echo "  0) Back"
     read -p "Select domain number: " CHOICE
 
     local FOLDER="${DOMAIN_FOLDERS[$CHOICE]}"

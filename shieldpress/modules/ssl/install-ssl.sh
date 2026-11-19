@@ -5,6 +5,7 @@
 # ============================================================
 
 BASE_DIR="${BASE_DIR:-/opt/shieldpress}"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 MODULE_DIR="$BASE_DIR/modules/ssl"
 DOMAINS_ROOT="/home/domains"
 
@@ -44,7 +45,9 @@ if [ -z "$DOMAIN_PATH" ] || [ ! -f "$DOMAIN_PATH/config/domain.env" ]; then
         exit 1
     fi
 
+    echo "  0) Back"
     read -p "Select domain: " CHOICE
+    case "${CHOICE}" in 0|"") exit 0 ;; esac
     FOLDER="${DOMAIN_FOLDERS[$CHOICE]}"
     [ -z "$FOLDER" ] && { fail "Invalid selection"; exit 1; }
     DOMAIN_PATH="$DOMAINS_ROOT/$FOLDER"
@@ -110,7 +113,9 @@ echo "  Include www.$DOMAIN?"
 echo "  1) Yes - SSL for $DOMAIN + www.$DOMAIN"
 echo "  2) No  - SSL for $DOMAIN only"
 echo ""
+echo "  0) Back"
 read -p "Select [1]: " WWW_OPT
+case "${WWW_OPT}" in 0) exit 0 ;; esac
 WWW_OPT="${WWW_OPT:-1}"
 SSL_HOSTS=("$DOMAIN")
 if [ "$WWW_OPT" = "1" ]; then
@@ -235,9 +240,7 @@ echo "SSL_TYPE=letsencrypt" >> "$DOMAIN_PATH/config/domain.env"
 ensure_ssl_auto_renew || { fail "SSL installed, but auto-renew setup failed"; exit 1; }
 
 echo ""
-echo "======================================"
-echo " SSL INSTALLED SUCCESSFULLY"
-echo "======================================"
+sp_title 'SSL Installed Successfully'
 echo " Domain  : https://$DOMAIN"
 echo " TLS     : 1.2 + 1.3"
 echo " HSTS    : Enabled"

@@ -21,6 +21,7 @@
 
 BASE_DIR="${BASE_DIR:-/opt/shieldpress}"
 [ -f "$BASE_DIR/core/paths.sh" ] && source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 LOG_DIR="${LOG_DIR:-/var/shieldpress/logs}"
 DATA_DIR="${DATA_DIR:-/var/shieldpress/data}"
 
@@ -133,9 +134,7 @@ sa_list(){
     if [ "$1" = "--tsv" ]; then sa_list_tsv; return; fi
     local rows; rows=$(sa_list_tsv)
     echo ""
-    echo "======================================"
-    echo "  SSH KEYS ON THIS SERVER"
-    echo "======================================"
+    sp_title 'SSH Keys On This Server'
     local pw root
     pw=$(sshd -T 2>/dev/null | awk 'tolower($1)=="passwordauthentication"{print $2}')
     root=$(sshd -T 2>/dev/null | awk 'tolower($1)=="permitrootlogin"{print $2}')
@@ -493,9 +492,7 @@ sa_menu(){
     local sub id user comment from pub
     while true; do
         echo ""
-        echo "======================================"
-        echo "  SSH ACCESS"
-        echo "======================================"
+        sp_title 'SSH Access'
         sa_status
         echo ""
         echo "  1) List SSH keys (all users)"
@@ -511,6 +508,7 @@ sa_menu(){
         echo "  0) Back"
         echo ""
         read -p "Select: " sub
+        case "${sub}" in 0|"") return 0 ;; esac
         case "$sub" in
             1) sa_list ;;
             2) sa_list; id=$(sa_pick_id); sa_show "$id" ;;

@@ -99,7 +99,9 @@ else
     done
     echo "--------------------------------"
 
+    echo "  0) Back"
     read -p "Select user number: " USER_CHOICE
+    case "${USER_CHOICE}" in 0|"") exit 0 ;; esac
     INDEX=$((USER_CHOICE-1))
 
     if [ -z "${ADMIN_USERS[$INDEX]}" ]; then

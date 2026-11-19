@@ -1,4 +1,5 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 CONF="/etc/nginx/conf.d/shieldpress-brotli.conf"
 BACKUP="${CONF}.bak.$(date +%s)"
@@ -21,9 +22,7 @@ check_brotli_module(){
 
 install_brotli(){
     echo ""
-    echo "===================================================="
-    echo "        INSTALL BROTLI MODULE"
-    echo "===================================================="
+    sp_title 'Install Brotli Module'
     echo ""
 
     if check_brotli_module; then
@@ -69,9 +68,7 @@ install_brotli(){
 
 enable_brotli(){
     echo ""
-    echo "===================================================="
-    echo "         ENABLE BROTLI COMPRESSION"
-    echo "===================================================="
+    sp_title 'Enable Brotli Compression'
     echo ""
 
     if ! check_brotli_module; then
@@ -165,9 +162,7 @@ disable_brotli(){
 
 show_status(){
     echo ""
-    echo "===================================================="
-    echo "           BROTLI STATUS"
-    echo "===================================================="
+    sp_title 'Brotli Status'
     echo ""
 
     if check_brotli_module; then
@@ -195,9 +190,7 @@ show_status(){
 
 while true; do
     clear
-    echo "===================================================="
-    echo "          NGINX BROTLI COMPRESSION"
-    echo "===================================================="
+    sp_header 'Nginx Brotli Compression'
     echo ""
     echo "1) Show Status"
     echo "2) Enable Brotli"

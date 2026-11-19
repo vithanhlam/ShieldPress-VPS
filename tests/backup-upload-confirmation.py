@@ -32,7 +32,7 @@ confirm_remote_upload_backup /tmp/local.tar.gz full example.com
         assert failure.returncode == 1
 for name in ('backup-full.sh', 'backup-files.sh', 'backup-db.sh'):
     text = (ROOT / name).read_text()
-    assert text.index('BACKUP COMPLETED') < text.index('confirm_remote_upload_backup "')
+    assert text.upper().index('BACKUP COMPLETED') < text.index('confirm_remote_upload_backup "')
     assert '\nremote_upload_backup "' not in text
 assert 'confirm_remote_upload_backup' not in (ROOT / 'auto-backup-full.sh').read_text()
 print('PASS: default no, EOF, rejection, affirmative answers, configured destinations, failure status, post-backup prompts')

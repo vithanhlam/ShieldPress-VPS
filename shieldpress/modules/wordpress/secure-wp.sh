@@ -32,6 +32,7 @@ echo "5) Security Status Check"
 echo "0) Cancel"
 echo "----------------------------------------------------"
 read -p "Select: " OPT
+case "${OPT}" in 0|"") exit 0 ;; esac
 
 # Helper: thêm define vào wp-config.php nếu chưa có
 add_wp_define(){

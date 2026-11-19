@@ -3,6 +3,7 @@
 BASE_DIR="/opt/shieldpress"
 DOMAINS_ROOT="/home/domains"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 CONFIG_FILE="$BASE_DIR/config.env"
 LOG_FILE="$LOG_DIR/telegram-backup.log"
 
@@ -27,8 +28,10 @@ select_domain_telegram(){
         TG_FOLDERS[$i]=$(basename "$d")
         ((i++))
     done
+    echo "0) Back"
     echo "--------------------------------------------------"
     read -p "Select domain number: " choice
+    case "${choice}" in 0|"") return 1 ;; esac
     local FOLDER="${TG_FOLDERS[$choice]}"
     [ -z "$FOLDER" ] && return 1
     DOMAIN_PATH="$DOMAINS_ROOT/$FOLDER"
@@ -214,9 +217,7 @@ test_telegram(){
 config_telegram(){
 
     echo ""
-    echo "========================================"
-    echo "        TELEGRAM CONFIG SETUP"
-    echo "========================================"
+    sp_title 'Telegram Config Setup'
 
     # =========================
     # LOAD CURRENT CONFIG
@@ -359,8 +360,10 @@ list_telegram(){
         echo "$((i+1))) ${BACKUPS[$i]}"
     done
 
+    echo "  0) Back"
     echo "--------------------------------"
     read -p "Select backup: " choice
+    case "${choice}" in 0|"") return 1 ;; esac
 
     SELECTED="${BACKUPS[$((choice-1))]}"
     [ -z "$SELECTED" ] && echo "Invalid selection" && return 1
@@ -484,9 +487,7 @@ list_telegram(){
     }
 
     echo ""
-    echo "================================"
-    echo " DOWNLOAD COMPLETED"
-    echo "================================"
+    sp_title 'Download Completed'
     echo "Saved to: $FINAL_PATH"
 
     echo "$(date '+%Y-%m-%d %H:%M:%S')|DOWNLOADED|$FINAL_PATH" >> "$BACKUP_INDEX"
@@ -503,15 +504,14 @@ schedule_backup(){
     DOMAIN_NAME="$DOMAIN"
 
     echo ""
-    echo "=============================="
-    echo " TELEGRAM BACKUP SCHEDULER"
-    echo "=============================="
+    sp_title 'Telegram Backup Scheduler'
     echo "1) Add / Update Schedule"
     echo "2) Remove Schedule"
     echo "3) View Current Schedule"
     echo "0) Back"
     echo "------------------------------"
     read -p "Choose: " action
+    case "${action}" in 0|"") return 0 ;; esac
 
     case $action in
 
@@ -643,9 +643,7 @@ fi
 while true; do
 
 clear
-echo "===================================================="
-echo "        TELEGRAM BACKUP PRO"
-echo "===================================================="
+sp_header 'Telegram Backup Pro'
 echo " 1) Backup Now"
 echo " 2) Schedule Backup"
 echo " 3) Test Telegram"

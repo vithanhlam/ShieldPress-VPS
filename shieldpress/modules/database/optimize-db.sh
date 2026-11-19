@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 LOG_FILE="$LOG_DIR/database.log"
 DOMAINS_ROOT="/home/domains"
@@ -33,9 +34,7 @@ trap cleanup EXIT
 
 clear
 
-echo "===================================================="
-echo "          ENTERPRISE DATABASE OPTIMIZER"
-echo "===================================================="
+sp_header 'Enterprise Database Optimizer'
 echo ""
 echo "1) Optimize by Domain"
 echo "2) Optimize by Database Name"
@@ -71,8 +70,10 @@ if [[ "$MODE" == "1" ]]; then
         fi
     done
 
+    echo "0) Back"
     echo "--------------------------------"
     read -p "Select domain number: " choice
+    case "${choice}" in 0|"") exit 0 ;; esac
 
     DOMAIN_PATH="${DOMAIN_MAP[$choice]}"
     [[ -z "$DOMAIN_PATH" ]] && echo "❌ Invalid selection." && pause && exit 1
@@ -108,7 +109,9 @@ else
         exit 1
     fi
 
+    echo "  0) Back"
     read -p "Select database number: " OPT_CHOICE
+    case "${OPT_CHOICE}" in 0|"") exit 0 ;; esac
     DB_NAME="${OPT_DB_MAP[$OPT_CHOICE]}"
 
     [[ -z "$DB_NAME" ]] && echo "❌ Invalid selection." && pause && exit 1
@@ -259,9 +262,7 @@ fi
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Enterprise Optimize: $DB_NAME - Duration ${DURATION}s - Before ${DB_SIZE_BEFORE}MB - After ${DB_SIZE_AFTER}MB - Threshold ${THRESHOLD}MB" >> "$LOG_FILE"
 
 echo ""
-echo "========================================"
-echo " 🎉 ENTERPRISE OPTIMIZATION COMPLETED"
-echo "========================================"
+sp_title '🎉 Enterprise Optimization Completed'
 
 pause
 exit 0

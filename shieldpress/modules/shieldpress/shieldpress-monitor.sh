@@ -158,9 +158,7 @@ EOF
 
 setup_connection(){
     echo ""
-    echo "========================================="
-    echo "  CONNECT TO SHIELDPRESS MONITOR"
-    echo "========================================="
+    sp_title 'Connect To ShieldPress Monitor'
     echo ""
 
     # Load existing config if available
@@ -257,8 +255,10 @@ setup_connection(){
     echo "  [1] Every 1 minute  (recommended)"
     echo "  [2] Every 5 minutes"
     echo "  [3] Every 10 minutes"
+    echo "  [0] Back (nothing is saved)"
     echo ""
     read -rp "  Choose [1/2/3] (default: 1): " INTERVAL_CHOICE
+    case "${INTERVAL_CHOICE}" in 0) return 0 ;; esac
 
     case $INTERVAL_CHOICE in
         2) SHIELDPRESS_INTERVAL=300 ;;
@@ -1447,9 +1447,7 @@ remove_service(){
 
 service_status(){
     echo ""
-    echo "========================================="
-    echo "  SHIELDPRESS MONITOR STATUS"
-    echo "========================================="
+    sp_title 'ShieldPress Monitor Status'
     echo ""
 
     # Config status
@@ -1523,9 +1521,7 @@ send_now(){
 
 view_file_changes(){
     echo ""
-    echo "========================================="
-    echo "  FILE CHANGE DETECTION (Last 60 min)"
-    echo "========================================="
+    sp_title 'File Change Detection (last 60 min)'
     echo ""
 
     echo "Scanning for sensitive files modified in the last hour..."
@@ -1557,9 +1553,7 @@ view_file_changes(){
 
 view_login_activity(){
     echo ""
-    echo "========================================="
-    echo "  VPS LOGIN ACTIVITY"
-    echo "========================================="
+    sp_title 'VPS Login Activity'
 
     # Currently logged in
     echo ""

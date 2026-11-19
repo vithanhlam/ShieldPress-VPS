@@ -1,4 +1,5 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 GREEN="\e[32m"
 RED="\e[31m"
@@ -18,9 +19,7 @@ PHP_EXTENSIONS="php-fpm php-mysqlnd php-pgsql php-opcache php-gd php-curl php-zi
 
 show_status(){
     echo ""
-    echo "===================================================="
-    echo "           PHP VERSION STATUS"
-    echo "===================================================="
+    sp_title 'PHP Version Status'
     echo ""
 
     for php in "${ALL_VERSIONS[@]}"; do
@@ -62,9 +61,7 @@ show_status(){
 
 install_version(){
     echo ""
-    echo "===================================================="
-    echo "         INSTALL PHP VERSION"
-    echo "===================================================="
+    sp_title 'Install PHP Version'
     echo ""
 
     # Show versions not installed
@@ -140,9 +137,7 @@ install_version(){
 
 remove_version(){
     echo ""
-    echo "===================================================="
-    echo "         REMOVE PHP VERSION"
-    echo "===================================================="
+    sp_title 'Remove PHP Version'
     echo ""
 
     INSTALLED=()
@@ -232,9 +227,7 @@ remove_version(){
 
 while true; do
     clear
-    echo "===================================================="
-    echo "          PHP VERSION MANAGER"
-    echo "===================================================="
+    sp_header 'PHP Version Manager'
     echo ""
     echo "1) Show Status"
     echo "2) Install PHP Version"

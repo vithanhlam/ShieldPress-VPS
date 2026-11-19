@@ -218,8 +218,10 @@ select_mail_domain(){
         return 1
     fi
 
+    echo "  0) Back"
     echo "--------------------------------"
     read -p "Select domain: " choice
+    case "${choice}" in 0|"") return 1 ;; esac
     SELECTED_DOMAIN="${_DOMAINS[$choice]}"
 
     if [ -z "$SELECTED_DOMAIN" ]; then

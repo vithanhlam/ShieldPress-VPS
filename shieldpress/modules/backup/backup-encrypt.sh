@@ -231,7 +231,9 @@ manual_encrypt(){
     [ $i -eq 1 ] && { echo "No unencrypted backup files found."; return; }
 
     echo ""
+    echo "0) Back"
     read -p "Select file number: " choice
+    case "${choice}" in 0|"") return 0 ;; esac
     local SELECTED="${FILES[$choice]}"
     [ -z "$SELECTED" ] && { echo "Invalid selection"; return; }
 
@@ -270,9 +272,7 @@ manual_decrypt(){
 
 show_status(){
     echo ""
-    echo "======================================"
-    echo "  BACKUP ENCRYPTION STATUS"
-    echo "======================================"
+    sp_title 'Backup Encryption Status'
 
     local ENABLED
     ENABLED=$(get_encrypt_enabled)

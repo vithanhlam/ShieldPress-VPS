@@ -60,7 +60,9 @@ if [ ${#DOMAIN_LIST[@]} -gt 0 ]; then
     done
     echo -e "  ${WHITE}[N]${RESET} Enter a new domain"
     echo ""
+    echo "  0) Back"
     read -p "  Select: " DOMAIN_CHOICE
+    case "${DOMAIN_CHOICE}" in 0|"") exit 0 ;; esac
 
     if [[ "$DOMAIN_CHOICE" =~ ^[0-9]+$ ]] && [ "$DOMAIN_CHOICE" -ge 1 ] && [ "$DOMAIN_CHOICE" -le "${#DOMAIN_LIST[@]}" ]; then
         DOMAIN="${DOMAIN_LIST[$((DOMAIN_CHOICE - 1))]}"

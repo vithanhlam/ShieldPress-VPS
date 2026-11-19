@@ -1,4 +1,5 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 DOMAINS_ROOT="/home/domains"
 
@@ -8,9 +9,7 @@ YELLOW="\e[33m"
 RESET="\e[0m"
 
 clear
-echo "================================================================"
-echo "                    SMART CACHE STATUS"
-echo "================================================================"
+sp_header 'Smart Cache Status'
 printf "%-25s %-10s %-10s %-10s %-6s %-10s\n" "Domain" "FastCGI" "Valkey" "OPcache" "PHP" "CacheSize"
 echo "----------------------------------------------------------------"
 

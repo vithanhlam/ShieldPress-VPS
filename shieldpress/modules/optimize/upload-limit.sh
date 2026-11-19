@@ -1,4 +1,5 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 PERF_CONF="/etc/nginx/conf.d/shieldpress-performance.conf"
 PHP_VERSIONS=("81" "82" "83" "84")
@@ -75,9 +76,7 @@ NGEOF
 
 while true; do
 clear
-echo "================================================"
-echo "            UPLOAD LIMIT MANAGER"
-echo "================================================"
+sp_header 'Upload Limit Manager'
 echo "1) 64MB"
 echo "2) 128MB"
 echo "3) 256MB"

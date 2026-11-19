@@ -1,6 +1,7 @@
 #!/bin/bash
 
 BASE_DIR="/opt/shieldpress"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 CONFIG_DIR="$BASE_DIR/config"
 CONFIG_FILE="$CONFIG_DIR/backup-remote.env"
 RCLONE_CONF="/root/.config/rclone/rclone.conf"
@@ -124,7 +125,9 @@ configure_s3(){
     echo "  4) Backblaze B2        (s3.<region>.backblazeb2.com)"
     echo "  5) MinIO / Custom"
     echo ""
+    echo "  0) Back"
     read -p "Select provider (1-5): " S3_PROVIDER
+    case "${S3_PROVIDER}" in 0|"") return 1 ;; esac
 
     local S3_ENDPOINT="" S3_REGION=""
     case $S3_PROVIDER in
@@ -222,7 +225,9 @@ configure_gdrive(){
     echo "  2) OAuth Token (paste token from local machine)"
     echo "  3) OAuth Interactive (this machine has a browser)"
     echo ""
+    echo "  0) Back"
     read -p "Select (1-3): " AUTH_METHOD
+    case "${AUTH_METHOD}" in 0|"") return 1 ;; esac
 
     mkdir -p "$(dirname "$RCLONE_CONF")"
     # Remove existing section
@@ -385,7 +390,9 @@ configure_onedrive(){
     echo "  1) OAuth Token (paste token from local machine)"
     echo "  2) OAuth Interactive (this machine has a browser)"
     echo ""
+    echo "  0) Back"
     read -p "Select (1-2): " AUTH_METHOD
+    case "${AUTH_METHOD}" in 0|"") return 1 ;; esac
 
     mkdir -p "$(dirname "$RCLONE_CONF")"
     # Remove existing section
@@ -447,7 +454,9 @@ configure_onedrive(){
             echo "  1) OneDrive Personal"
             echo "  2) OneDrive Business"
             echo "  3) SharePoint"
+            echo "  0) Back"
             read -p "Select (1-3) [1]: " OD_TYPE
+            case "${OD_TYPE}" in 0) return 1 ;; esac
             local DRIVE_TYPE="personal"
             case $OD_TYPE in
                 2) DRIVE_TYPE="business" ;;
@@ -526,7 +535,9 @@ configure_remote(){
     echo "  3) OneDrive"
     echo "  4) Use existing rclone remote (FTP/SFTP also supported)"
     echo ""
+    echo "  0) Back"
     read -p "Select (1-4): " PROVIDER
+    case "${PROVIDER}" in 0|"") return 0 ;; esac
 
     case $PROVIDER in
         1) configure_s3 || { pause; return; } ;;
@@ -575,7 +586,9 @@ configure_remote(){
     echo "After uploading backup to remote:"
     echo "  1) Keep local backup files"
     echo "  2) Delete local backup files (save disk space)"
+    echo "  0) Back"
     read -p "Select (1-2) [1]: " DEL_CHOICE
+    case "${DEL_CHOICE}" in 0) return 0 ;; esac
     case $DEL_CHOICE in
         2) DELETE_LOCAL_AFTER_UPLOAD=1 ;;
         *) DELETE_LOCAL_AFTER_UPLOAD=0 ;;
@@ -703,7 +716,9 @@ edit_options(){
     fi
     echo "  1) Keep local backup files"
     echo "  2) Delete local backup files"
+    echo "  0) Back"
     read -p "Select (1-2) [current]: " DEL_CHOICE
+    case "${DEL_CHOICE}" in 0) return 0 ;; esac
     case $DEL_CHOICE in
         1) NEW_DELETE=0 ;;
         2) NEW_DELETE=1 ;;
@@ -769,9 +784,7 @@ show_remote_info(){
 # ==================================================
 while true; do
     clear
-    echo "===================================================="
-    echo "             REMOTE BACKUP SETTINGS"
-    echo "===================================================="
+    sp_header 'Remote Backup Settings'
     show_current
     echo "1) Configure S3 / Google Drive / OneDrive"
     echo "2) Edit Options (retention, delete local, path)"

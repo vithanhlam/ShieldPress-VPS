@@ -1,4 +1,5 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 TOTAL_RAM=$(free -m | awk '/Mem:/ {print $2}')
 CPU=$(nproc)
@@ -6,9 +7,7 @@ CPU=$(nproc)
 ok()  { echo "[OK] $1"; }
 warn(){ echo "[WARN] $1"; }
 
-echo "===================================================="
-echo "            MARIADB OPTIMIZER"
-echo "===================================================="
+sp_title 'MariaDB Optimizer'
 echo "RAM : ${TOTAL_RAM}MB | CPU : ${CPU} cores"
 echo ""
 

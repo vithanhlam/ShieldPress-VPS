@@ -32,9 +32,7 @@ while true; do
         4) bash "$BASE_DIR/modules/backup/auto-backup-files.sh" ;;
         5)
             clear
-            echo "===================================================="
-            echo "           ALL BACKUP SCHEDULES (crontab)"
-            echo "===================================================="
+            sp_header 'All Backup Schedules (crontab)'
             echo ""
             JOBS=$(crontab -l 2>/dev/null | grep -E "auto-backup|backup-telegram|/jobs/[A-Za-z0-9_-]+-backup-(db|files|full)\.sh")
             if [ -n "$JOBS" ]; then
@@ -50,9 +48,7 @@ while true; do
             ;;
         6)
             clear
-            echo "===================================================="
-            echo "           REMOVE BACKUP SCHEDULE"
-            echo "===================================================="
+            sp_header 'Remove Backup Schedule'
             echo ""
             JOBS=()
             i=1

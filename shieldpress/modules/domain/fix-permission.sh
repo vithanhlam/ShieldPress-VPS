@@ -1,6 +1,7 @@
 #!/bin/bash
 
 BASE_DIR="${BASE_DIR:-/opt/shieldpress}"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 source "$BASE_DIR/core/helpers.sh"
 source "$BASE_DIR/core/domain-security.sh"
 source "$BASE_DIR/modules/helpers/task-progress.sh"
@@ -160,9 +161,7 @@ fix_selected_domain_permissions(){
 }
 
 echo ""
-echo "========================================"
-echo "        FIX DOMAIN PERMISSIONS"
-echo "========================================"
+sp_title 'Fix Domain Permissions'
 
 declare -a FOLDERS=()
 i=1
@@ -181,8 +180,10 @@ done
 
 [ $i -eq 1 ] && { warn "No domains found"; read -p "Press Enter..."; exit 0; }
 
+echo "0) Back"
 echo "--------------------------------"
 read -p "Select domain: " CHOICE
+case "${CHOICE}" in 0|"") exit 0 ;; esac
 FOLDER="${FOLDERS[$CHOICE]}"
 
 [ -z "$FOLDER" ] && { echo "Invalid selection"; exit 1; }

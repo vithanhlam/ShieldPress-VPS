@@ -1,6 +1,7 @@
 #!/bin/bash
 
 BASE_DIR="${BASE_DIR:-/opt/shieldpress}"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 DOMAINS_ROOT="${DOMAINS_ROOT:-/home/domains}"
 
 RED="\033[31m"
@@ -10,9 +11,7 @@ CYAN="\033[36m"
 RESET="\033[0m"
 
 clear
-echo "============================================================"
-echo "                 SSL STATUS OVERVIEW"
-echo "============================================================"
+sp_header 'SSL Status Overview'
 printf "%-28s %-12s %-10s %-10s\n" "Domain" "Provider" "Status" "Days Left"
 echo "------------------------------------------------------------"
 

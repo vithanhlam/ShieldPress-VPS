@@ -959,7 +959,9 @@ select_node_deploy_mode(){
     echo "  2) Initial deploy — install dependencies, Prisma migrations, build, start"
     echo "  3) Dependencies + DB migration — install, Prisma migrations, build, restart"
     echo ""
+    echo "  0) Back"
     read -p "Select mode [1]: " NODE_DEPLOY_MODE
+    case "${NODE_DEPLOY_MODE}" in 0) return 1 ;; esac
     NODE_DEPLOY_MODE="${NODE_DEPLOY_MODE:-1}"
     case "$NODE_DEPLOY_MODE" in
         1|2|3) return 0 ;;
@@ -1039,7 +1041,9 @@ select_node_domain(){
 
     [ $i -eq 1 ] && { warn "No Node.js domains found"; return 1; }
 
+    echo "  0) Back"
     read -p "Select: " choice
+    case "${choice}" in 0|"") return 1 ;; esac
     DOMAIN_PATH="${DOMAIN_CHOICES[$choice]}"
     [ -n "$DOMAIN_PATH" ] || { fail "Invalid selection"; return 1; }
 
@@ -1164,7 +1168,9 @@ start_node_app(){
     echo "  2) node $NODE_ENTRY"
     echo "  3) Next.js standalone (node .next-release/standalone/server.js or .next/standalone/server.js)"
     echo ""
+    echo "  0) Back"
     read -p "Select mode [1]: " PM2_MODE
+    case "${PM2_MODE}" in 0) return 0 ;; esac
     PM2_MODE="${PM2_MODE:-1}"
 
     # Keep an existing process. Repeated starts should restart the same PM2

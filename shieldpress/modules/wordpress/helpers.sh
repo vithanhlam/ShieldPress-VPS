@@ -7,44 +7,13 @@ source /opt/shieldpress/modules/helpers/domain-utils.sh
 source "$BASE_DIR/core/domain-security.sh"
 
 select_domain() {
+declare -F sp_pick_domain >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
+sp_pick_domain "Select WordPress site" || return 1
+SELECTED_DOMAIN="$SP_PICK_DOMAIN"
 
-echo ""
-echo "Available Domains:"
-echo "--------------------------------"
-
-i=1
-declare -A DOMAIN_MAP
-
-for d in "$DOMAINS_ROOT"/*; do
-    [ -d "$d" ] || continue
-
-    if [ -f "$d/config/domain.env" ]; then
-        local _DN
-        _DN=$(grep "^DOMAIN=" "$d/config/domain.env" | cut -d'=' -f2 | tr -d '[:space:]')
-        [ -z "$_DN" ] && continue
-
-        echo "$i) $_DN"
-        DOMAIN_MAP[$i]="$_DN"
-
-        ((i++))
-    fi
-done
-
-echo "--------------------------------"
-
-read -p "Select domain number: " choice
-
-SELECTED_DOMAIN="${DOMAIN_MAP[$choice]}"
-
-if [ -z "$SELECTED_DOMAIN" ]; then
-    echo "Invalid selection!"
-    return 1
-fi
-
-read -p "You selected '$SELECTED_DOMAIN'. Confirm? [Y/n]: " confirm
+read -r -p "You selected '$SELECTED_DOMAIN'. Confirm? [Y/n]: " confirm
 confirm="${confirm:-y}"
 [[ "$confirm" =~ ^[Yy]$ ]] || { echo "Cancelled."; return 1; }
-
 
 # convert domain → folder
 CLEAN_DOMAIN=$(domain_to_clean "$SELECTED_DOMAIN")

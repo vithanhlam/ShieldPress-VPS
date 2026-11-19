@@ -4,6 +4,7 @@
 # ====================================================
 
 BASE_DIR="/opt/shieldpress"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 source "$BASE_DIR/modules/upgrade/upgrade-gate.sh"
 
 GREEN="\e[32m"
@@ -25,9 +26,7 @@ check_upgrade(){
     local NPM_VER=$(npm -v 2>/dev/null)
 
     echo ""
-    echo "===================================================="
-    echo "           NODE.JS UPGRADE CHECK"
-    echo "===================================================="
+    sp_title 'Node.js Upgrade Check'
     echo ""
     echo "  Node.js current  : ${CURRENT:-Not installed}"
     echo "  Node.js available: ${AVAILABLE:-Unable to check}"
@@ -143,9 +142,7 @@ do_upgrade(){
 
 while true; do
     clear
-    echo "===================================================="
-    echo "         NODE.JS UPGRADE MANAGER"
-    echo "===================================================="
+    sp_header 'Node.js Upgrade Manager'
     echo ""
     echo "  1) Check for Upgrade"
     echo "  2) Upgrade Node.js"

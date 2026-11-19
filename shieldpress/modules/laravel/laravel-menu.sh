@@ -238,6 +238,7 @@ select_laravel_domain(){
     [ $i -eq 1 ] && { warn "No Laravel domains found"; return 1; }
 
     read -p "Select: " choice
+    case "${choice}" in 0|"") return 1 ;; esac
     DOMAIN_PATH="${DOMAIN_CHOICES[$choice]}"
     [ -n "$DOMAIN_PATH" ] || { fail "Invalid selection"; return 1; }
 
@@ -354,7 +355,9 @@ select_pg_database(){
 
     [ $i -eq 1 ] && { warn "No tracked Laravel DB found"; return 1; }
 
+    echo "  0) Back"
     read -p "Select: " choice
+    case "${choice}" in 0|"") return 1 ;; esac
     DB_META="${DB_CHOICES[$choice]}"
     [ -n "$DB_META" ] || { fail "Invalid selection"; return 1; }
 
@@ -772,9 +775,7 @@ fix_laravel_permissions(){
 
 install_laravel_redis(){
     echo ""
-    echo "========================================="
-    echo "  INSTALL REDIS (VALKEY) FOR LARAVEL"
-    echo "========================================="
+    sp_title 'Install Redis (Valkey) For Laravel'
     echo ""
 
     # 1. Install Valkey server
@@ -927,9 +928,7 @@ update_env_var(){
 
 laravel_redis_status(){
     echo ""
-    echo "========================================="
-    echo "  REDIS / VALKEY STATUS"
-    echo "========================================="
+    sp_title 'Redis / Valkey Status'
     echo ""
 
     # Valkey server status

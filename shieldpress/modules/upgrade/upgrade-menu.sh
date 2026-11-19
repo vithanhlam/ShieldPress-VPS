@@ -29,9 +29,7 @@ while true; do
         6) bash "$MODULE_DIR/package-lock.sh" ;;
         7)
             clear
-            echo "===================================================="
-            echo "          UPGRADE POLICY"
-            echo "===================================================="
+            sp_header 'Upgrade Policy'
             echo ""
             cat "$BASE_DIR/config/upgrade-policy.conf" 2>/dev/null | sed 's/^/  /'
             echo ""
@@ -39,9 +37,7 @@ while true; do
             ;;
         8)
             clear
-            echo "===================================================="
-            echo "          UPGRADE LOG"
-            echo "===================================================="
+            sp_header 'Upgrade Log'
             echo ""
             if [ -f "$LOG_DIR/upgrade.log" ]; then
                 tail -50 "$LOG_DIR/upgrade.log" | sed 's/^/  /'

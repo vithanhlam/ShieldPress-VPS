@@ -3,15 +3,14 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 source "$BASE_DIR/core/domain-security.sh"
 
 pause(){ echo ""; read -rp "Press Enter..."; }
 valid_number(){ [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge "$2" ] && [ "$1" -le "$3" ]; }
 
 clear
-echo "===================================================="
-echo "             AUTO BACKUP FULL DB (BATCH)"
-echo "===================================================="
+sp_header 'Auto Backup Full DB (Batch)'
 echo "  One job backs up databases one at a time."
 echo "  It uses a lock, nice/ionice and a delay between dumps."
 echo ""
@@ -55,8 +54,10 @@ if command -v psql >/dev/null 2>&1; then
 fi
 
 [ "$index" -gt 1 ] || { echo "No supported databases found."; pause; exit 1; }
+echo "  0) Back"
 echo "----------------------------------------------------"
 read -rp "Choose numbers (e.g. 1,3-5) or 'all': " selected
+case "${selected}" in 0|"") exit 0 ;; esac
 
 declare -a PICKED
 if [ "$selected" = "all" ]; then

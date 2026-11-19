@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 LOG_FILE="$LOG_DIR/backup.log"
 MIN_FREE_MB=200
 source "$BASE_DIR/modules/backup/_backup_helper.sh"
@@ -11,16 +12,16 @@ log(){  echo "$(date '+%F %T') | $1" >> "$LOG_FILE"; }
 pause(){ echo ""; read -p "Press Enter..."; }
 
 clear
-echo "===================================================="
-echo "                BACKUP DATABASE"
-echo "===================================================="
+sp_header 'Backup Database'
 echo ""
 echo "Select database by:"
 echo "  1) Domain (read from domain config)"
 echo "  2) Database name (list from MariaDB)"
 echo "  3) Database name (list from PostgreSQL)"
+echo "  0) Back"
 echo "--------------------------------------------------"
 read -p "Select mode: " SELECT_MODE
+case "${SELECT_MODE}" in 0|"") exit 0 ;; esac
 
 case "$SELECT_MODE" in
 
@@ -47,6 +48,7 @@ case "$SELECT_MODE" in
 
     echo "--------------------------------------------------"
     read -p "Select domain number: " choice
+    case "${choice}" in 0|"") exit 0 ;; esac
     FOLDER="${FOLDERS[$choice]}"
     [ -z "$FOLDER" ] && { echo "Invalid selection!"; pause; exit 1; }
 
@@ -87,8 +89,10 @@ case "$SELECT_MODE" in
 
     [ $db_i -eq 1 ] && { echo "No databases found."; pause; exit 1; }
 
+    echo "  0) Back"
     echo "--------------------------------------------------"
     read -p "Select database number: " choice
+    case "${choice}" in 0|"") exit 0 ;; esac
     DB_NAME="${DB_MAP[$choice]}"
     [ -z "$DB_NAME" ] && { echo "Invalid selection!"; pause; exit 1; }
 
@@ -149,8 +153,10 @@ case "$SELECT_MODE" in
 
     [ $pg_i -eq 1 ] && { echo "No databases found."; pause; exit 1; }
 
+    echo "  0) Back"
     echo "--------------------------------------------------"
     read -p "Select database number: " choice
+    case "${choice}" in 0|"") exit 0 ;; esac
     DB_NAME="${PG_MAP[$choice]}"
     [ -z "$DB_NAME" ] && { echo "Invalid selection!"; pause; exit 1; }
 
@@ -323,9 +329,7 @@ SIZE=$(du -h "$GZ_FILE" | awk '{print $1}')
 GZ_FILE=$(maybe_encrypt_backup "$GZ_FILE")
 
 echo ""
-echo "===================================================="
-echo "  DATABASE BACKUP COMPLETED"
-echo "===================================================="
+sp_title 'Database Backup Completed'
 echo "  Target   : $BACKUP_LABEL"
 echo "  Database : $DB_NAME ($DB_CONNECTION)"
 echo "  File     : $GZ_FILE"

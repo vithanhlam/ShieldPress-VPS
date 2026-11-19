@@ -29,9 +29,7 @@ warn(){ echo -e "${YELLOW}[WARN]${RESET} $1"; }
 info(){ echo -e "${CYAN}[INFO]${RESET} $1"; }
 
 echo ""
-echo "===================================================="
-echo "       ShieldPress Path Migration"
-echo "===================================================="
+sp_title 'ShieldPress Path Migration'
 echo ""
 echo "This will reorganize ShieldPress directories:"
 echo ""

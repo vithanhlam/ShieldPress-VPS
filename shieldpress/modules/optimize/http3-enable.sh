@@ -1,10 +1,9 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 CONF="/etc/nginx/conf.d/shieldpress-http3.conf"
 
-echo "======================================"
-echo "         ENABLE HTTP/3 (QUIC)"
-echo "======================================"
+sp_title 'Enable HTTP/3 (QUIC)'
 
 if ! nginx -V 2>&1 | grep -q http_v3_module; then
     echo "[WARN] HTTP/3 module not found in Nginx!"
@@ -28,9 +27,7 @@ fi
 if nginx -t 2>/dev/null; then
     systemctl reload nginx
     echo ""
-    echo "======================================"
-    echo "HTTP/3 Enabled Successfully"
-    echo "======================================"
+    sp_title 'HTTP/3 Enabled Successfully'
 else
     echo "[ERROR] Nginx config test failed, HTTP/3 NOT enabled"
 fi

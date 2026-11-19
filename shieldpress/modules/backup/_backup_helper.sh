@@ -34,6 +34,7 @@ select_domain_backup(){
         ((i++))
     done
 
+    echo "0) Back"
     echo "--------------------------------------------------"
     read -p "Select domain number: " CHOICE
     echo "$CHOICE"
@@ -982,8 +983,10 @@ build_cron_schedule(){
     echo "1) Daily"
     echo "2) Weekly (choose day)"
     echo "3) Monthly (choose date)"
+    echo "0) Back"
     echo "--------------------------------------------------"
     read -p "Select: " FREQ
+    case "${FREQ}" in 0|"") return 1 ;; esac
 
     case $FREQ in
         1)

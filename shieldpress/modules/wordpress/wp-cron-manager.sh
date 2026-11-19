@@ -73,7 +73,9 @@ enable_system_cron(){
     echo "3) Every 15 minutes"
     echo "4) Every 30 minutes (low-traffic sites)"
     echo "5) Every 1 hour"
+    echo "0) Back"
     read -p "Choose: " INTERVAL
+    case "${INTERVAL}" in 0|"") return 0 ;; esac
 
     case $INTERVAL in
         1) CRON_TIME="*/5 * * * *"  ;;

@@ -89,34 +89,9 @@ load_domain_env(){
 # Sets same variables as load_domain_env plus SELECTED_DOMAIN.
 # Returns 1 if no domain selected or no domains found.
 select_domain_interactive(){
-    local _PATHS=()
-    local _NAMES=()
-
-    echo ""
-    echo "Available Domains:"
-    echo "--------------------------------"
-
-    local i=1
-    for d in "$DOMAINS_ROOT"/*/; do
-        [ -d "$d" ] || continue
-        [ -f "$d/config/domain.env" ] || continue
-        local DN
-        DN=$(read_domain_env "$d/config/domain.env" "DOMAIN")
-        [ -z "$DN" ] && continue
-        echo "$i) $DN"
-        _PATHS[$i]="$d"
-        ((i++))
-    done
-
-    [ $i -eq 1 ] && { echo "No domains found."; return 1; }
-
-    echo "--------------------------------"
-    read -p "Select domain number: " choice
-
-    local selected_path="${_PATHS[$choice]}"
-    [ -z "$selected_path" ] && { echo "Invalid selection"; return 1; }
-
-    load_domain_env "$selected_path"
+    declare -F sp_pick_domain >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
+    sp_pick_domain || return 1
+    load_domain_env "$SP_PICK_PATH/"
     SELECTED_DOMAIN="$DOMAIN"
     return 0
 }

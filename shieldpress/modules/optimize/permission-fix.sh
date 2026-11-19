@@ -1,6 +1,7 @@
 #!/bin/bash
 
 BASE_DIR="${BASE_DIR:-/opt/shieldpress}"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 source "$BASE_DIR/core/helpers.sh"
 source "$BASE_DIR/core/domain-security.sh"
 
@@ -72,9 +73,7 @@ fix_nodejs(){
     fi
 }
 
-echo "===================================================="
-echo "           FIX ALL DOMAIN PERMISSIONS"
-echo "===================================================="
+sp_title 'Fix All Domain Permissions'
 
 COUNT=0
 

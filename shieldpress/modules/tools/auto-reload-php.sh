@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 BIN_DIR="$BASE_DIR/bin"
 LOG_FILE="$LOG_DIR/php-auto-reload.log"
@@ -107,9 +108,7 @@ fi
 
 while true; do
     clear
-    echo "===================================================="
-    echo "             PHP-FPM AUTO-RELOAD"
-    echo "===================================================="
+    sp_header 'PHP-FPM Auto-reload'
     echo "1) Enable Auto-Reload"
     echo "2) Disable Auto-Reload"
     echo "3) Status"

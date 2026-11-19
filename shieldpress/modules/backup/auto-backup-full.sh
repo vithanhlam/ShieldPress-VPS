@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 LOG_FILE="$LOG_DIR/auto-backup.log"
 source "$BASE_DIR/modules/backup/_backup_helper.sh"
 mkdir -p "$LOG_DIR"
@@ -9,9 +10,7 @@ mkdir -p "$LOG_DIR"
 pause(){ echo ""; read -p "Press Enter..."; }
 
 clear
-echo "===================================================="
-echo "              AUTO FULL BACKUP"
-echo "===================================================="
+sp_header 'Auto Full Backup'
 
 declare -a FOLDERS=()
 i=1
@@ -34,8 +33,10 @@ for d in "$DOMAINS_ROOT"/*/; do
     ((i++))
 done
 
+echo "0) Back"
 echo "--------------------------------------------------"
 read -p "Select domain number: " choice
+case "${choice}" in 0|"") exit 0 ;; esac
 FOLDER="${FOLDERS[$choice]}"
 [ -z "$FOLDER" ] && { echo "Invalid selection!"; pause; exit 1; }
 
@@ -65,7 +66,9 @@ echo "Frequency:"
 echo "1) Daily"
 echo "2) Weekly"
 echo "3) Monthly"
+echo "0) Back"
 read -p "Select: " FREQ
+case "${FREQ}" in 0|"") exit 0 ;; esac
 
 BACKUP_MODE="full"
 
@@ -102,9 +105,7 @@ chmod 700 "$AUTO_SCRIPT"
 (crontab -l 2>/dev/null | grep -vF "$AUTO_SCRIPT" | grep -vF "$DOMAIN_PATH/config/auto-backup-full.sh"; echo "$CRON_TIME $AUTO_SCRIPT") | crontab -
 
 echo ""
-echo "===================================================="
-echo "  AUTO FULL BACKUP SCHEDULED"
-echo "===================================================="
+sp_title 'Auto Full Backup Scheduled'
 echo "  Domain   : $DOMAIN"
 echo "  App type : $APP_TYPE"
 echo "  DB       : ${DB_NAME:-none} ($DB_CONNECTION) - always full dump"

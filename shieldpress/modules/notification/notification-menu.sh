@@ -104,9 +104,7 @@ toggle_events(){
     while true; do
         load_defaults
         clear
-        echo "===================================================="
-        echo "           NOTIFICATION EVENT TOGGLES"
-        echo "===================================================="
+        sp_header 'Notification Event Toggles'
         echo "1) Backup success  : $NOTIFY_BACKUP_SUCCESS"
         echo "2) Backup fail     : $NOTIFY_BACKUP_FAIL"
         echo "3) Server alerts   : $NOTIFY_SERVER_ALERT"
@@ -167,6 +165,7 @@ schedule_monitor(){
     echo "3) Every 30 minutes"
     echo "4) Hourly"
     echo "5) Disable"
+    echo "0) Back"
     read -p "Select: " opt
 
     case $opt in

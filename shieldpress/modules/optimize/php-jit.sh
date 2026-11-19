@@ -1,13 +1,12 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 PHP_VERSIONS=("81" "82" "83" "84")
 
 ok()  { echo "[OK] $1"; }
 warn(){ echo "[WARN] $1"; }
 
-echo "===================================================="
-echo "              ENABLE PHP JIT"
-echo "===================================================="
+sp_title 'Enable PHP JIT'
 
 for v in "${PHP_VERSIONS[@]}"; do
     INI="/etc/opt/remi/php${v}/php.d/10-opcache.ini"

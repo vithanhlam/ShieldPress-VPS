@@ -25,6 +25,7 @@ select_domain(){
         ((i++))
     done
 
+    echo "  0) Back"
     echo "--------------------------------"
     read -p "Select domain: " CHOICE
     local FOLDER="${DOMAIN_FOLDERS[$CHOICE]}"

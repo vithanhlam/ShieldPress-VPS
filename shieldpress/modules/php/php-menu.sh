@@ -73,6 +73,7 @@ show_php_modules(){
         [ -x "$BIN" ] && echo "  $((php-80))) PHP 8.${php:1}"
     done
     echo ""
+    echo "  0) Back"
     read -p "Choose: " v
     case $v in
         1) BIN="/opt/remi/php81/root/usr/bin/php" ;;
@@ -89,9 +90,7 @@ show_php_modules(){
 # =================================================
 
 install_ioncube(){
-    echo "========================================="
-    echo "       IONCUBE INSTALLER (SAFE)"
-    echo "========================================="
+    sp_title 'ionCube Installer (Safe)'
     echo ""
 
     [ "$EUID" -ne 0 ] && { fail "Run as root"; return 1; }
@@ -204,9 +203,7 @@ EOF
 # =================================================
 
 remove_ioncube(){
-    echo "========================================="
-    echo "       REMOVE IONCUBE"
-    echo "========================================="
+    sp_title 'Remove ionCube'
     echo ""
 
     [ "$EUID" -ne 0 ] && { fail "Run as root"; return 1; }
@@ -243,9 +240,7 @@ remove_ioncube(){
 
 reload_php_fpm(){
     echo ""
-    echo "========================================="
-    echo "  RELOAD PHP-FPM"
-    echo "========================================="
+    sp_title 'Reload PHP-FPM'
     echo ""
 
     PHP_INSTALLED=()

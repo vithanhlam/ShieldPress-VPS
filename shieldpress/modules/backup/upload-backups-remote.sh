@@ -1,15 +1,14 @@
 #!/bin/bash
 
 BASE_DIR="/opt/shieldpress"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 DOMAINS_ROOT="/home/domains"
 source "$BASE_DIR/modules/backup/_backup_helper.sh"
 
 pause(){ echo ""; read -p "Press Enter..."; }
 
 clear
-echo "===================================================="
-echo "            UPLOAD EXISTING BACKUPS TO REMOTE"
-echo "===================================================="
+sp_header 'Upload Existing Backups To Remote'
 
 load_remote_config
 if [ "$REMOTE_ENABLED" != "1" ] || [ -z "$RCLONE_REMOTES" ]; then

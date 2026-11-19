@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 LOG="$LOG_DIR/ram-auto-optimize.log"
 mkdir -p "$LOG_DIR"
@@ -14,9 +15,7 @@ ok()   { echo "[OK] $1"; log "[OK] $1"; }
 warn() { echo "[WARN] $1"; log "[WARN] $1"; }
 
 clear
-echo "===================================================="
-echo "              SHIELDPRESS RAM AUTO OPTIMIZER"
-echo "===================================================="
+sp_header 'ShieldPress RAM Auto Optimizer'
 
 TOTAL_RAM=$(free -m | awk '/Mem:/ {print $2}')
 CPU_CORES=$(nproc)
@@ -155,9 +154,7 @@ python3 "$BASE_DIR/modules/helpers/php-budget.py" --apply || exit 1
 # ==============================
 
 echo ""
-echo "===================================================="
-echo "              OPTIMIZATION COMPLETE"
-echo "===================================================="
+sp_title 'Optimization Complete'
 echo "Profile      : $PROFILE"
 echo "ZRAM         : $ZRAM_SIZE"
 echo "Cache Memory : $CACHE_MEM"

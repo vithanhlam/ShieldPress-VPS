@@ -6,6 +6,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 LOG_FILE="$LOG_DIR/upgrade.log"
 
 GREEN="\e[32m"
@@ -297,9 +298,7 @@ esac
 
 while true; do
     clear
-    echo "===================================================="
-    echo "          PACKAGE LOCK MANAGER"
-    echo "===================================================="
+    sp_header 'Package Lock Manager'
     echo ""
     echo "  1) Show Lock Status"
     echo "  2) Lock All Packages"

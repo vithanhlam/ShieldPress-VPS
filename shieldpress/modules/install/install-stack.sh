@@ -18,6 +18,7 @@ trap 'echo "ERROR at line $LINENO"; exit 1' ERR
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh" 2>/dev/null || true
+declare -F sp_header >/dev/null || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/core/ui.sh"
 LOG_DIR="${LOG_DIR:-/var/shieldpress/logs}"
 LOG_FILE="$LOG_DIR/install.log"
 
@@ -1094,9 +1095,7 @@ ok "Logrotate configured (ShieldPress logs: 14 days, domain nginx logs: 30 days)
 # ------------------------------------------------
 
 echo ""
-echo "================================================"
-echo "           FINAL SERVICE STATUS"
-echo "================================================"
+sp_title 'Final Service Status'
 
 FAILED=0
 

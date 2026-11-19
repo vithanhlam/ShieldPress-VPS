@@ -17,6 +17,7 @@
 
 BASE_DIR="${BASE_DIR:-/opt/shieldpress}"
 [ -f "$BASE_DIR/core/paths.sh" ] && source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 LOG_DIR="${LOG_DIR:-/var/shieldpress/logs}"
 DATA_DIR="${DATA_DIR:-/var/shieldpress/data}"
 ETC_DIR="${ETC_DIR:-/etc/shieldpress}"
@@ -332,9 +333,7 @@ report(){
     local crit=0 warn=0 info=0 f sev msg col
     local seen=""
     echo ""
-    echo "===================================================="
-    echo "  INTRUSION GUARD - account takeover / backdoor check"
-    echo "===================================================="
+    sp_title 'Intrusion Guard: Account Takeover / Backdoor Check'
     for f in "${FINDINGS[@]}"; do
         sev=${f%%|*}; msg=${f#*|}
         case "$sev" in
@@ -753,9 +752,7 @@ esac
 
 while true; do
     echo ""
-    echo "===================================================="
-    echo "  INTRUSION GUARD"
-    echo "===================================================="
+    sp_title 'Intrusion Guard'
     if have_baseline; then echo -e "  Baseline : ${GREEN}$(cat "$IG_DIR/created-at")${RESET}"; else echo -e "  Baseline : ${YELLOW}not set${RESET}"; fi
     if systemctl is-active --quiet sp-intrusion-guard.timer 2>/dev/null; then echo -e "  Scheduler: ${GREEN}ENABLED (5 min)${RESET}"; else echo -e "  Scheduler: ${DIM}off${RESET}"; fi
     if systemctl is-active --quiet sp-intrusion-watch.service 2>/dev/null; then echo -e "  Realtime : ${GREEN}ENABLED (logins + network > Telegram)${RESET}"; else echo -e "  Realtime : ${DIM}off${RESET}"; fi

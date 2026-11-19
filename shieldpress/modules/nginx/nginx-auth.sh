@@ -102,9 +102,7 @@ remove_auth_meta(){
 show_status(){
     clear
     echo ""
-    echo "===================================================="
-    echo "       PASSWORD PROTECTION STATUS"
-    echo "===================================================="
+    sp_header 'Password Protection Status'
     echo ""
 
     local found=0

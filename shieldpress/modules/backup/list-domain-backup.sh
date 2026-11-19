@@ -2,16 +2,17 @@
 
 DOMAINS_ROOT="/home/domains"
 BASE_DIR="/opt/shieldpress"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 clear
-echo "================================================================"
-echo "                  DOMAIN BACKUP STATUS"
-echo "================================================================"
+sp_header 'Domain Backup Status'
 echo ""
 echo "1) Overview (all domains)"
 echo "2) Detail (single domain - show all backup files)"
+echo "0) Back"
 echo "----------------------------------------------------------------"
 read -p "Select: " VIEW_MODE
+case "${VIEW_MODE}" in 0|"") exit 0 ;; esac
 
 case "$VIEW_MODE" in
 1)
@@ -93,8 +94,10 @@ case "$VIEW_MODE" in
         ((i++))
     done
 
+    echo "0) Back"
     echo "--------------------------------"
     read -p "Select domain number: " choice
+    case "${choice}" in 0|"") exit 0 ;; esac
     FOLDER="${FOLDERS[$choice]}"
     [ -z "$FOLDER" ] && { echo "Invalid selection!"; read -p "Enter..."; exit 1; }
 

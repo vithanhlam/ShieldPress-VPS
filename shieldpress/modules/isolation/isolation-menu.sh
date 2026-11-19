@@ -170,9 +170,7 @@ EOF
 audit_isolation(){
 
     echo ""
-    echo "===================================================="
-    echo "              ISOLATION AUDIT"
-    echo "===================================================="
+    sp_title 'Isolation Audit'
     printf "%-25s %-12s %-6s %-6s %-10s %-8s %-8s\n" \
         "Domain" "Owner" "Perm" "PHP" "Socket" "OpenBase" "Config"
     echo "--------------------------------------------------------------"

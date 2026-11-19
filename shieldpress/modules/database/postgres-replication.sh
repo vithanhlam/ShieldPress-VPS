@@ -3,6 +3,7 @@
 # Async physical replication; Laravel continues to write only to Primary.
 set -u
 BASE_DIR="/opt/shieldpress"; CONF="/etc/shieldpress/postgresql-replication.conf"; LOG="/var/log/shieldpress/postgresql-replication-health.log"; HEALTH_SERVICE="shieldpress-postgresql-replication-health"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 # Detect the active cluster path on both RHEL-style and Debian/Ubuntu installs.
 if [ -n "${PGDATA:-}" ]; then
@@ -189,9 +190,7 @@ promote(){ [ -f "$PGDATA/standby.signal" ] || { echo "standby.signal not found; 
 interactive_menu(){
     while true; do
         clear
-        echo "============================================================"
-        echo " PostgreSQL Streaming Replication — SAFE SETUP WIZARD"
-        echo "============================================================"
+        sp_header 'PostgreSQL Streaming Replication — Safe Setup Wizard'
         show_context
         echo "Choose the role of THIS server:"
         echo "  1) THIS SERVER = PRIMARY  (Main server - accepts writes)"

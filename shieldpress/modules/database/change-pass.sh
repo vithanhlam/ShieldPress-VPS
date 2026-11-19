@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 LOG_FILE="$LOG_DIR/database.log"
 DOMAINS_ROOT="/home/domains"
@@ -15,9 +16,7 @@ pause() {
 
 clear
 
-echo "===================================================="
-echo "        CHANGE DATABASE PASSWORD (SAFE MODE)"
-echo "===================================================="
+sp_header 'Change Database Password (Safe Mode)'
 
 echo ""
 echo "Available Databases:"
@@ -40,7 +39,9 @@ if [ "$pass_i" -eq 1 ]; then
     exit 1
 fi
 
+echo "  0) Back"
 read -p "Select database number: " PASS_CHOICE
+case "${PASS_CHOICE}" in 0|"") exit 0 ;; esac
 DB_NAME="${PASS_DB_MAP[$PASS_CHOICE]}"
 
 if [[ -z "$DB_NAME" ]]; then

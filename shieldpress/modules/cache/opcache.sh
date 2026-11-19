@@ -1,12 +1,11 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 PHP_VERSIONS=("81" "82" "83" "84")
 
 while true; do
     clear
-    echo "===================================================="
-    echo "                OPCACHE MANAGER"
-    echo "===================================================="
+    sp_header 'OPcache Manager'
     echo "1) Clear OPcache (restart PHP-FPM)"
     echo "2) Enable OPcache"
     echo "3) Disable OPcache"

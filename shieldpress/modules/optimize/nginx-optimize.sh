@@ -9,9 +9,7 @@ TOTAL_RAM=$(free -m | awk '/Mem:/ {print $2}')
 ok()  { echo "[OK] $1"; }
 warn(){ echo "[WARN] $1"; }
 
-echo "===================================================="
-echo "              NGINX OPTIMIZER"
-echo "===================================================="
+sp_title 'Nginx Optimizer'
 echo "CPU cores: $CPU | RAM: ${TOTAL_RAM}MB"
 echo ""
 
@@ -31,6 +29,7 @@ fi
 # ================================================
 
 BASE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 python3 "$BASE_DIR/modules/helpers/nginx-workers.py" || exit 1
 
 grep -q "worker_rlimit_nofile" "$NGINX_CONF" || \

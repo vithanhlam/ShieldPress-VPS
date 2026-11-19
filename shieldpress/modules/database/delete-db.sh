@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 source "$BASE_DIR/modules/helpers/custom.sh"
 
 DATA_FILE="$DATA_DIR/databases.list"
@@ -14,9 +15,7 @@ mkdir -p "$LOG_DIR"
 
 clear
 
-echo "===================================================="
-echo "           DELETE DATABASE (SAFE MODE)"
-echo "===================================================="
+sp_header 'Delete Database (Safe Mode)'
 
 
 # =========================================
@@ -66,7 +65,9 @@ else
         die "No managed databases found!"
     fi
 
+    echo "  0) Back"
     read -p "Select database number: " DEL_CHOICE
+    case "${DEL_CHOICE}" in 0|"") exit 0 ;; esac
     DB_NAME="${DEL_DB_MAP[$DEL_CHOICE]}"
     [ -z "$DB_NAME" ] && die "Invalid selection!"
 fi

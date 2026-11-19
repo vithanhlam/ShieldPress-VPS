@@ -20,8 +20,10 @@ for d in "$DOMAINS_ROOT"/*/; do
     DOMAIN_FOLDERS[$i]=$(basename "$d")
     ((i++))
 done
+echo "  0) Back"
 echo "--------------------------------"
 read -p "Select domain: " CHOICE
+case "${CHOICE}" in 0|"") exit 0 ;; esac
 FOLDER="${DOMAIN_FOLDERS[$CHOICE]}"
 [ -z "$FOLDER" ] && { fail "Invalid selection"; exit 1; }
 

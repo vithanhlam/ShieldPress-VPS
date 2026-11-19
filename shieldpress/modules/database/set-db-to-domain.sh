@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 source "$BASE_DIR/modules/helpers/custom.sh"
 
 DATA_FILE="$DATA_DIR/databases.list"
@@ -9,9 +10,7 @@ DOMAINS_ROOT="/home/domains"
 
 clear
 
-echo "===================================================="
-echo "           SET DATABASE TO WEBSITE"
-echo "===================================================="
+sp_header 'Set Database To Website'
 
 # =========================================
 # CHECK DATABASE LIST
@@ -58,7 +57,9 @@ done
 
 
 echo ""
+echo "  0) Back"
 read -p "Select database: " DB_SELECT
+case "${DB_SELECT}" in 0|"") exit 0 ;; esac
 
 # validate
 if ! [[ "$DB_SELECT" =~ ^[0-9]+$ ]] || \
@@ -131,7 +132,9 @@ done
 
 
 echo ""
+echo "  0) Back"
 read -p "Select domain: " DOMAIN_SELECT
+case "${DOMAIN_SELECT}" in 0|"") exit 0 ;; esac
 
 # validate
 if ! [[ "$DOMAIN_SELECT" =~ ^[0-9]+$ ]] || \

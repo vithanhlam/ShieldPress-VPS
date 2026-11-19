@@ -1,15 +1,14 @@
 #!/bin/bash
 
 BASE_DIR="/opt/shieldpress"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 # Đọc version từ file
 SHIELDPRESS_VERSION=$(tr -d '[:space:]' < "$BASE_DIR/version.txt" 2>/dev/null || echo "unknown")
 
 clear
 
-echo "======================================================"
-echo "           ShieldPress VPS - SYSTEM INFORMATION"
-echo "======================================================"
+sp_header 'ShieldPress VPS System Information'
 echo ""
 
 # ------------------------------------------------
@@ -64,9 +63,7 @@ echo "  Domains           : $DOMAIN_COUNT"
 # ------------------------------------------------
 
 echo ""
-echo "======================================================"
-echo "  NETWORK"
-echo "======================================================"
+sp_title 'Network'
 
 IP=$(curl -s --connect-timeout 3 https://ipv4.icanhazip.com 2>/dev/null || \
      curl -s --connect-timeout 3 https://api.ipify.org 2>/dev/null)
@@ -86,9 +83,7 @@ echo "  Open Ports        : $OPEN_PORTS"
 # ------------------------------------------------
 
 echo ""
-echo "======================================================"
-echo "  SERVICE STATUS"
-echo "======================================================"
+sp_title 'Service Status'
 
 check_svc(){
     local NAME=$1 SVC=$2
@@ -118,9 +113,7 @@ done
 # ------------------------------------------------
 
 echo ""
-echo "======================================================"
-echo "  VERSIONS"
-echo "======================================================"
+sp_title 'Versions'
 
 NGINX_VER=$(nginx -v 2>&1 | grep -oP 'nginx/\S+')
 MYSQL_VER=$(mysql -V 2>/dev/null | awk '{print $5}' | tr -d ',')
@@ -150,9 +143,7 @@ done
 # ------------------------------------------------
 
 echo ""
-echo "======================================================"
-echo "  DISK SPEED TEST"
-echo "======================================================"
+sp_title 'Disk Speed Test'
 
 echo -n "  Write speed       : "
 WRITE=$(dd if=/dev/zero of=/tmp/shieldpress_speed_test bs=64k count=4k conv=fdatasync 2>&1 | \
@@ -165,9 +156,7 @@ echo "${WRITE:-N/A}"
 # ------------------------------------------------
 
 echo ""
-echo "======================================================"
-echo "  INTERNET SPEED TEST"
-echo "======================================================"
+sp_title 'Internet Speed Test'
 
 speed_test(){
     local LABEL=$1 URL=$2

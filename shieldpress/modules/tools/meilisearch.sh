@@ -95,7 +95,9 @@ select_domain(){
         printf ' %d) %s\n' "${#dirs[@]}" "$name"
     done
     ((${#dirs[@]})) || fail "No configured domains found."
+    echo " 0) Back"
     read -r -p "Select domain: " choice
+    case "${choice}" in 0|"") return 1 ;; esac
     [[ "$choice" =~ ^[0-9]+$ ]] && ((choice >= 1 && choice <= ${#dirs[@]})) || fail "Invalid selection."
     DOMAIN_PATH="${dirs[$((choice-1))]}"
     DOMAIN_NAME="${names[$((choice-1))]}"

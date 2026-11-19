@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 source "$BASE_DIR/modules/helpers/custom.sh"
 
 DATA_FILE="$DATA_DIR/databases.list"
@@ -91,9 +92,7 @@ show_database_detail(){
 
     while true; do
         clear
-        echo "===================================================="
-        echo "                DATABASE INFORMATION"
-        echo "===================================================="
+        sp_header 'Database Information'
         echo "Database : $db_name"
         echo "User     : ${db_user:-"-"}"
         echo "Password : ${db_pass:-"-"}"
@@ -130,9 +129,7 @@ show_database_detail(){
 
 while true; do
     clear
-    echo "===================================================="
-    echo "                 DATABASE LIST"
-    echo "===================================================="
+    sp_header 'Database List'
 
     sync_domain_databases
 

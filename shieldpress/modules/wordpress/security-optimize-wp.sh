@@ -22,6 +22,7 @@ select_domain(){
         ((i++))
     done
 
+    echo "  0) Back"
     echo "--------------------------------"
     read -p "Select domain: " choice
 

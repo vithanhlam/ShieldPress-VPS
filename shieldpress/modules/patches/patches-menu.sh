@@ -1097,9 +1097,7 @@ patch_service_versionlock_repair(){
 apply_all_patches(){
     local ssl_status=0
     echo ""
-    echo "======================================"
-    echo "  ShieldPress Migration Patches"
-    echo "======================================"
+    sp_title 'ShieldPress Migration Patches'
     echo ""
 
     # Fail closed before older migrations inspect any per-domain control data.
@@ -1181,9 +1179,7 @@ apply_all_patches(){
 
 show_patch_status(){
     echo ""
-    echo "======================================"
-    echo "  Patch Status"
-    echo "======================================"
+    sp_title 'Patch Status'
     printf "  %-42s %s\n" "Patch" "Status"
     echo "  ──────────────────────────────────────────────────────"
 

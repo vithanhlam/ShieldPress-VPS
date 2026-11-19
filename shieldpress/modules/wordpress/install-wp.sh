@@ -2,6 +2,7 @@
 
 source /opt/shieldpress/modules/wordpress/helpers.sh
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 LOG_FILE="$LOG_DIR/wp-install.log"
 mkdir -p "$LOG_DIR"
@@ -62,9 +63,7 @@ collect_input() {
     while true; do
 
         echo ""
-        echo "===================================================="
-        echo "  Enter WordPress Installation Info"
-        echo "===================================================="
+        sp_title 'Enter WordPress Installation Info'
 
         # Site Title
         while true; do
@@ -119,9 +118,7 @@ collect_input() {
         # ==========================
 
         echo ""
-        echo "===================================================="
-        echo "  Confirm Installation Details"
-        echo "===================================================="
+        sp_title 'Confirm Installation Details'
         echo "  Domain     : $SELECTED_DOMAIN"
         echo "  Site URL   : $SITE_URL"
         echo "  Site Title : $TITLE"
@@ -446,9 +443,7 @@ log "Installation info saved to db.txt"
 log "========== INSTALL COMPLETED SUCCESSFULLY =========="
 
 echo ""
-echo "======================================"
-echo " WordPress Installed Successfully!"
-echo "======================================"
+sp_title 'WordPress Installed Successfully!'
 echo " URL      : $SITE_URL"
 echo " WP Admin : $SITE_URL/wp-admin"
 echo " Username : $ADMIN_USER"

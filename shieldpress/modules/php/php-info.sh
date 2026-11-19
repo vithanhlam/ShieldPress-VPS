@@ -1,4 +1,5 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 GREEN="\e[32m"
 RED="\e[31m"
@@ -173,9 +174,7 @@ generate_phpinfo_html(){
 
 while true; do
     clear
-    echo "===================================================="
-    echo "             PHP INFO VIEWER"
-    echo "===================================================="
+    sp_header 'PHP Info Viewer'
     echo ""
 
     INDEX=1

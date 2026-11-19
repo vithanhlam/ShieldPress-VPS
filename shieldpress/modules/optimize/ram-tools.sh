@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 LOG_FILE="$LOG_DIR/ram-tools.log"
 mkdir -p "$LOG_DIR"
@@ -14,9 +15,7 @@ if [ "$EUID" -ne 0 ]; then echo "Please run as root"; exit 1; fi
 
 while true; do
 clear
-echo "===================================================="
-echo "                     RAM TOOLS"
-echo "===================================================="
+sp_header 'RAM Tools'
 echo " 1) Clear RAM Cache"
 echo " 2) Install / Configure ZRAM"
 echo " 3) Show RAM Usage"

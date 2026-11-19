@@ -1,4 +1,5 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 DOMAINS_ROOT="/home/domains"
 GREEN="\e[32m"
@@ -8,9 +9,7 @@ CYAN="\e[36m"
 RESET="\e[0m"
 
 clear
-echo "================================================================================"
-echo "                                DOMAIN LIST"
-echo "================================================================================"
+sp_header 'Domain List'
 printf "%-25s %-12s %-8s %-8s %-10s %-8s %-10s\n" \
     "Domain" "Created" "PHP" "SSL" "Status" "WP" "Size"
 echo "--------------------------------------------------------------------------------"

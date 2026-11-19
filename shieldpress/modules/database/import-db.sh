@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 DATA_FILE="$DATA_DIR/databases.list"
 LOG_FILE="$LOG_DIR/database.log"
@@ -29,9 +30,7 @@ import_spinner(){
 }
 
 clear
-echo "===================================================="
-echo "                 IMPORT DATABASE"
-echo "===================================================="
+sp_header 'Import Database'
 
 # -----------------------
 # CHỌN DATABASE (numbered)
@@ -58,6 +57,7 @@ if [ "$i" -eq 1 ]; then
     exit 1
 fi
 
+echo "  0) Back"
 read -p "Select database number: " DB_CHOICE
 
 DB_NAME="${DB_MAP[$DB_CHOICE]}"
@@ -183,9 +183,7 @@ fi
 
 if [[ $IMPORT_OK -ne 0 ]]; then
     echo ""
-    echo "========================================"
-    echo " Import FAILED!"
-    echo "========================================"
+    sp_title 'Import FAILED!'
     pause
     exit 1
 fi

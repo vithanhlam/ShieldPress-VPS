@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 DOMAINS_ROOT="/home/domains"
 LOG_FILE="$LOG_DIR/database.log"
@@ -15,9 +16,7 @@ pause() {
 
 clear
 
-echo "===================================================="
-echo "            DOMAIN DB CONFIGURATION"
-echo "===================================================="
+sp_header 'Domain DB Configuration'
 
 # ==========================
 # SELECT DOMAIN
@@ -41,8 +40,10 @@ for d in "$DOMAINS_ROOT"/*; do
     fi
 done
 
+echo "  0) Back"
 echo "--------------------------------"
 read -p "Select domain number: " choice
+case "${choice}" in 0|"") exit 0 ;; esac
 
 DOMAIN_PATH="${DOMAIN_MAP[$choice]}"
 
@@ -170,9 +171,7 @@ echo "$DOMAIN_DB_CONF"
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Domain DB tuned: $DOMAIN - Buffer ${NEW_BUFFER}MB - Conn ${NEW_CONN}" >> "$LOG_FILE"
 
 echo ""
-echo "========================================"
-echo "   DOMAIN DB CONFIG UPDATED SUCCESS"
-echo "========================================"
+sp_title 'Domain DB Config Updated Success'
 
 pause
 exit 0

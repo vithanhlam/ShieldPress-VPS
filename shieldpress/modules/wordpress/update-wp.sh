@@ -114,6 +114,7 @@ choose_sites() {
         1)
             for i in "${!SITE_PATHS[@]}"; do echo "$((i + 1))) ${SITE_NAMES[$i]}"; done
             read -rp "Website number (0 = back): " choice || return 1
+            case "${choice}" in 0|"") return 1 ;; esac
             valid_number "$choice" "${#SITE_PATHS[@]}" || return 1
             i=$((10#$choice - 1))
             TARGET_PATHS=("${SITE_PATHS[$i]}"); TARGET_NAMES=("${SITE_NAMES[$i]}")
@@ -167,6 +168,7 @@ choose_plugins() {
         printf '%s' "${details[$slug]}"
     done
     read -rp "Plugin numbers, separated by spaces or commas (0 = back): " choice || return 1
+    case "${choice}" in 0|"") return 1 ;; esac
     choice=${choice//,/ }
     read -ra tokens <<< "$choice"
     [ "${#tokens[@]}" -gt 0 ] || return 1

@@ -61,6 +61,7 @@ echo "  3) Both"
 echo "  0) Cancel"
 echo "----------------------------------------------------"
 read -p "Select option: " OPT
+case "${OPT}" in 0|"") exit 0 ;; esac
 
 DO_DB=0; DO_SALT=0
 case "$OPT" in

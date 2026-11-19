@@ -1,4 +1,5 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 set -e
 set -o pipefail
 source /opt/shieldpress/modules/domain/helpers.sh
@@ -52,7 +53,9 @@ if [ -z "$APP_TYPE" ]; then
     echo "  3) Laravel 13"
     echo "  4) Node.js app"
     echo ""
+    echo "  0) Back"
     read -p "Choose [1]: " APP_OPT
+    case "${APP_OPT}" in 0) exit 0 ;; esac
     APP_OPT="${APP_OPT:-1}"
 
     case "$APP_OPT" in
@@ -313,9 +316,7 @@ if [ "$APP_TYPE" = "nodejs" ]; then
 fi
 
 echo ""
-echo "================================"
-echo " DOMAIN CREATED SUCCESSFULLY"
-echo "================================"
+sp_title 'Domain Created Successfully'
 echo "Domain : $DOMAIN"
 echo "Path   : $DOMAIN_PATH"
 echo "App    : $APP_TYPE"

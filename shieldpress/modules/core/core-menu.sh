@@ -136,6 +136,7 @@ view_core_logs(){
     echo "3) MariaDB"
     echo "4) PostgreSQL"
     echo "5) ShieldPress VPS update"
+    echo "0) Back"
     read -p "Select: " opt
 
     case "$opt" in

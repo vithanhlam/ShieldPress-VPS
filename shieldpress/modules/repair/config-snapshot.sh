@@ -6,6 +6,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 SNAPSHOT_DIR="$BASE_DIR/snapshots"
 MAX_SNAPSHOTS=10
 LOG_FILE="$LOG_DIR/snapshot.log"
@@ -467,9 +468,7 @@ fi
 # Interactive menu
 while true; do
     clear
-    echo "===================================================="
-    echo "          CONFIG SNAPSHOT MANAGER"
-    echo "===================================================="
+    sp_header 'Config Snapshot Manager'
 
     # Show snapshot count
     SNAP_COUNT=$(ls "$SNAPSHOT_DIR"/*.tar.gz 2>/dev/null | wc -l)

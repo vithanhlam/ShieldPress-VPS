@@ -1,11 +1,10 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 LOG_DIR="/var/log/nginx/domains"
 
 clear
-echo "========================================"
-echo "           CACHE HIT RATIO"
-echo "========================================"
+sp_header 'Cache Hit Ratio'
 
 # Tìm tất cả access log của domains
 LOGS=$(find "$LOG_DIR" -name "access.log" 2>/dev/null)

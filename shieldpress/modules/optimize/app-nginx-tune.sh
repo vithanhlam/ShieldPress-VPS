@@ -1,4 +1,5 @@
 #!/bin/bash
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 DOMAINS_ROOT="/home/domains"
 UPLOAD_LIMIT="${SHIELDPRESS_UPLOAD_LIMIT:-1024M}"
@@ -76,9 +77,7 @@ ensure_nodejs_conf(){
     grep -q "npm-shrinkwrap" "$conf" || sed -i '/location ~ \/\./i\\    location ~* /(package\\.json|package-lock\\.json|npm-shrinkwrap\\.json|yarn\\.lock|pnpm-lock\\.yaml|\\.env|\\.git|\\.svn) {\n        deny all;\n    }\n' "$conf"
 }
 
-echo "===================================================="
-echo "        LARAVEL / NODE.JS NGINX TUNER"
-echo "===================================================="
+sp_title 'Laravel / Node.js Nginx Tuner'
 echo "Upload limit: $UPLOAD_LIMIT"
 echo ""
 

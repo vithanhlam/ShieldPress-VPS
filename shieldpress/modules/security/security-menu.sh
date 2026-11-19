@@ -266,9 +266,7 @@ security_dashboard_compact(){
 firewall_status(){
     ensure_firewall
     echo ""
-    echo "======================================"
-    echo "  FIREWALL STATUS"
-    echo "======================================"
+    sp_title 'Firewall Status'
     echo "Default zone : $(firewall-cmd --get-default-zone)"
     echo ""
     echo "Open services:"
@@ -284,9 +282,7 @@ firewall_status(){
 
 security_audit(){
     echo ""
-    echo "======================================"
-    echo "  SECURITY AUDIT"
-    echo "======================================"
+    sp_title 'Security Audit'
 
     ensure_firewall
     ensure_fail2ban
@@ -597,9 +593,7 @@ whitelist_ip(){
 list_blocked_ips(){
     ensure_firewall
     echo ""
-    echo "======================================"
-    echo "  BLOCKED / WHITELISTED IPs"
-    echo "======================================"
+    sp_title 'Blocked / Whitelisted IPs'
     RULES=$(firewall-cmd --list-rich-rules 2>/dev/null)
     if [ -z "$RULES" ]; then
         echo "  No rules found."
@@ -858,9 +852,7 @@ unblock_bot_countries_real(){
 
 view_ip_block_history(){
     echo ""
-    echo "======================================"
-    echo "  IP BLOCK HISTORY"
-    echo "======================================"
+    sp_title 'IP Block History'
 
     if [ ! -f "$IP_HISTORY_FILE" ] || [ ! -s "$IP_HISTORY_FILE" ]; then
         echo "  No history records found."
@@ -927,9 +919,7 @@ fail2ban_ssh_manager(){
 
     while true; do
         echo ""
-        echo "======================================"
-        echo "   FAIL2BAN SSH MANAGER"
-        echo "======================================"
+        sp_title 'Fail2ban SSH Manager'
         echo " 1) List banned IP"
         echo " 2) Unban IP"
         echo " 0) Back"
@@ -992,9 +982,7 @@ fail2ban_nginx(){
     ensure_fail2ban
 
     echo ""
-    echo "======================================"
-    echo "  FAIL2BAN NGINX PROTECTION"
-    echo "======================================"
+    sp_title 'Fail2ban Nginx Protection'
     echo ""
     echo "This will block IPs with excessive bad requests:"
     echo "  - 403/404 errors (scanners, bots)"
@@ -1077,9 +1065,7 @@ fail2ban_nginx_manager(){
 
     while true; do
         echo ""
-        echo "======================================"
-        echo "  FAIL2BAN NGINX MANAGER"
-        echo "======================================"
+        sp_title 'Fail2ban Nginx Manager'
 
         local JAILS=("nginx-badbots" "nginx-5xx")
         for jail in "${JAILS[@]}"; do
@@ -1315,9 +1301,7 @@ ssh_hardening(){
 
     while true; do
         echo ""
-        echo "======================================"
-        echo "  SSH HARDENING"
-        echo "======================================"
+        sp_title 'SSH Hardening'
 
         local CURRENT_PORT=$(grep -E "^[[:space:]]*Port[[:space:]]" "$SSHD_CONF" 2>/dev/null | awk '{print $2}' | head -1)
         CURRENT_PORT="${CURRENT_PORT:-22}"
@@ -1462,9 +1446,7 @@ auto_block_attackers(){
     ensure_firewall
 
     echo ""
-    echo "======================================"
-    echo "  AUTO-BLOCK ATTACKERS"
-    echo "======================================"
+    sp_title 'Auto-block Attackers'
     echo ""
 
     local THRESHOLD=200
@@ -1483,7 +1465,9 @@ auto_block_attackers(){
     echo "  3) 24 hours  (default)"
     echo "  4) Permanent (manual block only)"
     echo ""
+    echo "  0) Back"
     read -p "Select [3]: " BAN_OPT
+    case "${BAN_OPT}" in 0) return 0 ;; esac
     case "${BAN_OPT:-3}" in
         1) BAN_HOURS=1 ;;
         2) BAN_HOURS=6 ;;
@@ -1614,7 +1598,7 @@ _do_auto_block(){
 }
 
 # ==================================================
-# AUTO-GUARD — TỰ ĐỘNG BLOCK KHI VƯỢT NGƯỠNG
+# AUTO-GUARD — BLOCK AUTOMATICALLY WHEN TRAFFIC EXCEEDS THRESHOLDS
 # ==================================================
 
 AUTO_GUARD_CONF="/opt/shieldpress/config/auto-guard.conf"
@@ -1639,36 +1623,34 @@ auto_guard_status(){
 
 enable_auto_guard(){
     echo ""
-    echo "===================================================="
-    echo "  AUTO-GUARD — TỰ ĐỘNG BLOCK ATTACKER"
-    echo "===================================================="
+    sp_title 'Auto-guard — Automatically Block Attackers'
     echo ""
-    echo "Khi traffic trong 10 phút vượt ngưỡng, hệ thống sẽ:"
-    echo "  1. Tự động block các IP tấn công nhiều nhất"
-    echo "  2. Ghi log vào ip-block-history.log"
-    echo "  3. Gửi thông báo (nếu Telegram đã cài)"
+    echo "When traffic in a 10-minute window exceeds a threshold, ShieldPress will:"
+    echo "  1. Block the most active attacking IPs automatically"
+    echo "  2. Log the block in ip-block-history.log"
+    echo "  3. Send a notification (when Telegram is configured)"
     echo ""
-    echo "Cài đặt ngưỡng (để trống = dùng mặc định):"
+    echo "Thresholds (press Enter to keep the default):"
     echo ""
     read -p "  Total requests / 10 min [50000]: " T_REQ
     read -p "  4xx errors / 10 min      [5000]:  " T_4XX
     read -p "  wp-login/xmlrpc / 10 min [1000]:  " T_WP
-    read -p "  Kiểm tra mỗi (phút)      [5]:     " T_INTERVAL
+    read -p "  Check every (minutes)    [5]:     " T_INTERVAL
 
     T_REQ="${T_REQ:-50000}"
     T_4XX="${T_4XX:-5000}"
     T_WP="${T_WP:-1000}"
     T_INTERVAL="${T_INTERVAL:-5}"
 
-    # Validate: phải là số
+    # Validate: numbers only
     if ! [[ "$T_REQ" =~ ^[0-9]+$ ]] || ! [[ "$T_4XX" =~ ^[0-9]+$ ]] || \
        ! [[ "$T_WP" =~ ^[0-9]+$ ]]  || ! [[ "$T_INTERVAL" =~ ^[0-9]+$ ]]; then
-        fail "Ngưỡng phải là số nguyên"; return
+        fail "Thresholds must be whole numbers"; return
     fi
 
     mkdir -p "$(dirname "$AUTO_GUARD_CONF")"
 
-    # Lưu config
+    # Save config
     cat > "$AUTO_GUARD_CONF" <<EOF
 THRESHOLD_TOTAL=$T_REQ
 THRESHOLD_4XX=$T_4XX
@@ -1676,11 +1658,11 @@ THRESHOLD_WP=$T_WP
 CHECK_INTERVAL_MIN=$T_INTERVAL
 EOF
 
-    # Tạo check script
+    # Create the check script
     mkdir -p "$(dirname "$AUTO_GUARD_SCRIPT")"
     cat > "$AUTO_GUARD_SCRIPT" <<'SCRIPT'
 #!/bin/bash
-# ShieldPress Auto-Guard — chạy bởi systemd timer
+# ShieldPress Auto-Guard — run by a systemd timer
 BASE_DIR="/opt/shieldpress"
 
 CONF="/opt/shieldpress/config/auto-guard.conf"
@@ -1693,7 +1675,7 @@ THRESHOLD_TOTAL=$(grep "^THRESHOLD_TOTAL=" "$CONF" | cut -d= -f2)
 THRESHOLD_4XX=$(grep   "^THRESHOLD_4XX="   "$CONF" | cut -d= -f2)
 THRESHOLD_WP=$(grep    "^THRESHOLD_WP="    "$CONF" | cut -d= -f2)
 
-# Đọc stats 10 phút gần nhất — dùng proper cutoff timestamp
+# Read stats for the last 10 minutes using a proper cutoff timestamp
 CUTOFF=$(date -d '10 minutes ago' '+%d/%b/%Y:%H:%M' 2>/dev/null)
 
 _count_total_and_4xx(){
@@ -1736,13 +1718,13 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') | CHECK | total=${RECENT_TOTAL} 4xx=${RECENT_
 if [ "$TRIGGERED" -eq 1 ]; then
     echo "$(date '+%Y-%m-%d %H:%M:%S') | TRIGGERED | $REASON" >> "$LOG"
 
-    # Gọi _do_auto_block qua argument dispatch — threshold thấp hơn khi bị tấn công, 1h TTL
+    # Call _do_auto_block via argument dispatch: lower threshold while under attack, 1h TTL
     # security-menu.sh "_do_auto_block" <threshold> <ban_hours>
     BLOCK_THRESHOLD=$(( ${THRESHOLD_TOTAL:-50000} / 10 ))
     BLOCK_LOG=$(bash "$BASE_DIR/modules/security/security-menu.sh" _do_auto_block "$BLOCK_THRESHOLD" "1" 2>&1)
     echo "$(date '+%Y-%m-%d %H:%M:%S') | AUTO-BLOCK | $BLOCK_LOG" >> "$LOG"
 
-    # Gửi thông báo Telegram
+    # Send a Telegram notification
     if [ -f "$BASE_DIR/modules/notification/telegram-notify.sh" ]; then
         bash "$BASE_DIR/modules/notification/telegram-notify.sh" send "security_alert" \
             "Auto-Guard Triggered" "$(hostname): $REASON | auto-blocked attackers" 2>/dev/null
@@ -1751,7 +1733,7 @@ fi
 SCRIPT
     chmod +x "$AUTO_GUARD_SCRIPT"
 
-    # Tạo systemd service
+    # Create the systemd service
     cat > "$AUTO_GUARD_SERVICE" <<EOF
 [Unit]
 Description=ShieldPress Auto-Guard Security Check
@@ -1763,7 +1745,7 @@ ExecStart=$AUTO_GUARD_SCRIPT
 User=root
 EOF
 
-    # Tạo systemd timer
+    # Create the systemd timer
     cat > "$AUTO_GUARD_TIMER" <<EOF
 [Unit]
 Description=ShieldPress Auto-Guard Timer
@@ -1784,11 +1766,11 @@ EOF
     echo ""
     ok "Auto-Guard ENABLED"
     echo ""
-    echo "  Ngưỡng đã cài:"
+    echo "  Configured thresholds:"
     echo "  - Total requests > $T_REQ / 10 min → trigger"
     echo "  - 4xx errors     > $T_4XX / 10 min → trigger"
     echo "  - wp-login hits  > $T_WP / 10 min → trigger"
-    echo "  - Kiểm tra mỗi  : ${T_INTERVAL} phút"
+    echo "  - Check every   : ${T_INTERVAL} min"
     echo ""
     echo "  Log: /opt/shieldpress/logs/auto-guard.log"
     log "AUTO-GUARD enabled (total>$T_REQ, 4xx>$T_4XX, wp>$T_WP, every ${T_INTERVAL}min)"
@@ -1797,11 +1779,11 @@ EOF
 disable_auto_guard(){
     echo ""
     if ! systemctl is-active --quiet sp-auto-guard.timer 2>/dev/null; then
-        warn "Auto-Guard không đang chạy"
+        warn "Auto-Guard is not running"
         return
     fi
 
-    read -p "Tắt Auto-Guard? [y/N]: " CONFIRM
+    read -p "Disable Auto-Guard? [y/N]: " CONFIRM
     [[ "$CONFIRM" =~ ^[Yy]$ ]] || { echo "Cancelled."; return; }
 
     systemctl disable --now sp-auto-guard.timer 2>/dev/null
@@ -1815,16 +1797,14 @@ disable_auto_guard(){
 manage_auto_guard(){
     while true; do
         clear
-        echo "===================================================="
-        echo "  AUTO-GUARD — TỰ ĐỘNG BLOCK ATTACKER"
-        echo "===================================================="
+        sp_header 'Auto-guard — Automatically Block Attackers'
         echo ""
         auto_guard_status
         echo ""
-        echo "  1) Enable / Cấu hình lại Auto-Guard"
+        echo "  1) Enable / Reconfigure Auto-Guard"
         echo "  2) Disable Auto-Guard"
         echo "  3) Xem log Auto-Guard"
-        echo "  4) Chạy kiểm tra ngay bây giờ"
+        echo "  4) Run a check now"
         echo "  0) Back"
         echo ""
         read -p "Select: " opt
@@ -1837,13 +1817,13 @@ manage_auto_guard(){
                     echo ""
                     tail -50 "$LOG_FILE"
                 else
-                    echo "  Chưa có log"
+                    echo "  No log yet"
                 fi
                 ;;
             4)
                 echo ""
-                echo "Chạy Auto-Guard check ngay..."
-                bash "$AUTO_GUARD_SCRIPT" && ok "Done" || fail "Script not found — enable Auto-Guard trước"
+                echo "Running the Auto-Guard check now..."
+                bash "$AUTO_GUARD_SCRIPT" && ok "Done" || fail "Script not found — enable Auto-Guard first"
                 ;;
             0) break ;;
         esac

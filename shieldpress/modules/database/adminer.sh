@@ -2,6 +2,7 @@
 
 BASE_DIR="/opt/shieldpress"
 source "$BASE_DIR/core/paths.sh"
+declare -F sp_header >/dev/null || source "${BASE_DIR:-/opt/shieldpress}/core/ui.sh"
 
 LOG_FILE="$LOG_DIR/database.log"
 DATA_FILE="/etc/shieldpress/adminer.env"
@@ -226,9 +227,7 @@ remove_adminer() {
 while true; do
 
 clear
-echo "===================================================="
-echo "         ADMINER MANAGER (PORT 5599 FIXED)"
-echo "===================================================="
+sp_header 'Adminer Manager (Port 5599 Fixed)'
 
 STATUS="disabled"
 if [ -f "$DATA_FILE" ]; then
