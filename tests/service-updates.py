@@ -93,7 +93,7 @@ class Guards(unittest.TestCase):
         base.transaction.remove_set = []
         with patch.object(u, 'allowed', return_value=False), patch.object(u, 'compare', return_value=1), contextlib.redirect_stdout(io.StringIO()) as output:
             u.resolve(base, 'nginx', False)
-        self.assertIn('1.31.8 is blocked by config/upgrade-policy.conf', output.getvalue())
+        self.assertIn('nginx 1.31.8-1.fixture is blocked by config/upgrade-policy.conf', output.getvalue())
 
     def test_mainline_policy_migration_repeats_and_retains_custom_rules(self):
         text = (ROOT / 'shieldpress/modules/patches/patches-menu.sh').read_text()
@@ -266,8 +266,10 @@ patch_kernel_update_fallback
                 u.validate_transaction(base.transaction, [anchor, old], 'nginx', anchor)
         for name in ['nginx-mod-brotli', 'nginx-module-njs']:
             self.assertTrue(u.package_version_allowed('nginx', pkg(name, '1.0.0~rc'), old, anchor))
-            self.assertFalse(u.package_version_allowed('nginx', pkg(name, '1.0.0~rc'), old,
-                                                     pkg('nginx', '1.30.0')))
+            # Modules follow the installed server branch; BLOCKED still stops them.
+            self.assertTrue(u.package_version_allowed('nginx', pkg(name, '1.0.0~rc'), old, pkg('nginx', '1.30.0')))
+            with patch.object(Path, 'read_text', return_value='NGINX_BLOCKED="1.30.*"\n'):
+                self.assertFalse(u.package_version_allowed('nginx', pkg(name, '1.0.0~rc'), old, pkg('nginx', '1.30.0')))
         base.transaction.install_set = [new]
         with patch.object(u, 'compare', return_value=-1):
             with self.assertRaisesRegex(RuntimeError, 'downgrade'):
@@ -458,6 +460,108 @@ patch_service_versionlock_repair
             subprocess.run(['bash', '-c', commands, '_', directory], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
+    def test_rpm_snapshot_ignores_dnf_excludes_and_reports_changes(self):
+        # DNF hides installed packages matched by exclude=; the snapshot must come from RPM only.
+        old, new = pkg('nginx', '1.31.7'), pkg('nginx', '1.31.9')
+        plan = {'service': 'nginx', 'security_only': False, 'installed': [u.row(old)], 'install': [u.row(new)], 'remove': [u.row(old)]}
+        for concurrent in [False, True]:
+            with self.subTest(concurrent=concurrent), tempfile.TemporaryDirectory() as directory:
+                base = MagicMock()
+                base.__enter__.return_value = base
+                base.transaction.install_set = [new]
+                base.sack.query.return_value.installed.return_value = [old]  # valkey hidden by exclude=
+                base.package_signature_check.return_value = (0, '')
+                outputs = ['nginx|noarch|0|1.31.7|1.fixture\nvalkey|x86_64|0|8.1.10|1.el9\ngpg-pubkey|(none)|0|a|b\n']
+                outputs.append(outputs[0] + ('kernel-core|x86_64|0|5.14.0|742.el9\n' if concurrent else ''))
+                def fake_run(args, **kwargs):
+                    if args[:2] == ['rpm', '-qa']:
+                        return subprocess.CompletedProcess(args, 0, stdout=outputs.pop(0))
+                    return subprocess.CompletedProcess(args, 0, stdout='0:1.31.9-1.fixture')
+                with patch.object(u, 'open_base', return_value=base), patch.object(u, 'resolve', return_value=(plan, old)), \
+                        patch.object(u, 'backup', return_value=Path(directory)), patch.object(u, 'refresh_locks'), \
+                        patch.object(u, 'run', side_effect=fake_run), \
+                        patch.object(u.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)), \
+                        patch('builtins.input', return_value='y'), contextlib.redirect_stdout(io.StringIO()):
+                    if concurrent:
+                        with self.assertRaisesRegex(RuntimeError, r'\+kernel-core-5\.14\.0-742\.el9\.x86_64'):
+                            u.apply('nginx', False)
+                        base.do_transaction.assert_not_called()
+                    else:
+                        self.assertTrue(u.apply('nginx', False))
+                        base.do_transaction.assert_called_once()
+
+    def test_installed_branch_patches_ignore_allowed_but_respect_blocked(self):
+        # AppStream MariaDB 10.5 and PostgreSQL 13 are outside ALLOWED but must get backports.
+        cases = [('mariadb', 'mariadb-server', ('10.5.29', '3.el9_7'), ('10.5.29', '5.el9'), True),
+                 ('mariadb', 'mariadb-server', ('10.5.29', '3.el9_7'), ('10.6.1', '1.el9'), False),
+                 ('postgresql', 'postgresql-server', ('13.23', '5.el9_8'), ('13.23', '9.el9_9'), True),
+                 ('postgresql', 'postgresql-server', ('13.23', '5.el9_8'), ('15.1', '1.el9'), False),
+                 ('mariadb', 'mariadb-server', ('11.5.1', '1'), ('11.5.2', '1'), False),
+                 ('php84', 'php84-php-fpm', ('8.4.25', '1'), ('8.4.27', '1'), True)]
+        for service, name, current, candidate, expected in cases:
+            with self.subTest(service=service, candidate=candidate):
+                installed = pkg(name, *current)
+                self.assertEqual(u.package_version_allowed(service, pkg(name, *candidate), installed, installed), expected)
+        self.assertFalse(u.allowed('mariadb', '10.5.29'))
+        self.assertTrue(u.allowed('mariadb', '10.5.29', '10.5.16'))
+        self.assertFalse(u.allowed('mariadb', '10.6.1', '10.5.29'))
+        # Explicit BLOCKED rules are reported as held updates with the release.
+        old, new = pkg('nginx', '1.31.7'), pkg('nginx', '1.31.8', '2.ngx')
+        base = MagicMock()
+        base.sack.query.return_value.installed.return_value = [old]
+        base.sack.query.return_value.available.return_value = [new]
+        base.transaction.install_set = []
+        base.transaction.remove_set = []
+        policy = 'NGINX_ALLOWED="1.26.*"\nNGINX_BLOCKED="1.31.8"\n'
+        with patch.object(Path, 'read_text', return_value=policy), patch.object(u, 'compare', return_value=1), \
+                contextlib.redirect_stdout(io.StringIO()):
+            plan, _ = u.resolve(base, 'nginx', False)
+        self.assertEqual(plan['policy_blocked'], ['nginx 1.31.8-2.ngx'])
+        with patch.object(Path, 'read_text', return_value='NGINX_ALLOWED="1.26.*"\n'), patch.object(u, 'compare', return_value=1), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(u.resolve(base, 'nginx', False)[0]['policy_blocked'], [])
+        self.assertEqual(base.sack.add_excludes.call_args.args[0], [])
+        with tempfile.TemporaryDirectory() as directory:
+            status = Path(directory) / 'status.json'
+            status.write_text(__import__('json').dumps({'checked': int(time.time()), 'errors': [], 'services': [
+                {'service': 'mariadb', 'label': 'MariaDB', 'installed': '10.5.29-3', 'policy_blocked': ['mariadb 10.5.30-1', 'mariadb-server 10.5.30-1', 'mariadb-common 10.5.30-1']}]}))
+            output = io.StringIO()
+            with patch.object(u, 'STATUS', status), contextlib.redirect_stdout(output):
+                u.banner()
+            self.assertIn('MariaDB updates blocked by upgrade policy: \x1b[0m\x1b[2mmariadb 10.5.30-1, mariadb-server 10.5.30-1 +1 more', output.getvalue())
+            self.assertIn('config/upgrade-policy.conf', output.getvalue())
+
+    def test_policy_rescan_migration_handoff_and_repeat(self):
+        text = (ROOT / 'shieldpress/modules/patches/patches-menu.sh').read_text()
+        function = text.split('patch_service_update_policy_rescan(){', 1)[1].split('\n}\n', 1)[0]
+        self.assertLess(text.index('    patch_service_update_notices || ssl_status=$?'),
+                        text.index('    patch_service_update_policy_rescan || ssl_status=$?'))
+        with tempfile.TemporaryDirectory() as directory:
+            commands = r"""
+set -e
+D="$1"; REGISTRY="$D/registry"; : > "$REGISTRY"; export CALLS="$D/calls" STATE="$D/installed"
+mkdir -p "$D/bin"
+cat > "$D/bin/systemctl" <<'SH'
+#!/bin/sh
+echo "$*" >> "$CALLS"
+[ "$1" != cat ] || [ -f "$STATE" ]
+SH
+chmod +x "$D/bin/systemctl"; PATH="$D/bin:$PATH"
+patch_applied(){ grep -qxF "$1" "$REGISTRY"; }
+patch_mark_done(){ echo "$1" >> "$REGISTRY"; }
+ok(){ echo "$1"; }; fail(){ echo "$1"; }
+""" + 'patch_service_update_policy_rescan(){' + function + '\n}\n' + r"""
+if patch_service_update_policy_rescan; then exit 1; fi
+[ ! -s "$REGISTRY" ]
+touch "$STATE"
+patch_service_update_policy_rescan
+patch_service_update_policy_rescan
+[ "$(wc -l < "$REGISTRY")" = 1 ]
+[ "$(grep -c 'start --no-block shieldpress-service-updates.service' "$CALLS")" = 1 ]
+"""
+            result = subprocess.run(['bash', '-c', commands, '_', directory], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_update_notice_scan_dedupe_and_rescan(self):
         def fake(service, refresh):
             label, menu = u.describe(service)
@@ -542,6 +646,7 @@ patch_service_versionlock_repair
         for security, expected in [(True, True), (False, False)]:
             output = io.StringIO()
             with patch.object(u, 'open_base', return_value=contextlib.nullcontext(MagicMock())), \
+                    patch.object(u, 'rpm_snapshot', return_value=set()), \
                     patch.object(u, 'resolve', return_value=(plan, anchor)), contextlib.redirect_stdout(output):
                 self.assertIsNone(u.apply('nginx', security))
             self.assertEqual("'Apply All Same-Branch Updates' (option 3)" in output.getvalue(), expected)

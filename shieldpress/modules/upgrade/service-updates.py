@@ -80,7 +80,11 @@ def branch(service, version):
     return '.'.join(parts[:count])
 
 
-def allowed(service, version):
+def allowed(service, version, installed=None):
+    """BLOCKED always wins. ALLOWED limits branch changes only: patch and vendor
+    backport releases of the installed branch are always eligible, so a server on
+    a branch outside ALLOWED (for example AppStream MariaDB 10.5) still receives
+    its security fixes."""
     policy = {}
     for line in (BASE / 'config/upgrade-policy.conf').read_text().splitlines():
         match = re.fullmatch(r'([A-Z_]+)="([^"]*)"', line.strip())
@@ -89,6 +93,8 @@ def allowed(service, version):
     key = ('PHP' if service.startswith('php') else service.upper())
     if any(fnmatch.fnmatchcase(version, p) for p in policy.get(key + '_BLOCKED', [])):
         return False
+    if installed is not None and branch(service, version) == branch(service, installed):
+        return True
     return any(fnmatch.fnmatchcase(version, p) for p in policy.get(key + '_ALLOWED', []))
 
 
@@ -96,11 +102,11 @@ def package_version_allowed(service, pkg, previous, anchor):
     # Independently versioned modules follow the server's branch policy.
     # Package family checks and DNF dependencies enforce runtime compatibility.
     if service == 'nginx' and pkg.name.startswith(('nginx-mod-', 'nginx-module-')):
-        return allowed(service, anchor.version)
+        return allowed(service, anchor.version, anchor.version)
     if service.startswith('php') and pkg.name.startswith(service + '-php-pecl-'):
-        return allowed(service, anchor.version)
-    return (branch(service, pkg.version) == branch(service, (previous or anchor).version)
-            and allowed(service, pkg.version))
+        return allowed(service, anchor.version, anchor.version)
+    current = (previous or anchor).version
+    return branch(service, pkg.version) == branch(service, current) and allowed(service, pkg.version, current)
 
 
 def row(pkg):
@@ -285,10 +291,10 @@ def resolve(base, service, security):
             if not package_version_allowed(service, pkg, previous, anchor):
                 blocked.append(pkg)
                 if (previous and branch(service, pkg.version) == branch(service, previous.version)
-                        and not allowed(service, pkg.version) and compare(pkg, previous) > 0):
-                    policy_blocked.add((pkg.name, pkg.version))
+                        and not allowed(service, pkg.version, previous.version) and compare(pkg, previous) > 0):
+                    policy_blocked.add((pkg.name, pkg.version + '-' + pkg.release))
     for name, version in sorted(policy_blocked):
-        print(f'[WARN] Repository update {name} {version} is blocked by config/upgrade-policy.conf; review the allowed/blocked patterns.', flush=True)
+        print(f'[WARN] Repository update {name} {version} is blocked by config/upgrade-policy.conf; review the blocked patterns.', flush=True)
     base.sack.add_excludes(blocked)
     if security:
         base.add_security_filters('gte', types=['security'])
@@ -425,8 +431,23 @@ def refresh_locks(names):
             os.unlink(temporary)
 
 
+def rpm_snapshot():
+    # Read RPM directly: DNF hides installed packages matched by `exclude=`,
+    # so its installed set cannot be compared with `rpm -qa`.
+    actual = run(['rpm', '-qa', '--qf', '%{NAME}|%{ARCH}|%{EPOCHNUM}|%{VERSION}|%{RELEASE}\n'], stdout=subprocess.PIPE, text=True).stdout
+    # Skip RPM's pseudo-packages used to store imported signing keys.
+    return {tuple(line.split('|')) for line in actual.splitlines() if not line.startswith('gpg-pubkey|')}
+
+
+def snapshot_changes(before, after):
+    label = lambda p: f'{p[0]}-{p[3]}-{p[4]}.{p[1]}'
+    changes = ['+' + label(p) for p in sorted(after - before)] + ['-' + label(p) for p in sorted(before - after)]
+    return ', '.join(changes[:6]) + (f' and {len(changes) - 6} more' if len(changes) > 6 else '')
+
+
 def apply(service, security):
     check_source_override(service)
+    snapshot = rpm_snapshot()
     with open_base(service, require_locks=True) as base:
         plan, anchor = resolve(base, service, security)
         show_plan(plan)
@@ -461,12 +482,10 @@ def apply(service, security):
             if result:
                 raise RuntimeError('RPM signature verification failed: ' + message)
         # Ensure the installed RPM database did not change after plan creation.
-        actual = run(['rpm', '-qa', '--qf', '%{NAME}|%{ARCH}|%{EPOCHNUM}|%{VERSION}|%{RELEASE}\n'], stdout=subprocess.PIPE, text=True).stdout
-        before = {(p.name, p.arch, str(p.epoch), p.version, p.release) for p in base.sack.query().installed()}
-        # DNF omits RPM's pseudo-packages used to store imported signing keys.
-        current = {tuple(line.split('|')) for line in actual.splitlines() if not line.startswith('gpg-pubkey|')}
-        if current != before:
-            raise RuntimeError('Installed packages changed during confirmation; check updates again')
+        current = rpm_snapshot()
+        if current != snapshot:
+            raise RuntimeError('Installed packages changed during confirmation (' + snapshot_changes(snapshot, current) +
+                               '); another package operation ran. Check updates again')
         failure = None
         try:
             with stage('Applying the resolved package transaction', 120):
@@ -671,10 +690,11 @@ def banner():
         return
     color = lambda code, text: f'\033[{code}m{text}\033[0m'
     pending = [e for e in status.get('services', []) if e.get('available')]
+    held = [e for e in status.get('services', []) if e.get('policy_blocked')]
     errors = status.get('errors', [])
     age = time.time() - status.get('checked', 0)
     stale = age > STALE_SECONDS
-    if not pending and not errors and not stale:
+    if not pending and not held and not errors and not stale:
         return
     when = datetime.fromtimestamp(status.get('checked', 0)).strftime('%Y-%m-%d %H:%M')
     print(color(36, '──────────────────────────────────────'))
@@ -697,6 +717,11 @@ def banner():
             else:
                 print(color(33, head) + '  ' + color(2, 'advisory lookup failed; review option 1'))
             print(color(2, f"      Update: shieldpress → {entry['menu'].replace('->', '→')} → 3 Apply All Same-Branch Updates"))
+    for entry in held:
+        items = entry['policy_blocked']
+        text = ', '.join(items[:2]) + (f' +{len(items) - 2} more' if len(items) > 2 else '')
+        print(color(33, f"  ⚠ {entry['label']} updates blocked by upgrade policy: ") + color(2, text))
+        print(color(2, f"      Review the BLOCKED patterns in {BASE / 'config/upgrade-policy.conf'}"))
     for error in errors:
         print(color(33, f"  ⚠ {error['label']} update check failed") + color(2, ' (journalctl -u shieldpress-service-updates)'))
     if stale:
