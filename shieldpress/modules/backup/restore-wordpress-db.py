@@ -44,12 +44,17 @@ def repair(domain, migration=False, check=False):
         return
     if values.get('DB_CONNECTION', 'mysql') not in ('mysql', 'mariadb'):
         raise ValueError('WordPress requires a managed MySQL/MariaDB connection')
+    config = domain / 'public_html/wp-config.php'
+    if migration and not config.exists() and not config.is_symlink():
+        # WordPress files are not installed (or the restored archive held none):
+        # there is no configuration to reconnect, so the migration must not stay pending.
+        print('[SKIP] No wp-config.php in ' + str(config.parent) + '; WordPress files are not installed, nothing to repair')
+        return
     if not connects(values):
         raise ValueError('Managed database authentication failed; configuration was not changed')
     if check:
         print('[OK] Managed WordPress database connection verified')
         return
-    config = domain / 'public_html/wp-config.php'
     if config.is_symlink() or not config.is_file():
         raise ValueError('Expected a regular wp-config.php file')
     original = config.read_text()
@@ -100,8 +105,8 @@ def main():
     args = parser.parse_args()
     try:
         repair(args.domain, args.migrate, args.check)
-    except (OSError, ValueError, subprocess.SubprocessError):
-        print('[FAIL] WordPress database repair failed; check managed credentials and literal DB definitions')
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        print(f'[FAIL] WordPress database repair failed for {args.domain}: {error}')
         return 1
     return 0
 

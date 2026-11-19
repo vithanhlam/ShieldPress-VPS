@@ -1,3 +1,11 @@
+## v1.3.153 — 2026-11-20 — Restored WordPress DB migration no longer stays pending without WordPress files
+
+- Fix migration `SP_20261025_RESTORE_WORDPRESS_DB` staying pending on every ShieldPress update ("Some migration patches remain pending") when a WordPress domain with a restore record has no `wp-config.php`, for example WordPress files that were never installed or an archive without WordPress. There is nothing to reconnect, so the migration now skips such domains and completes. A symlinked `wp-config.php` is still rejected, and the restore menu still fails when the restored files lack `wp-config.php`.
+- Show the domain and the reason when the WordPress database repair fails, instead of a generic message.
+- Run service update health checks and database dumps from `/`, removing the `could not change directory to "/root"` warning printed by `psql` during PostgreSQL updates.
+- Extend `tests/restore-regression.py`: a WordPress domain without `wp-config.php` is skipped twice without changes, the restore path still fails, a symlink is rejected and the failure message names the domain and reason.
+- Verify on the TEST.MD AlmaLinux 9.8 VPS: the update from 1.3.151 to 1.3.152 (migration `SP_20261119_SERVICE_UPDATE_POLICY_RESCAN`), the PostgreSQL 13.23-5 to 13.23-9 same-branch update, and the WordPress migration completing for two restored test domains without WordPress files, with a repeat run skipped.
+
 ## v1.3.152 — 2026-11-19 — Service updates: false "Installed packages changed" failure and installed-branch security fixes
 
 - Fix Apply Repository Security Updates and Apply All Same-Branch Updates always failing with "Installed packages changed during confirmation; check updates again" on servers whose DNF configuration has an `exclude=` rule matching an installed package. DNF hides excluded installed packages while `rpm -qa` lists them, so the comparison never matched although nothing had changed. Both snapshots now come from RPM, taken before the plan and before the transaction. When packages really change, the error lists them (for example `+kernel-core-5.14.0-742.el9.x86_64`).

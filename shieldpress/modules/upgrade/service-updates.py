@@ -730,6 +730,9 @@ def banner():
 
 
 def main():
+    # Health checks and dumps run as other users (sudo -u postgres); a root-only
+    # working directory makes psql print "could not change directory" warnings.
+    os.chdir('/')
     if sys.argv[1:] == ['--repair-versionlock']:
         repair_versionlock()
         return

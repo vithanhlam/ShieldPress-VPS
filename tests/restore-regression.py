@@ -46,6 +46,33 @@ with tempfile.TemporaryDirectory() as tmp:
         raise AssertionError('Dynamic definition accepted')
     except ValueError:
         pass
+    # Migration skips a WordPress domain without wp-config.php (files never
+    # installed or an archive without WordPress) instead of staying pending.
+    empty = base / 'domains/empty'
+    (empty / 'config').mkdir(parents=True)
+    (empty / 'public_html').mkdir()
+    (empty / 'config/domain.env').write_text('DOMAIN=empty.test\nAPP_TYPE=wordpress\nDB_NAME=live\nDB_USER=live\nDB_PASS=x\n')
+    repair.connects = lambda values: False
+    for _ in range(2):
+        repair.repair(empty, migration=True)
+    assert not (empty / 'public_html/wp-config.php').exists()
+    assert not (empty / 'config/wp-config.before-db-repair.php').exists()
+    try:
+        repair.repair(empty)
+        raise AssertionError('Restore without wp-config.php accepted')
+    except ValueError:
+        pass
+    (empty / 'public_html/wp-config.php').symlink_to(config)
+    try:
+        repair.repair(empty, migration=True)
+        raise AssertionError('Symlinked wp-config.php accepted')
+    except ValueError:
+        pass
+    (empty / 'public_html/wp-config.php').unlink()
+    script = subprocess.run(['python3', str(ROOT / 'modules/backup/restore-wordpress-db.py'), str(empty)],
+                            stdout=subprocess.PIPE, text=True)
+    # The failure message names the domain and the reason.
+    assert script.returncode == 1 and 'failed for ' + str(empty) + ': ' in script.stdout, script.stdout
     # Run actual menu script with a sandbox helper and archive fixtures.
     (base / 'core').mkdir()
     (base / 'modules/backup').mkdir(parents=True)
