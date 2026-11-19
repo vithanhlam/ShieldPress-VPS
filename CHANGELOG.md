@@ -1,3 +1,14 @@
+## v1.3.151 — 2026-11-19 — Service update notices on root login
+
+- Add a daily read-only check (`shieldpress-service-updates.timer`, about 05:00 with up to 2 hours random delay) for same-branch updates of Nginx, every installed Remi PHP branch, MariaDB and PostgreSQL. It uses the same branch rules, version policy and package protection as Apply All Same-Branch Updates and never changes packages. The result is cached in `/var/shieldpress/data/service-updates-status.json` (mode 600).
+- Show pending updates in the root SSH login banner from that cache, without calling DNF, with the installed and available version-release, any repository security advisories (ID, severity, CVE IDs) and the exact menu path to install them. Updates from repositories that publish no security metadata, such as nginx.org, are shown as "no repository security advisory; may still fix CVEs" instead of being hidden. The banner also reports failed checks and a check older than 3 days, and shows nothing when no update is pending.
+- Send a Telegram security alert (when Telegram notifications are enabled) once per newly available release; a later release notifies again.
+- Clear the notice for a service right after a successful update from its Version & Security Updates menu.
+- Explain in Apply Repository Security Updates that repositories without updateinfo metadata never qualify for security-only mode, even when a release fixes CVEs, and point to Apply All Same-Branch Updates. Previously nginx.org releases such as 1.31.9 were reported as "No eligible same-branch updates" with no next step.
+- Report "another service update or the daily update check is running" instead of a raw `Errno 11` when two service update actions overlap; the daily check waits for an interactive update to finish.
+- Add automatic, idempotent migration `SP_20261119_SERVICE_UPDATE_NOTICES` that installs and starts the timer on existing servers and runs the first check in the background, so the ShieldPress update is not delayed. New installations install the timer from `install.sh`.
+- Extend `tests/service-updates.py`: notice deduplication, partial rescan after an update, banner states, the security-only hint and the migration run twice; the container DNF test scans the fixture repository and reads the fixture advisory and CVE through the DNF API without changing installed packages.
+
 ## v1.3.150 — 2026-11-18 — SSH Access: key inventory, key management, login history and command activity
 
 - Add Security & Firewall > 16) SSH Hardening > 4) SSH Access. List every public key in every user's `authorized_keys` (and `/etc/ssh`) with an ID, type, state, last login and flags for unrestricted root keys, weak keys (RSA below 3072 bits, DSA) and keys unknown to Intrusion Guard; show key details with recent logins.

@@ -218,7 +218,7 @@ def service_lock(rule, service, names):
                for n in possibilities)
 
 
-def open_base(service=None, require_locks=False):
+def open_base(service=None, require_locks=False, refresh=True):
     import dnf
     base = dnf.Base()
     base.conf.read()
@@ -254,7 +254,8 @@ def open_base(service=None, require_locks=False):
         if service:
             repo.excludepkgs = [p for p in repo.excludepkgs if family(p) != service]
         repo.skip_if_unavailable = False
-        repo.metadata_expire = 0
+        if refresh:
+            repo.metadata_expire = 0
     with stage('Refreshing repository metadata and reading installed RPMs'):
         base.fill_sack()
     return base
@@ -298,7 +299,8 @@ def resolve(base, service, security):
     plan = {'service': service, 'security_only': security,
             'installed': sorted((row(p) for p in targets), key=lambda r: (r['name'], r['arch'])),
             'install': sorted((row(p) for p in base.transaction.install_set), key=lambda r: (r['name'], r['arch'])),
-            'remove': sorted((row(p) for p in base.transaction.remove_set), key=lambda r: (r['name'], r['arch']))}
+            'remove': sorted((row(p) for p in base.transaction.remove_set), key=lambda r: (r['name'], r['arch'])),
+            'policy_blocked': [name + ' ' + version for name, version in sorted(policy_blocked)]}
     return plan, anchor
 
 
@@ -430,6 +432,10 @@ def apply(service, security):
         show_plan(plan)
         if not plan['install']:
             print('[INFO] No eligible same-branch updates in the configured repositories. This is not a complete CVE assessment.')
+            if security:
+                print('[INFO] Security-only mode installs only updates labelled by repository advisories (updateinfo). '
+                      'Repositories without that metadata, such as nginx.org, never qualify even when a release fixes CVEs. '
+                      "Use 'Apply All Same-Branch Updates' (option 3) to install same-branch releases.", flush=True)
             return
         unit, health = service_info(service, anchor)
         active = subprocess.run(['systemctl', 'is-active', '--quiet', unit]).returncode == 0
@@ -503,12 +509,218 @@ def apply(service, security):
         if failure:
             raise RuntimeError(f'Update requires attention: {failure}. Recovery files retained at {recovery}; no automatic database restore was attempted')
         print('[OK] Package versions, service health and package protection verified. Recovery files: ' + str(recovery))
+        return True
+
+
+STATUS = DATA / 'service-updates-status.json'
+STALE_SECONDS = 3 * 86400
+MENU = {'nginx': ('Nginx', '3 Nginx Manager -> 16'),
+        'mariadb': ('MariaDB', '10 Database Manager -> 1 MariaDB -> 14'),
+        'postgresql': ('PostgreSQL', '10 Database Manager -> 2 PostgreSQL -> 14')}
+
+
+def describe(service):
+    if service in MENU:
+        return MENU[service]
+    # php83 -> PHP 8.3; the PHP menu asks for the branch after option 14.
+    return 'PHP ' + service[3] + '.' + service[4:], '4 PHP Manager -> 14 -> ' + service + '-php-fpm'
+
+
+def installed_services():
+    names = set(run(['rpm', '-qa', '--qf', '%{NAME}\n'], stdout=subprocess.PIPE, text=True).stdout.split())
+    services = []
+    if 'nginx' in names:
+        services.append('nginx')
+    services += sorted(family(n) for n in names if re.fullmatch(r'php\d{2}-php-fpm', n))
+    if 'mariadb-server' in names:
+        services.append('mariadb')
+    if any(re.fullmatch(r'postgresql\d*-server', n) for n in names):
+        services.append('postgresql')
+    return services
+
+
+def advisories(base, transaction, installed):
+    """Advisories published for any release between the installed and the proposed package."""
+    import hawkey
+    old = {identity(p): p for p in installed}
+    found = {}
+    for pkg in transaction.install_set:
+        previous = old.get(identity(pkg))
+        candidates = base.sack.query().available().filter(name=pkg.name, arch=pkg.arch)
+        for candidate in candidates:
+            if compare(candidate, pkg) > 0 or (previous and compare(candidate, previous) <= 0):
+                continue
+            for advisory in candidate.get_advisories(hawkey.EQ):
+                if advisory.type != hawkey.ADVISORY_SECURITY:
+                    continue
+                entry = found.setdefault(advisory.id, {'id': advisory.id, 'severity': advisory.severity or '', 'cves': set()})
+                entry['cves'].update(ref.id for ref in advisory.references if ref.type == hawkey.REFERENCE_CVE)
+    return [dict(a, cves=sorted(a['cves'])) for a in sorted(found.values(), key=lambda a: a['id'])]
+
+
+def scan_service(service, refresh):
+    label, menu = describe(service)
+    entry = {'service': service, 'label': label, 'menu': menu}
+    if service.startswith('php') and (DATA / ('php-source-' + service[3:]) / 'active').exists():
+        # Source builds are patched by their own repair; RPM updates do not apply.
+        return None
+    with open_base(service, refresh=refresh) as base:
+        installed = list(base.sack.query().installed())
+        plan, anchor = resolve(base, service, False)
+        entry['installed'] = anchor.version + '-' + anchor.release
+        entry['policy_blocked'] = plan['policy_blocked']
+        if not plan['install']:
+            return entry
+        target = next((p for p in plan['install'] if (p['name'], p['arch']) == identity(anchor)), plan['install'][0])
+        entry['available'] = target['version'] + '-' + target['release']
+        entry['packages'] = len(plan['install'])
+        try:
+            entry['advisories'] = advisories(base, base.transaction, installed)
+        except Exception as error:
+            entry['advisories'] = None
+            entry['advisory_error'] = str(error) or type(error).__name__
+    return entry
+
+
+def read_status():
+    try:
+        return json.loads(STATUS.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def write_status(status):
+    DATA.mkdir(parents=True, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(prefix='.service-updates-status-', dir=DATA)
+    try:
+        with os.fdopen(handle, 'w') as output:
+            json.dump(status, output, indent=2)
+        os.replace(temporary, STATUS)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def pending_key(entry):
+    return entry['service'] + ' ' + entry['available']
+
+
+def notify(entries):
+    script = BASE / 'modules/notification/telegram-notify.sh'
+    if not entries or not script.exists():
+        return
+    lines = []
+    for entry in entries:
+        line = f"{entry['label']}: {entry['installed']} -> {entry['available']}"
+        if entry.get('advisories'):
+            line += ' | ' + ', '.join(a['id'] + (' ' + a['severity'] if a['severity'] else '') for a in entry['advisories'])
+        elif entry.get('advisories') == []:
+            line += ' | no repository security advisory (may still fix CVEs)'
+        lines.append(line + '\n  shieldpress -> ' + entry['menu'] + ' -> 3 Apply All Same-Branch Updates')
+    try:
+        subprocess.run(['bash', str(script), 'send', 'security_alert', 'Service updates available', '\n'.join(lines)],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def scan(services=None, refresh=True, send=True):
+    """Read-only check of every managed service; never changes packages."""
+    previous = read_status() or {}
+    full = services is None
+    services = installed_services() if full else services
+    results, errors = [], []
+    for index, service in enumerate(services):
+        try:
+            entry = scan_service(service, refresh and index == 0)
+            if entry:
+                results.append(entry)
+        except Exception as error:
+            label, menu = describe(service)
+            errors.append({'service': service, 'label': label, 'menu': menu, 'error': str(error) or type(error).__name__})
+    if not full:
+        # Keep the other services from the last full check.
+        keep = [e for e in previous.get('services', []) if e['service'] not in services]
+        results = keep + results
+        errors = [e for e in previous.get('errors', []) if e['service'] not in services] + errors
+        checked = previous.get('checked', int(time.time()))
+    else:
+        checked = int(time.time())
+    status = {'checked': checked, 'services': results, 'errors': errors,
+              'notified': previous.get('notified', [])}
+    pending = [e for e in results if e.get('available')]
+    keys = sorted(pending_key(e) for e in pending)
+    if send and full:
+        notify([e for e in pending if pending_key(e) not in status['notified']])
+    # Retain only keys that are still pending so a reappearing update notifies again.
+    status['notified'] = keys if full else [k for k in status['notified'] if k in keys]
+    write_status(status)
+    for entry in pending:
+        print(f"[WARN] {entry['label']} {entry['installed']} -> {entry['available']} available", flush=True)
+    for error in errors:
+        print(f"[FAIL] {error['label']} check failed: {error['error']}", flush=True)
+    if not pending and not errors:
+        print('[OK] No same-branch service updates pending in the configured repositories', flush=True)
+    return 1 if errors else 0
+
+
+def banner():
+    """Login summary for root, read from the cached status; never queries repositories."""
+    status = read_status()
+    if not status:
+        return
+    color = lambda code, text: f'\033[{code}m{text}\033[0m'
+    pending = [e for e in status.get('services', []) if e.get('available')]
+    errors = status.get('errors', [])
+    age = time.time() - status.get('checked', 0)
+    stale = age > STALE_SECONDS
+    if not pending and not errors and not stale:
+        return
+    when = datetime.fromtimestamp(status.get('checked', 0)).strftime('%Y-%m-%d %H:%M')
+    print(color(36, '──────────────────────────────────────'))
+    if pending:
+        print(color('1;33', f'  ⚠ Service updates pending') + color(2, f' (checked {when})'))
+        for entry in pending:
+            head = f"  {entry['label']:<11} {entry['installed']} → {entry['available']}"
+            found = entry.get('advisories')
+            if found:
+                cves = sorted({c for a in found for c in a['cves']})
+                severity = sorted({a['severity'] for a in found if a['severity']})
+                text = ', '.join(a['id'] for a in found[:2]) + (f' +{len(found) - 2}' if len(found) > 2 else '')
+                if severity:
+                    text += ' (' + '/'.join(severity) + ')'
+                if cves:
+                    text += ': ' + ', '.join(cves[:3]) + (f' +{len(cves) - 3} more' if len(cves) > 3 else '')
+                print(color('1;31', head) + '  ' + color(31, text))
+            elif found == []:
+                print(color(33, head) + '  ' + color(2, 'no repository security advisory; may still fix CVEs'))
+            else:
+                print(color(33, head) + '  ' + color(2, 'advisory lookup failed; review option 1'))
+            print(color(2, f"      Update: shieldpress → {entry['menu'].replace('->', '→')} → 3 Apply All Same-Branch Updates"))
+    for error in errors:
+        print(color(33, f"  ⚠ {error['label']} update check failed") + color(2, ' (journalctl -u shieldpress-service-updates)'))
+    if stale:
+        print(color(33, f'  ⚠ Service update check is outdated (last run {when})') +
+              color(2, ' (systemctl status shieldpress-service-updates.timer)'))
 
 
 def main():
     if sys.argv[1:] == ['--repair-versionlock']:
         repair_versionlock()
         return
+    if sys.argv[1:] == ['--banner']:
+        banner()
+        return
+    if sys.argv[1:] == ['--scan']:
+        if os.geteuid() != 0:
+            raise RuntimeError('Root is required for repository checks')
+        os.umask(0o077)
+        DATA.mkdir(parents=True, exist_ok=True)
+        import fcntl
+        with (DATA / 'service-updates.lock').open('w') as lock:
+            # Wait for an interactive update instead of failing the daily check.
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            sys.exit(scan())
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('service', choices=['nginx', 'mariadb', 'postgresql', 'php'] + ['php' + str(n) for n in range(81, 86)])
     parser.add_argument('action', choices=['check', 'security', 'update'])
@@ -532,7 +744,10 @@ def main():
     DATA.mkdir(parents=True, exist_ok=True)
     import fcntl
     with (DATA / 'service-updates.lock').open('w') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError('Another service update or the daily update check is running; retry in a few minutes')
         if args.action == 'check':
             with open_base(args.service) as base:
                 audit(args.service, [p for p in base.sack.query().installed() if family(p.name) == args.service])
@@ -540,8 +755,13 @@ def main():
                 show_plan(plan)
                 if args.service.startswith('php'):
                     check_source_override(args.service)
-        else:
-            apply(args.service, args.action == 'security')
+        elif apply(args.service, args.action == 'security'):
+            # Clear the login notice for this service; repository metadata was just refreshed.
+            try:
+                with stage('Refreshing the login update notice', 30):
+                    scan([args.service], refresh=False, send=False)
+            except Exception as error:
+                print('[WARN] Login update notice not refreshed: ' + str(error), flush=True)
 
 
 if __name__ == '__main__':

@@ -994,6 +994,20 @@ patch_service_security_updates(){
     ok "Version and security update menus enabled for Nginx, PHP, MariaDB and PostgreSQL"
 }
 
+patch_service_update_notices(){
+    local ID="SP_20261119_SERVICE_UPDATE_NOTICES"
+    local script="$BASE_DIR/modules/upgrade/service-update-scan.sh"
+    patch_applied "$ID" && return 0
+    # Read-only daily check; package updates still require the service menu.
+    if [ ! -f "$script" ] || ! bash -n "$script" ||
+        ! ( source "$script" && sp_install_service_update_scan ); then
+        fail "Daily service update check could not be installed; migration remains pending"
+        return 1
+    fi
+    patch_mark_done "$ID"
+    ok "Daily service update check enabled; pending Nginx/PHP/database updates appear in the root login banner"
+}
+
 patch_service_rpm_versions(){
     local ID="SP_20261027_SERVICE_RPM_VERSIONS"
     patch_applied "$ID" && return 0
@@ -1139,6 +1153,7 @@ apply_all_patches(){
     patch_service_versionlock_repair || ssl_status=$?
     patch_service_rpm_versions || ssl_status=$?
     patch_nginx_mainline_policy || ssl_status=$?
+    patch_service_update_notices || ssl_status=$?
     patch_kernel_update_fallback || ssl_status=$?
     patch_nginx_worker_limits || ssl_status=$?
     local policy_timing="${DATA_DIR:-/var/shieldpress/data}/runtime-policy-timing"
@@ -1204,6 +1219,7 @@ show_patch_status(){
     _status "SP_20261026_NODEJS_SAME_BRANCH_UPDATES" "Enable same-branch Node.js updates"
     _status "SP_20261103_KERNEL_UPDATE_FALLBACK" "Enable kernel fixes without advisory metadata"
     _status "SP_20261103_NGINX_MAINLINE_POLICY" "Repair Nginx mainline patch update policy"
+    _status "SP_20261119_SERVICE_UPDATE_NOTICES" "Daily service update check and login notice"
     _status "SP_20261026_SERVICE_SECURITY_UPDATES" "Enable service version and security updates"
     _status "SP_20261026_SERVICE_VERSIONLOCK_REPAIR" "Repair service update package protection"
     _status "SP_20261026_NGINX_WORKER_LIMITS" "Bound Nginx worker memory allocation"

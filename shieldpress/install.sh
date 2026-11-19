@@ -51,6 +51,10 @@ sp_install_update_shortcut || { echo "[ERROR] Cannot install numeric shortcuts";
 source "$BASE_DIR/core/quick-commands.sh" || exit 1
 sp_install_login_banner || { echo "[ERROR] Cannot install login banner"; exit 1; }
 
+# Daily read-only service update check shown in the root login banner.
+source "$BASE_DIR/modules/upgrade/service-update-scan.sh" &&
+    sp_install_service_update_scan || echo "[WARN] Cannot install the daily service update check"
+
 # Trust the release signing keys shipped with this verified source tree.
 source "$BASE_DIR/core/release-verify.sh" || exit 1
 sp_release_keys_bootstrap || { echo "[ERROR] No release signing key found in $BASE_DIR/core/release-keys"; exit 1; }

@@ -52,6 +52,10 @@ sp_quick_commands_login_banner(){
     sp_quick_commands_print
     echo "$line"
     echo -e "  \e[2mAuto-Update: $(sp_quick_commands_autoupdate_label)\e[0m"
+    # Pending Nginx/PHP/database updates from the cached daily check (no DNF call).
+    if [ -f "$base/modules/upgrade/service-updates.py" ]; then
+        timeout 5 /usr/bin/python3 -I "$base/modules/upgrade/service-updates.py" --banner 2>/dev/null
+    fi
 
     if command -v curl >/dev/null 2>&1; then
         url="https://raw.githubusercontent.com/vithanhlam/ShieldPress-VPS/main/shieldpress/version.txt"

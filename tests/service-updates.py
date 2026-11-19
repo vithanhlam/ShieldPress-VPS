@@ -458,7 +458,154 @@ patch_service_versionlock_repair
             subprocess.run(['bash', '-c', commands, '_', directory], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
+    def test_update_notice_scan_dedupe_and_rescan(self):
+        def fake(service, refresh):
+            label, menu = u.describe(service)
+            entry = {'service': service, 'label': label, 'menu': menu, 'installed': '1.31.7-1', 'policy_blocked': []}
+            if service == 'mariadb':
+                raise RuntimeError('repository unavailable')
+            if service in updates:
+                entry.update(available=updates[service], packages=1, advisories=[])
+            return entry
+        with tempfile.TemporaryDirectory() as directory:
+            sent = []
+            updates = {'nginx': '1.31.9-1', 'php83': '8.3.15-1'}
+            with patch.object(u, 'DATA', Path(directory)), patch.object(u, 'STATUS', Path(directory) / 'status.json'), \
+                    patch.object(u, 'installed_services', return_value=['nginx', 'php83', 'mariadb']), \
+                    patch.object(u, 'scan_service', side_effect=fake), \
+                    patch.object(u, 'notify', side_effect=lambda e: sent.append(sorted(x['service'] for x in e))), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(u.scan(), 1)
+                self.assertEqual(u.scan(), 1)
+                self.assertEqual(sent, [['nginx', 'php83'], []])
+                refreshes = []
+                with patch.object(u, 'scan_service', side_effect=lambda s, r: refreshes.append(r) or fake(s, r)):
+                    u.scan()
+                self.assertEqual(refreshes, [True, False, False])
+                # A successful nginx update clears only its notice and keeps the last full check time.
+                checked = u.read_status()['checked']
+                del updates['nginx']
+                u.scan(['nginx'], refresh=False, send=False)
+                status = u.read_status()
+                self.assertEqual(status['checked'], checked)
+                self.assertEqual([e['service'] for e in status['services'] if e.get('available')], ['php83'])
+                self.assertEqual(status['notified'], ['php83 8.3.15-1'])
+                self.assertEqual([e['service'] for e in status['errors']], ['mariadb'])
+                # A newer release notifies again.
+                updates.update(nginx='1.31.10-1', php83='8.3.15-1')
+                u.scan()
+                self.assertEqual(sent[-1], ['nginx'])
+                self.assertEqual((Path(directory) / 'status.json').stat().st_mode & 0o777 & 0o077, 0)
+
+    def test_update_notice_banner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            status = Path(directory) / 'status.json'
+            with patch.object(u, 'STATUS', status):
+                def show():
+                    output = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        u.banner()
+                    return output.getvalue()
+                self.assertEqual(show(), '')
+                status.write_text('not json')
+                self.assertEqual(show(), '')
+                base = {'checked': int(time.time()), 'services': [{'service': 'nginx', 'label': 'Nginx', 'installed': '1.31.7-1'}],
+                        'errors': [], 'notified': []}
+                status.write_text(__import__('json').dumps(base))
+                self.assertEqual(show(), '')
+                base['services'] = [
+                    {'service': 'nginx', 'label': 'Nginx', 'menu': '3 Nginx Manager -> 16', 'installed': '1.31.7-1', 'available': '1.31.9-1', 'advisories': []},
+                    {'service': 'php83', 'label': 'PHP 8.3', 'menu': '4 PHP Manager -> 14 -> php83-php-fpm', 'installed': '8.3.14-1', 'available': '8.3.15-1',
+                     'advisories': [{'id': 'ALSA-2099:1', 'severity': 'Important', 'cves': ['CVE-2099-1', 'CVE-2099-2', 'CVE-2099-3', 'CVE-2099-4']}]},
+                    {'service': 'mariadb', 'label': 'MariaDB', 'menu': 'x', 'installed': '10.11.1-1', 'available': '10.11.2-1', 'advisories': None}]
+                base['errors'] = [{'service': 'postgresql', 'label': 'PostgreSQL', 'menu': 'y', 'error': 'down'}]
+                status.write_text(__import__('json').dumps(base))
+                text = show()
+                self.assertIn('Nginx       1.31.7-1 → 1.31.9-1', text)
+                self.assertIn('no repository security advisory; may still fix CVEs', text)
+                self.assertIn('shieldpress → 3 Nginx Manager → 16 → 3 Apply All Same-Branch Updates', text)
+                self.assertIn('ALSA-2099:1 (Important): CVE-2099-1, CVE-2099-2, CVE-2099-3 +1 more', text)
+                self.assertIn('advisory lookup failed', text)
+                self.assertIn('PostgreSQL update check failed', text)
+                self.assertNotIn('outdated', text)
+                base['services'], base['errors'] = [], []
+                base['checked'] -= u.STALE_SECONDS + 60
+                status.write_text(__import__('json').dumps(base))
+                self.assertIn('Service update check is outdated', show())
+        banner = (ROOT / 'shieldpress/core/quick-commands.sh').read_text()
+        self.assertIn('timeout 5 /usr/bin/python3 -I "$base/modules/upgrade/service-updates.py" --banner', banner)
+        self.assertIn('[ "$(id -u)" -eq 0 ]', banner)
+
+    def test_security_only_explains_unlabelled_repositories(self):
+        anchor = pkg('nginx', '1.31.7')
+        plan = {'service': 'nginx', 'security_only': True, 'installed': [u.row(anchor)], 'install': [], 'remove': [], 'policy_blocked': []}
+        for security, expected in [(True, True), (False, False)]:
+            output = io.StringIO()
+            with patch.object(u, 'open_base', return_value=contextlib.nullcontext(MagicMock())), \
+                    patch.object(u, 'resolve', return_value=(plan, anchor)), contextlib.redirect_stdout(output):
+                self.assertIsNone(u.apply('nginx', security))
+            self.assertEqual("'Apply All Same-Branch Updates' (option 3)" in output.getvalue(), expected)
+
+    def test_update_notice_migration_handoff_and_repeat(self):
+        text = (ROOT / 'shieldpress/modules/patches/patches-menu.sh').read_text()
+        function = text.split('patch_service_update_notices(){', 1)[1].split('\n}\n', 1)[0]
+        self.assertIn('patch_service_update_notices || ssl_status=$?', text)
+        with tempfile.TemporaryDirectory() as directory:
+            commands = r"""
+set -e
+BASE_DIR="$1"
+REGISTRY="$BASE_DIR/registry"; : > "$REGISTRY"
+export SP_SERVICE_SCAN_UNIT_DIR="$BASE_DIR/units" CALLS="$BASE_DIR/calls"
+mkdir -p "$BASE_DIR/bin"
+printf '#!/bin/sh\necho "$*" >> "$CALLS"\n' > "$BASE_DIR/bin/systemctl"; chmod +x "$BASE_DIR/bin/systemctl"
+PATH="$BASE_DIR/bin:$PATH"
+patch_applied(){ grep -qxF "$1" "$REGISTRY"; }
+patch_mark_done(){ echo "$1" >> "$REGISTRY"; }
+ok(){ echo "$1"; }
+fail(){ echo "$1"; }
+""" + 'patch_service_update_notices(){' + function + '\n}\n' + r"""
+if patch_service_update_notices; then exit 1; fi
+[ ! -s "$REGISTRY" ]
+mkdir -p "$BASE_DIR/modules/upgrade"
+cp "$2/modules/upgrade/service-update-scan.sh" "$BASE_DIR/modules/upgrade/"
+patch_service_update_notices
+patch_service_update_notices
+[ "$(wc -l < "$REGISTRY")" = 1 ]
+grep -qx "ExecStart=/usr/bin/python3 -I $BASE_DIR/modules/upgrade/service-updates.py --scan" "$SP_SERVICE_SCAN_UNIT_DIR/shieldpress-service-updates.service"
+grep -qx 'Persistent=true' "$SP_SERVICE_SCAN_UNIT_DIR/shieldpress-service-updates.timer"
+grep -qx 'enable --now shieldpress-service-updates.timer' "$CALLS"
+grep -qx 'start --no-block shieldpress-service-updates.service' "$CALLS"
+[ "$(grep -c 'enable --now' "$CALLS")" = 1 ]
+"""
+            result = subprocess.run(['bash', '-c', commands, '_', directory, str(ROOT / 'shieldpress')], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        install = (ROOT / 'shieldpress/install.sh').read_text()
+        self.assertIn('sp_install_service_update_scan', install)
+
+
 class RealDnf(unittest.TestCase):
+    def test_a_scan_status_and_advisories(self):
+        # Runs before the transaction test applies the fixture updates.
+        before = subprocess.check_output(['rpm', '-qa'])
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(u, 'DATA', Path(directory)), patch.object(u, 'STATUS', Path(directory) / 'status.json'), \
+                    patch.object(u, 'notify') as notify:
+                self.assertEqual(u.scan(), 0)
+                status = u.read_status()
+                entries = {e['service']: e for e in status['services']}
+                self.assertEqual(sorted(entries), ['mariadb', 'nginx', 'php84', 'postgresql'])
+                self.assertEqual(entries['nginx']['available'], '1.26.2-2.fixture')
+                self.assertEqual(entries['nginx']['advisories'],
+                                 [{'id': 'FIXTURE-2099:0001', 'severity': 'Important', 'cves': ['CVE-2099-0001']}])
+                for service, version in [('php84', '8.4.1-2.fixture'), ('mariadb', '10.11.1-2.fixture'), ('postgresql', '15.1-2.fixture')]:
+                    self.assertEqual(entries[service]['available'], version)
+                    self.assertEqual(entries[service]['advisories'], [])
+                self.assertEqual(len(notify.call_args.args[0]), 4)
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    u.banner()
+                self.assertIn('FIXTURE-2099:0001 (Important): CVE-2099-0001', output.getvalue())
+        self.assertEqual(subprocess.check_output(['rpm', '-qa']), before)
     def test_missing_protection_checks_and_repair(self):
         config = Path('/etc/dnf/plugins/versionlock.conf')
         original_config = config.read_bytes()
