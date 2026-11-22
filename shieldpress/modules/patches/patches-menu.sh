@@ -675,6 +675,21 @@ patch_ssl_auto_renew(){
     fi
 }
 
+patch_20261122_acme_renewal_repair(){
+    local ID="SP_20261122_ACME_RENEWAL_REPAIR"
+    patch_applied "$ID" && return 0
+    if ! command -v certbot >/dev/null 2>&1; then
+        patch_mark_done "$ID"
+        return 0
+    fi
+    if BASE_DIR="$BASE_DIR" bash "$BASE_DIR/modules/ssl/repair-acme-renewal.sh"; then
+        patch_mark_done "$ID"
+    else
+        fail "ACME renewal repair incomplete; remains pending for retry"
+        return 1
+    fi
+}
+
 patch_wp_recovery_output(){
     local ID="SP_20261005_WP_RECOVERY_SCAN_LOCK"
     local unit="shieldpress-wp-recovery.service"
@@ -1157,6 +1172,7 @@ apply_all_patches(){
     patch_1331_service_resilience
     patch_1331_resize_php_pools || ssl_status=$?
     patch_ssl_auto_renew || ssl_status=$?
+    patch_20261122_acme_renewal_repair || ssl_status=$?
     patch_wp_recovery_output || ssl_status=$?
     patch_wp_cache_recovery || ssl_status=$?
     patch_wp_purge_worker || ssl_status=$?
@@ -1216,6 +1232,7 @@ show_patch_status(){
     _status "SP_20261026_CACHE_ACCESS_LOG_REPAIR" "Shared PHP budget, WordPress cache and warmup schedules"
     _status "SP_1331_RESIZE_PHP_POOLS"            "v1.3.31 Resize pm.max_children (prevent RAM overcommit)"
     _status "SP_20260928_BACKUP_JOBS"             "Repair existing database backup schedules"
+    _status "SP_20261122_ACME_RENEWAL_REPAIR"     "Repair 403/stale webroot that blocks SSL auto-renew"
     _status "SP_20261001_SSL_AUTO_RENEW"          "Repair SSL auto-renew and standalone mail certificates"
     _status "SP_20261005_WP_RECOVERY_OUTPUT"      "Repair WordPress recovery daemon startup output"
     _status "SP_20261005_WP_RECOVERY_SCAN_LOCK"   "Restart WordPress recovery with scan-scoped locking"

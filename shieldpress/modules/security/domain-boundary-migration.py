@@ -140,7 +140,7 @@ def migrate(base, domains, etc, uid=0, gid=0):
 
 
 NGINX_GUARDS = r'''    # ShieldPress application source boundary
-    location ~* /(?:\.|wp-config\.php|composer\.(?:json|lock)) { deny all; }
+    location ~* /(?:\.(?!well-known/)|wp-config\.php|composer\.(?:json|lock)) { deny all; }
     location ~* ^/wp-content/(?:uploads|cache)/.*\.(?:php[0-9]*|phtml|phar)(?:/|$) { deny all; }
 
 '''

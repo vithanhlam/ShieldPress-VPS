@@ -619,7 +619,7 @@ server {
     }
 
     # ShieldPress application source boundary
-    location ~* /(?:\.|wp-config\.php|composer\.(?:json|lock)) { deny all; }
+    location ~* /(?:\.(?!well-known/)|wp-config\.php|composer\.(?:json|lock)) { deny all; }
     location ~* ^/wp-content/(?:uploads|cache)/.*\.(?:php[0-9]*|phtml|phar)(?:/|$) { deny all; }
 
     location ~ \.php\$ {
@@ -640,7 +640,7 @@ server {
 
     }
 
-    location ~ /\.                                    { deny all; }
+    location ~ /\.(?!well-known/)                     { deny all; }
     location ~* /(wp-config\.php|\.env|composer\.json) { deny all; }
     location ~ /\.git                                 { deny all; }
 
@@ -725,7 +725,7 @@ server {
     }
 
     # ShieldPress application source boundary
-    location ~* /(?:\.|wp-config\.php|composer\.(?:json|lock)) { deny all; }
+    location ~* /(?:\.(?!well-known/)|wp-config\.php|composer\.(?:json|lock)) { deny all; }
     location ~* ^/wp-content/(?:uploads|cache)/.*\.(?:php[0-9]*|phtml|phar)(?:/|$) { deny all; }
 
     location ~ \.php\$ {
