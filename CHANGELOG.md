@@ -1,3 +1,10 @@
+## v1.3.156 — 2026-11-23 — Deleting a domain stops its SSL auto-renew
+
+- Fix `certbot renew` failing on servers where domains were deleted or moved to another host. Deleting a domain removed its vhost and files but left `/etc/letsencrypt/renewal/<domain>.conf`, so Certbot kept trying to renew a certificate whose validation now reached another server (404 on `/.well-known/acme-challenge/`). One such lineage made the whole `certbot renew` run exit 1, and the renewal of the certificates that were still hosted could be skipped or reported as failed.
+- Deleting a domain (Delete FULL) now retires its Let's Encrypt/ZeroSSL certificate: the renewal file and the `live`/`archive` directories of `<domain>` and `www.<domain>` move to `/etc/letsencrypt/retired/<timestamp>/<name>/` (mode 700). Nothing is removed, so the certificate can be restored by moving the three items back. A certificate that also covers another hostname is kept and a warning is shown.
+- Servers that already have leftover renewal files of deleted domains are not changed automatically; move those `renewal/<domain>.conf` files by hand, or delete and re-add them.
+- Add `tests/domain-cert-retire.py`.
+
 ## v1.3.155 — 2026-11-22 — SSL auto-renew repaired on vhosts that answered 403 to ACME validation
 
 - Fix certificates not renewing until they were about 9 days from expiry. Vhosts created before v1.3.77 deny every path containing `/.` (including `/.well-known/`), so Let's Encrypt received 403 for `/.well-known/acme-challenge/` and every webroot renewal failed. Some renewal files also pointed at a stale webroot (for example a former OpenLiteSpeed path), which Certbot cannot write to.

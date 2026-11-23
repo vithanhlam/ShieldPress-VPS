@@ -1207,6 +1207,38 @@ delete_source(){
 # DELETE CONFIGS
 # ===============================
 
+# Stop Certbot renewing certificates of a domain that is being deleted. The
+# renewal file, live and archive directories move to <letsencrypt>/retired/
+# (nothing is removed), so a domain that moved elsewhere no longer makes every
+# `certbot renew` fail. Certificates that also cover another hostname are kept.
+retire_domain_certs(){
+    local LE="${LETSENCRYPT_DIR:-/etc/letsencrypt}" D="$CLEAN_DOMAIN"
+    local NAME TS DEST SAN SANS SHARED
+    [ -n "$D" ] || return 0
+    TS=$(date +%Y%m%d-%H%M%S)
+    for NAME in "$D" "www.$D"; do
+        [ -f "$LE/renewal/$NAME.conf" ] || continue
+        SHARED=0
+        if [ -f "$LE/live/$NAME/cert.pem" ] && command -v openssl >/dev/null 2>&1; then
+            SANS=$(openssl x509 -in "$LE/live/$NAME/cert.pem" -noout -ext subjectAltName 2>/dev/null \
+                | grep -o 'DNS:[^,[:space:]]*' | sed 's/^DNS://')
+            for SAN in $SANS; do
+                case "$SAN" in "$D"|"www.$D") ;; *) SHARED=1 ;; esac
+            done
+        fi
+        if [ "$SHARED" = 1 ]; then
+            warn "Certificate $NAME also covers other hostnames → auto-renew kept"
+            continue
+        fi
+        DEST="$LE/retired/$TS/$NAME"
+        mkdir -p "$DEST" && chmod 700 "$LE/retired" "$LE/retired/$TS" "$DEST" 2>/dev/null
+        mv "$LE/renewal/$NAME.conf" "$DEST/renewal.conf" || { warn "Could not retire certificate $NAME"; continue; }
+        [ -d "$LE/live/$NAME" ] && mv "$LE/live/$NAME" "$DEST/live"
+        [ -d "$LE/archive/$NAME" ] && mv "$LE/archive/$NAME" "$DEST/archive"
+        echo "[OK] Certificate $NAME retired (auto-renew stopped, kept in $DEST)"
+    done
+}
+
 delete_configs(){
     local PS=$(echo "$PHP_VERSION" | tr -d '.')
     local POOL_DIR="/etc/opt/remi/php${PS}/php-fpm.d"
@@ -1220,6 +1252,8 @@ delete_configs(){
     # Xóa cache zone config và cache data riêng của domain
     rm -f "/etc/nginx/conf.d/cache-zone-${CLEAN_DOMAIN}.conf"
     rm -rf "/var/cache/nginx/${CLEAN_DOMAIN}"
+
+    retire_domain_certs
 
     [ -n "$PHP_VERSION" ] && systemctl restart "php${PS}-php-fpm" 2>/dev/null
     systemctl reload  nginx              2>/dev/null
